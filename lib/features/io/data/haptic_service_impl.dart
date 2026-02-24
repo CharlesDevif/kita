@@ -79,6 +79,13 @@ class HapticServiceImpl implements HapticService {
           await HapticFeedback.heavyImpact();
         case HapticPattern.custom:
           await HapticFeedback.vibrate();
+        case HapticPattern.presence:
+          // Triple light heartbeat: 3x lightImpact with 200ms between each.
+          await HapticFeedback.lightImpact();
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+          await HapticFeedback.lightImpact();
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+          await HapticFeedback.lightImpact();
       }
       _log.debug('Haptic fallback triggered: ${pattern.name}');
       return const Result.success(null);

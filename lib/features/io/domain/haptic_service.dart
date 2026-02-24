@@ -1,6 +1,6 @@
 import '../../../core/errors/result.dart';
 
-enum HapticPattern { info, warning, danger, confirmation, custom }
+enum HapticPattern { info, warning, danger, confirmation, custom, presence }
 
 abstract interface class HapticService {
   Future<Result<void>> trigger(HapticPattern pattern);
