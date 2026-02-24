@@ -33,6 +33,7 @@ class ObstacleDetector {
   Interpreter? _interpreter;
   IsolateInterpreter? _isolateInterpreter;
   bool _initialized = false;
+  bool _processing = false;
 
   // Pre-allocated buffers to reduce GC pressure
   Float32List? _inputBuffer;
@@ -90,6 +91,14 @@ class ObstacleDetector {
       ));
     }
 
+    // Guard against concurrent access to shared buffers (_inputBuffer,
+    // _outputBuffer). At 15+ FPS, overlapping detect() calls would corrupt
+    // the pre-allocated buffers. We skip the frame instead of queuing.
+    if (_processing) {
+      return const Result.success([]);
+    }
+    _processing = true;
+
     try {
       final stopwatch = Stopwatch()..start();
 
@@ -131,6 +140,8 @@ class ObstacleDetector {
         cause: e,
         stackTrace: stack,
       ));
+    } finally {
+      _processing = false;
     }
   }
 
@@ -146,6 +157,7 @@ class ObstacleDetector {
     }
     _inputBuffer = null;
     _outputBuffer = null;
+    _processing = false;
     _initialized = false;
     _log.info('ObstacleDetector disposed');
   }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -74,6 +75,66 @@ class TestableObstacleDetector extends ObstacleDetector {
   @override
   Future<void> dispose() async {
     _testInitialized = false;
+  }
+}
+
+/// Testable detector that reproduces the _processing guard from ObstacleDetector.
+///
+/// Uses a [Completer] to control when inference finishes, allowing tests to
+/// verify that concurrent calls are skipped.
+class ConcurrentTestableDetector extends ObstacleDetector {
+  ConcurrentTestableDetector() : super(modelPath: 'test_model.tflite');
+
+  bool _testInitialized = false;
+  bool _processing = false;
+  int detectCallCount = 0;
+  Completer<void>? _inferenceGate;
+
+  @override
+  bool get isInitialized => _testInitialized;
+
+  @override
+  Future<Result<void>> initialize() async {
+    _testInitialized = true;
+    return const Result.success(null);
+  }
+
+  /// Set a completer that detect() will await, simulating slow inference.
+  void setInferenceGate(Completer<void> completer) {
+    _inferenceGate = completer;
+  }
+
+  @override
+  Future<Result<List<Detection>>> detect(ImageData frame) async {
+    if (!_testInitialized) {
+      return const Result.failure(AIProviderFailure(
+        userMessage: 'Le detecteur n est pas initialise.',
+        logMessage: 'ObstacleDetector.detect called before initialize',
+        providerId: 'tflite-yolo',
+      ));
+    }
+
+    // Same guard as the real ObstacleDetector.detect()
+    if (_processing) {
+      return const Result.success([]);
+    }
+    _processing = true;
+
+    try {
+      detectCallCount++;
+      if (_inferenceGate != null) {
+        await _inferenceGate!.future;
+      }
+      return const Result.success([]);
+    } finally {
+      _processing = false;
+    }
+  }
+
+  @override
+  Future<void> dispose() async {
+    _testInitialized = false;
+    _processing = false;
   }
 }
 
@@ -254,6 +315,104 @@ void main() {
         expect(entry.message, isNot(contains('latitude')));
         expect(entry.message, isNot(contains('longitude')));
       }
+    });
+  });
+
+  group('ObstacleDetector concurrency guard', () {
+    test('concurrent detect() call returns empty list (frame skipped)', () async {
+      final detector = ConcurrentTestableDetector();
+      await detector.initialize();
+
+      final gate = Completer<void>();
+      detector.setInferenceGate(gate);
+
+      final frame = ImageData(
+        bytes: Uint8List(100),
+        mimeType: 'image/raw',
+        width: 10,
+        height: 10,
+      );
+
+      // Start first detect — it will block on the gate
+      final first = detector.detect(frame);
+
+      // Second detect while first is processing — should skip
+      final secondResult = await detector.detect(frame);
+
+      expect(secondResult.isSuccess, isTrue);
+      secondResult.when(
+        success: (detections) => expect(detections, isEmpty),
+        failure: (_) => fail('Should have succeeded with empty list'),
+      );
+
+      // Only one real inference happened
+      expect(detector.detectCallCount, 1);
+
+      // Release the gate so the first detect finishes
+      gate.complete();
+      final firstResult = await first;
+
+      expect(firstResult.isSuccess, isTrue);
+      expect(detector.detectCallCount, 1);
+    });
+
+    test('detect() is available again after previous call completes', () async {
+      final detector = ConcurrentTestableDetector();
+      await detector.initialize();
+
+      final gate = Completer<void>();
+      detector.setInferenceGate(gate);
+
+      final frame = ImageData(
+        bytes: Uint8List(100),
+        mimeType: 'image/raw',
+        width: 10,
+        height: 10,
+      );
+
+      // First detect — completes immediately after gate
+      gate.complete();
+      await detector.detect(frame);
+      expect(detector.detectCallCount, 1);
+
+      // Second detect after first completed — should process normally
+      detector.setInferenceGate(Completer<void>()..complete());
+      final result = await detector.detect(frame);
+
+      expect(result.isSuccess, isTrue);
+      expect(detector.detectCallCount, 2);
+    });
+
+    test('detect() resets _processing even on error', () async {
+      final detector = ConcurrentTestableDetector();
+      await detector.initialize();
+
+      final errorGate = Completer<void>();
+      detector.setInferenceGate(errorGate);
+
+      final frame = ImageData(
+        bytes: Uint8List(100),
+        mimeType: 'image/raw',
+        width: 10,
+        height: 10,
+      );
+
+      // Make the gate throw an error
+      errorGate.completeError(Exception('test inference error'));
+
+      // detect should handle the error (via try/finally)
+      // The ConcurrentTestableDetector propagates errors up,
+      // but _processing should still be reset
+      try {
+        await detector.detect(frame);
+      } catch (_) {
+        // Expected
+      }
+
+      // Subsequent detect should work (not stuck in _processing)
+      detector.setInferenceGate(Completer<void>()..complete());
+      final result = await detector.detect(frame);
+      expect(result.isSuccess, isTrue);
     });
   });
 

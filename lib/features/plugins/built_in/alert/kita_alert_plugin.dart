@@ -212,7 +212,9 @@ class KitaAlertPlugin implements KitaPlugin {
     TTSPriority ttsPriority,
     AlertUrgency urgency,
   ) {
-    // Stop any ongoing TTS to avoid queuing
+    // stop() is called directly on ttsService (not via ProfileAdapter) because
+    // it interrupts an ongoing output rather than producing new multi-modal
+    // feedback. This is a cancellation signal, not a routable output.
     unawaited(ttsService.stop());
 
     profileAdapter.feedback(
@@ -250,8 +252,10 @@ class KitaAlertPlugin implements KitaPlugin {
         detectionTime != null &&
         DateTime.now().difference(detectionTime) < _descriptionWindow) {
       final description = buildDetailedDescription(detection);
-      unawaited(
-        ttsService.speak(description, priority: TTSPriority.urgent),
+      profileAdapter.feedback(
+        vocal: () => unawaited(
+          ttsService.speak(description, priority: TTSPriority.urgent),
+        ),
       );
       _log.info('Obstacle description provided');
       return Result.success(PluginResponse(
@@ -261,7 +265,9 @@ class KitaAlertPlugin implements KitaPlugin {
     }
 
     const noObstacleMessage = 'Aucun obstacle recent';
-    unawaited(ttsService.speak(noObstacleMessage));
+    profileAdapter.feedback(
+      vocal: () => unawaited(ttsService.speak(noObstacleMessage)),
+    );
     return const Result.success(PluginResponse(
       type: PluginResponseType.text,
       content: noObstacleMessage,

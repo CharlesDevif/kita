@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -272,6 +271,33 @@ void main() {
     });
   });
 
+  group('unknown command', () {
+    test('returns failure for unrecognized command', () async {
+      final result = await plugin.handleRequest(
+        _request(mockSensors, mockAI, command: 'zoomer'),
+      );
+
+      expect(result.isFailure, isTrue);
+      final failure = (result as Failure).failure;
+      expect(failure, isA<PluginFailure>());
+      expect(failure.userMessage, 'Commande non reconnue.');
+      expect((failure as PluginFailure).pluginId, 'com.kita.describe');
+    });
+
+    test('does not trigger camera capture for unknown command', () async {
+      mockSensors.photoToReturn = _testImage();
+      mockAI.responseToReturn = _aiResponse();
+
+      final result = await plugin.handleRequest(
+        _request(mockSensors, mockAI, command: 'unknown'),
+      );
+
+      expect(result.isFailure, isTrue);
+      // AI should NOT have been called
+      expect(mockAI.lastPromptReceived, isNull);
+    });
+  });
+
   group('silence timeout', () {
     test('resets state to idle after timeout', () async {
       await doInitialDescribe();
@@ -282,6 +308,32 @@ void main() {
       // verify state resets after deactivate
       await plugin.onDeactivate();
       expect(plugin.state.phase, DescribePhase.idle);
+    });
+  });
+
+  group('onReturnPassive callback', () {
+    test('callback can be set on the plugin', () {
+      var called = false;
+      plugin.onReturnPassive = () => called = true;
+
+      // Verify the callback is stored and callable
+      plugin.onReturnPassive!();
+      expect(called, isTrue);
+    });
+
+    test('callback defaults to null', () {
+      expect(plugin.onReturnPassive, isNull);
+    });
+
+    test('onDeactivate does not invoke callback (it is for timer only)', () async {
+      var called = false;
+      plugin.onReturnPassive = () => called = true;
+
+      await doInitialDescribe();
+      await plugin.onDeactivate();
+
+      // onDeactivate cancels the timer, so callback should NOT fire
+      expect(called, isFalse);
     });
   });
 

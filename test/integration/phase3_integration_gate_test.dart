@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 
 import 'package:kita/core/errors/kita_failure.dart';
 import 'package:kita/core/errors/result.dart';
@@ -38,11 +39,15 @@ import 'package:kita/shared/widgets/kita_alert.dart';
 class _MockSensorAccess implements SensorAccess {
   bool capturePhotoCalled = false;
 
-  /// Minimal valid JPEG: SOI marker + APP0 header + EOI marker.
-  static final _fakeJpeg = Uint8List.fromList([
-    0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, //
-    0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
-  ]);
+  /// Real 1x1 JPEG generated via the `image` package so that
+  /// ExifStripper.strip() can decode and re-encode it properly.
+  static final _fakeJpeg = _generateRealJpeg();
+
+  static Uint8List _generateRealJpeg() {
+    final testImage = img.Image(width: 1, height: 1);
+    testImage.setPixelRgba(0, 0, 255, 0, 0, 255);
+    return Uint8List.fromList(img.encodeJpg(testImage));
+  }
 
   @override
   Future<Result<ImageData>> capturePhoto() async {
@@ -440,9 +445,16 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
-  // AC-3 : Test fallback Describe offline
+  // AC-3 : Describe offline — fallback delegated to AI layer
   // ---------------------------------------------------------------------------
-  group('AC-3: Describe fallback offline', () {
+  // Architecture note: The Describe plugin does NOT implement its own offline
+  // fallback / local OCR. Per the architecture, the FallbackChain (E2) is
+  // responsible for selecting the appropriate provider (cloud -> local).
+  // The plugin simply forwards the vision request via AIAccess and propagates
+  // whatever response (success / degraded / failure) the AI layer returns.
+  // These tests verify that the plugin correctly propagates AIResponseStatus
+  // and provider metadata from the underlying AI layer.
+  group('AC-3: Describe offline — fallback delegated to AI layer', () {
     test('AI vision fails -> returns failure (Describe delegates fallback to AI layer)',
         () async {
       final plugin = KitaDescribePlugin();

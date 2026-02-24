@@ -59,6 +59,11 @@ Reponds en 5-8 phrases. Pas de formule d'introduction.''';
   /// Timer for auto-return to passive mode after silence.
   Timer? _silenceTimer;
 
+  /// Optional callback invoked when the plugin auto-returns to passive mode
+  /// after the silence timeout expires. Allows the Shell to react to the
+  /// transition without polling the plugin state.
+  void Function()? onReturnPassive;
+
   /// Expose state for testing.
   DescribeState get state => _state;
 
@@ -114,7 +119,11 @@ Reponds en 5-8 phrases. Pas de formule d'introduction.''';
       'plus de details' || 'details' || 'detaille' => _handleMoreDetails(request),
       'repete' => _handleRepeat(),
       'merci' => _handleThanks(),
-      _ => _handleDescribe(request),
+      _ => Future.value(Result.failure(PluginFailure(
+        userMessage: 'Commande non reconnue.',
+        logMessage: 'Describe: unknown command: $command',
+        pluginId: manifest.id,
+      ))),
     };
   }
 
@@ -265,10 +274,14 @@ Reponds en 5-8 phrases. Pas de formule d'introduction.''';
   }
 
   /// Handle "merci": return to passive mode.
+  ///
+  /// Returns a [PluginResponse] with `metadata['action'] == 'return_passive'`
+  /// to signal to the Shell that the plugin is done and wants to yield control.
+  /// This is the explicit-command counterpart to the silence timer's
+  /// [onReturnPassive] callback.
   Future<Result<PluginResponse>> _handleThanks() async {
     _log.info('Returning to passive mode (merci)');
     _silenceTimer?.cancel();
-    _state = _state.toCompleted();
     _state = DescribeState.idle;
 
     return const Result.success(PluginResponse(
@@ -279,11 +292,13 @@ Reponds en 5-8 phrases. Pas de formule d'introduction.''';
   }
 
   /// Start the silence timer. After [silenceTimeout], auto-return to passive.
+  /// Calls [onReturnPassive] if set, so the Shell can react to the transition.
   void _startSilenceTimer() {
     _silenceTimer?.cancel();
     _silenceTimer = Timer(silenceTimeout, () {
       _log.info('Silence timeout, returning to passive mode');
       _state = DescribeState.idle;
+      onReturnPassive?.call();
     });
   }
 

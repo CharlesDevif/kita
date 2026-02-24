@@ -422,6 +422,25 @@ void main() {
       expect(mockTts.speakCalls.first.priority, TTSPriority.urgent);
     });
 
+    test('describes via ProfileAdapter (not direct TTS)', () async {
+      await plugin.handleRequest(_obstacleRequest());
+      final feedbackCountAfterAlert = mockProfileAdapter.feedbackCalls.length;
+      mockTts.speakCalls.clear();
+
+      await plugin.handleRequest(
+        _makeRequest(command: "c'est quoi"),
+      );
+
+      // ProfileAdapter.feedback must have been called again for the description
+      expect(
+        mockProfileAdapter.feedbackCalls.length,
+        feedbackCountAfterAlert + 1,
+      );
+
+      // TTS was invoked through the vocal callback
+      expect(mockTts.speakCalls.length, 1);
+    });
+
     test('reports no obstacle when no recent detection', () async {
       final result = await plugin.handleRequest(
         _makeRequest(command: "c'est quoi"),
@@ -434,6 +453,24 @@ void main() {
         },
         failure: (_) => fail('Should succeed'),
       );
+    });
+
+    test('no-obstacle response goes via ProfileAdapter', () async {
+      final feedbackCountBefore = mockProfileAdapter.feedbackCalls.length;
+
+      await plugin.handleRequest(
+        _makeRequest(command: "c'est quoi"),
+      );
+
+      // ProfileAdapter.feedback was called for the "no obstacle" message
+      expect(
+        mockProfileAdapter.feedbackCalls.length,
+        feedbackCountBefore + 1,
+      );
+
+      // TTS was invoked through the vocal callback
+      expect(mockTts.speakCalls.length, 1);
+      expect(mockTts.speakCalls.first.text, contains('Aucun obstacle'));
     });
 
     test('describe_obstacle alias also works', () async {
