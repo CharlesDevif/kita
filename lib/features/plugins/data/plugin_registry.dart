@@ -10,6 +10,11 @@ import '../domain/voice_command.dart';
 /// Concrete plugin registry managing lifecycle of all registered plugins.
 ///
 /// Enforces max active plugins limit and crash isolation.
+///
+/// **Deprecated:** Use [AgentSupervisor] from
+/// `lib/features/orchestration/data/agent_supervisor.dart` instead.
+/// See `docs/spec-agent-orchestrator.md` for the migration guide.
+@Deprecated('Use AgentSupervisor instead. See docs/spec-agent-orchestrator.md')
 class PluginRegistryImpl implements PluginRegistryService {
   PluginRegistryImpl({
     this.maxActivePlugins = Limits.maxActivePlugins,

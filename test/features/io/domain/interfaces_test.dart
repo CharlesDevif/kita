@@ -11,8 +11,8 @@ import '../../../mocks/mocks.dart';
 
 void main() {
   group('I/O domain interfaces', () {
-    test('HapticPattern has 5 values', () {
-      expect(HapticPattern.values, hasLength(5));
+    test('HapticPattern has 6 values', () {
+      expect(HapticPattern.values, hasLength(6));
     });
 
     test('TTSPriority has 3 values', () {

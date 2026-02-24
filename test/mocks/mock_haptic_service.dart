@@ -18,4 +18,7 @@ class MockHapticService implements HapticService {
 
   @override
   Future<Result<void>> danger() => trigger(HapticPattern.danger);
+
+  @override
+  Future<Result<void>> presence() => trigger(HapticPattern.presence);
 }

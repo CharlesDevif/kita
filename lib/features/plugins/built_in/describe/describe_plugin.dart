@@ -7,10 +7,13 @@ import '../../../../core/errors/result.dart';
 import '../../../../core/utils/logger.dart';
 import '../../../ai/domain/ai_response.dart';
 import '../../../io/data/exif_stripper.dart';
-import '../../domain/kita_plugin.dart';
-import '../../domain/plugin_manifest.dart';
-import '../../domain/plugin_request.dart';
-import '../../domain/plugin_response.dart';
+import '../../../orchestration/domain/kita_agent.dart';
+import '../../../orchestration/domain/models/agent_input.dart';
+import '../../../orchestration/domain/models/agent_manifest.dart';
+import '../../../orchestration/domain/models/agent_message.dart';
+import '../../../orchestration/domain/models/agent_output.dart';
+import '../../../orchestration/domain/models/output_priority.dart';
+import '../../../orchestration/domain/output_handle.dart';
 import '../../domain/trust_level.dart';
 import '../../domain/voice_command.dart';
 import 'describe_state.dart';
@@ -18,26 +21,22 @@ import 'describe_viewport.dart';
 
 /// KitaDescribePlugin — Photo description vocale avec enchainement.
 ///
-/// Pipeline: capture photo -> strip EXIF -> AI vision -> PluginResponse.text.
+/// Pipeline: capture photo -> strip EXIF -> AI vision -> output.speak().
 /// Supports chaining: "plus de details", "repete", "merci" / silence timeout.
 ///
-/// ## Output pattern: Plugin -> PluginResponse -> Shell -> ProfileAdapter
+/// ## Output pattern: Agent -> OutputHandle -> OutputCoordinator -> TTS
 ///
-/// This plugin returns [PluginResponse] objects containing text content and
-/// metadata. The Shell layer is responsible for routing the response through
-/// [ProfileAdapter.feedback()] to produce multi-modal output:
-/// - **visual:** updates the viewport via [buildViewport()]
-/// - **vocal:** calls TTSService.speak() with the response content
-/// - **haptic:** triggers confirmation vibration
+/// This agent uses [OutputHandle] for all output. It never calls TTS or
+/// HapticService directly. The OutputHandle delegates to the
+/// OutputCoordinator (story 12.3) for priority arbitration.
 ///
-/// The plugin does NOT call ProfileAdapter or TTSService directly. This
-/// separation allows the Shell to adapt output to the user's accessibility
-/// profile (blind, low_vision, standard).
-// TODO(H3): Le timer de silence devrait démarrer après la fin du TTS,
-// pas après la réponse. Nécessite TTSService.onComplete callback.
-// TODO(H4): Stopper le TTS en cours avant nouvelle requête AI lors d'un
-// enchaînement rapide. Nécessite injection de TTSService dans le plugin.
-class KitaDescribePlugin implements KitaPlugin {
+/// ## Silence timeout
+///
+/// After speech completes (via [OutputHandle.speechEvents]), the agent
+/// starts a silence timer of [silenceTimeout] via [Clock.delayed]. When
+/// the timer expires, it calls [OutputHandle.complete()] to signal
+/// the Supervisor to terminate this agent.
+class KitaDescribePlugin implements KitaAgent {
   static final _log = KitaLogger('Plugin.Describe');
 
   /// Prompt for initial concise description (2-3 sentences).
@@ -69,9 +68,9 @@ Réponds en 5-8 phrases. Pas de formule d'introduction.''';
   /// Duration of silence before auto-returning to passive mode.
   static const silenceTimeout = Duration(seconds: 5);
 
-  /// Whether the plugin has been deactivated, to prevent timer callbacks
-  /// from modifying state after disposal.
-  bool _disposed = false;
+  /// Whether the agent has been terminated, to prevent timer callbacks
+  /// from modifying state after termination.
+  bool _terminated = false;
 
   /// Current conversation state.
   DescribeState _state = DescribeState.idle;
@@ -79,25 +78,32 @@ Réponds en 5-8 phrases. Pas de formule d'introduction.''';
   /// Timer for auto-return to passive mode after silence.
   Timer? _silenceTimer;
 
-  /// Optional callback invoked when the plugin auto-returns to passive mode
-  /// after the silence timeout expires. Allows the Shell to react to the
-  /// transition without polling the plugin state.
-  void Function()? onReturnPassive;
+  /// Subscription to speech events from OutputHandle.
+  StreamSubscription<SpeechEvent>? _speechSubscription;
+
+  /// The agent context, set during onSpawn.
+  AgentContext? _context;
 
   /// Expose state for testing.
   DescribeState get state => _state;
 
   @override
-  PluginManifest get manifest => const PluginManifest(
+  AgentManifest get manifest => const AgentManifest(
         id: 'com.kita.describe',
         name: 'Kita Describe',
         version: '1.0.0',
         description: 'Description visuelle de scenes par IA',
         trustLevel: TrustLevel.official,
+        agentType: AgentType.onDemand,
+        priority: AgentPriority.standard,
         permissions: ['camera', 'ai.vision'],
         capabilities: ['vision', 'text'],
         compatibleProfiles: ['blind', 'low_vision', 'standard'],
-        voiceCommands: ['decris', 'describe', 'plus de details', 'repete', 'merci'],
+        subscriptions: {
+          AgentMessageType.cancelAll,
+          AgentMessageType.interruptRequest,
+          AgentMessageType.userCommand,
+        },
       );
 
   @override
@@ -115,46 +121,113 @@ Réponds en 5-8 phrases. Pas de formule d'introduction.''';
       ];
 
   @override
-  Future<void> onActivate() async {
-    _disposed = false;
-    _log.info('Describe plugin activated');
+  Future<void> onSpawn(AgentContext context) async {
+    _terminated = false;
+    _context = context;
+    _state = DescribeState.idle;
+
+    // Subscribe to speech events for the silence timer.
+    _speechSubscription = context.output.speechEvents.listen((event) {
+      if (_terminated) return;
+      if (event == SpeechEvent.completed) {
+        _startSilenceTimer();
+      } else if (event == SpeechEvent.interrupted) {
+        _silenceTimer?.cancel();
+        _silenceTimer = null;
+      }
+    });
+
+    _log.info('Describe agent spawned');
   }
 
   @override
-  Future<void> onDeactivate() async {
-    _disposed = true;
+  Future<void> onSuspend() async {
+    // No-op for onDemand agents.
+    _log.info('Describe agent suspended');
+  }
+
+  @override
+  Future<void> onResume() async {
+    // No-op for onDemand agents.
+    _log.info('Describe agent resumed');
+  }
+
+  @override
+  Future<void> onTerminate() async {
+    _terminated = true;
+
+    // 1. Cancel timers (synchronous)
     _silenceTimer?.cancel();
     _silenceTimer = null;
+
+    // 2. Cancel stream subscriptions (async)
+    await _speechSubscription?.cancel();
+    _speechSubscription = null;
+
+    // 3. Reset state
     _state = DescribeState.idle;
-    _log.info('Describe plugin deactivated');
+
+    // 4. Nullify context (last, after all cleanup)
+    _context = null;
+
+    _log.info('Describe agent terminated');
   }
 
   @override
-  Future<Result<PluginResponse>> handleRequest(PluginRequest request) async {
+  void onBusMessage(AgentMessage message) {
+    if (_terminated) return;
+
+    switch (message.type) {
+      case AgentMessageType.interruptRequest:
+        _log.info('Interrupt request received, cancelling silence timer');
+        _silenceTimer?.cancel();
+        _silenceTimer = null;
+
+      case AgentMessageType.cancelAll:
+        _log.info('Cancel all received, cancelling silence timer');
+        _silenceTimer?.cancel();
+        _silenceTimer = null;
+
+      default:
+        break;
+    }
+  }
+
+  @override
+  Future<Result<AgentOutput>> handleInput(AgentInput input) async {
     _silenceTimer?.cancel();
 
-    final command = request.command;
+    final command = input.command;
     _log.info('Handling command: $command');
 
     return switch (command) {
-      'decris' || 'describe' => _handleDescribe(request),
-      'plus de details' || 'details' || 'detaille' => _handleMoreDetails(request),
+      'decris' || 'describe' => _handleDescribe(),
+      'plus de details' || 'details' || 'detaille' => _handleMoreDetails(),
       'repete' => _handleRepeat(),
       'merci' => _handleThanks(),
       _ => Future.value(Result.failure(PluginFailure(
-        userMessage: 'Commande non reconnue.',
-        logMessage: 'Describe: unknown command: $command',
-        pluginId: manifest.id,
-      ))),
+          userMessage: 'Commande non reconnue.',
+          logMessage: 'Describe: unknown command: $command',
+          pluginId: manifest.id,
+        ))),
     };
   }
 
   /// Handle initial "decris" command: capture -> strip EXIF -> AI vision.
-  Future<Result<PluginResponse>> _handleDescribe(PluginRequest request) async {
+  Future<Result<AgentOutput>> _handleDescribe() async {
+    final context = _context;
+    if (context == null) {
+      return Result.failure(PluginFailure(
+        userMessage: "L'agent n'est pas pret.",
+        logMessage: 'Describe: handleDescribe called without context',
+        pluginId: manifest.id,
+      ));
+    }
+
     _log.info('Starting describe pipeline');
 
     // Step 1: Capture photo via sandboxed sensor access
-    final captureResult = await request.sensors.capturePhoto();
+    final captureResult = await context.sensors.capturePhoto();
     switch (captureResult) {
       case Failure(:final failure):
         _log.error('Photo capture failed: ${failure.logMessage}');
@@ -178,7 +251,7 @@ Réponds en 5-8 phrases. Pas de formule d'introduction.''';
         };
 
         // Step 3: Send to AI vision via sandboxed AI access
-        final aiResult = await request.ai.vision(imageToSend, describePrompt);
+        final aiResult = await context.ai.vision(imageToSend, describePrompt);
         switch (aiResult) {
           case Failure(:final failure):
             _log.error('AI vision failed: ${failure.logMessage}');
@@ -190,7 +263,8 @@ Réponds en 5-8 phrases. Pas de formule d'introduction.''';
             ));
           case Success(:final value):
             final isOffline = value.status == AIResponseStatus.degraded;
-            _log.info('Description received (${value.content.length} chars, offline=$isOffline)');
+            _log.info(
+                'Description received (${value.content.length} chars, offline=$isOffline)');
 
             // Update state for chaining
             _state = _state.withDescription(
@@ -199,14 +273,20 @@ Réponds en 5-8 phrases. Pas de formule d'introduction.''';
               offline: isOffline,
             );
 
-            _startSilenceTimer();
-
             final content = isOffline
                 ? 'Mode local, la description est simplifiee. ${value.content}'
                 : value.content;
 
-            return Result.success(PluginResponse(
-              type: PluginResponseType.text,
+            // Speak via OutputHandle (silence timer starts on speechEvents.completed)
+            if (!_terminated) {
+              await context.output.speak(
+                content,
+                priority: OutputPriority.standard,
+              );
+            }
+
+            return Result.success(AgentOutput(
+              type: AgentOutputType.text,
               content: content,
               metadata: {
                 'provider': value.meta.providerId,
@@ -220,9 +300,9 @@ Réponds en 5-8 phrases. Pas de formule d'introduction.''';
   }
 
   /// Handle "plus de details": re-send same image with enriched prompt.
-  Future<Result<PluginResponse>> _handleMoreDetails(
-      PluginRequest request) async {
-    if (_state.imageData == null) {
+  Future<Result<AgentOutput>> _handleMoreDetails() async {
+    final context = _context;
+    if (context == null || _state.imageData == null) {
       _log.warning('More details requested but no image in state');
       return Result.failure(PluginFailure(
         userMessage: "Dis 'decris' d'abord pour prendre une photo.",
@@ -234,13 +314,14 @@ Réponds en 5-8 phrases. Pas de formule d'introduction.''';
     _log.info('Requesting detailed description');
 
     final aiResult =
-        await request.ai.vision(_state.imageData!, detailedPrompt);
+        await context.ai.vision(_state.imageData!, detailedPrompt);
     switch (aiResult) {
       case Failure(:final failure):
         _log.error('AI vision (detailed) failed: ${failure.logMessage}');
         return Result.failure(PluginFailure(
           userMessage: "Je n'ai pas pu obtenir plus de details.",
-          logMessage: 'Describe: AI vision (detailed) failed: ${failure.logMessage}',
+          logMessage:
+              'Describe: AI vision (detailed) failed: ${failure.logMessage}',
           pluginId: manifest.id,
         ));
       case Success(:final value):
@@ -253,14 +334,19 @@ Réponds en 5-8 phrases. Pas de formule d'introduction.''';
           offline: isOffline,
         );
 
-        _startSilenceTimer();
-
         final content = isOffline
             ? 'Mode local, la description est simplifiee. ${value.content}'
             : value.content;
 
-        return Result.success(PluginResponse(
-          type: PluginResponseType.text,
+        if (!_terminated) {
+          await context.output.speak(
+            content,
+            priority: OutputPriority.standard,
+          );
+        }
+
+        return Result.success(AgentOutput(
+          type: AgentOutputType.text,
           content: content,
           metadata: {
             'provider': value.meta.providerId,
@@ -274,7 +360,7 @@ Réponds en 5-8 phrases. Pas de formule d'introduction.''';
   }
 
   /// Handle "repete": re-read last description without calling AI.
-  Future<Result<PluginResponse>> _handleRepeat() async {
+  Future<Result<AgentOutput>> _handleRepeat() async {
     final lastDesc = _state.lastDescription;
     if (lastDesc == null) {
       _log.warning('Repeat requested but no description in state');
@@ -286,45 +372,52 @@ Réponds en 5-8 phrases. Pas de formule d'introduction.''';
     }
 
     _log.info('Repeating last description');
-    _startSilenceTimer();
 
-    return Result.success(PluginResponse(
-      type: PluginResponseType.text,
+    if (!_terminated && _context != null) {
+      await _context!.output.speak(
+        lastDesc,
+        priority: OutputPriority.standard,
+      );
+    }
+
+    return Result.success(AgentOutput(
+      type: AgentOutputType.text,
       content: lastDesc,
-      metadata: {'repeated': true},
+      metadata: const {'repeated': true},
     ));
   }
 
   /// Handle "merci": return to passive mode.
-  ///
-  /// Returns a [PluginResponse] with `metadata['action'] == 'return_passive'`
-  /// to signal to the Shell that the plugin is done and wants to yield control.
-  /// This is the explicit-command counterpart to the silence timer's
-  /// [onReturnPassive] callback.
-  Future<Result<PluginResponse>> _handleThanks() async {
+  Future<Result<AgentOutput>> _handleThanks() async {
     _log.info('Returning to passive mode (merci)');
     _silenceTimer?.cancel();
-    // Transition through completed before returning to idle, so the full
-    // state machine lifecycle is respected: describing -> completed -> idle.
+    // Transition through completed before returning to idle.
     _state = _state.toCompleted();
     _state = DescribeState.idle;
 
-    return const Result.success(PluginResponse(
-      type: PluginResponseType.text,
+    // Signal completion to supervisor
+    if (!_terminated && _context != null) {
+      _context!.output.complete();
+    }
+
+    return const Result.success(AgentOutput(
+      type: AgentOutputType.text,
       content: '',
       metadata: {'action': 'return_passive'},
     ));
   }
 
-  /// Start the silence timer. After [silenceTimeout], auto-return to passive.
-  /// Calls [onReturnPassive] if set, so the Shell can react to the transition.
+  /// Start the silence timer via [Clock.delayed].
+  ///
+  /// After [silenceTimeout], calls [OutputHandle.complete()] to signal
+  /// that this agent is done and should be terminated by the Supervisor.
   void _startSilenceTimer() {
     _silenceTimer?.cancel();
-    _silenceTimer = Timer(silenceTimeout, () {
-      if (_disposed) return;
-      _log.info('Silence timeout, returning to passive mode');
+    _silenceTimer = _context?.clock.delayed(silenceTimeout, () {
+      if (_terminated) return;
+      _log.info('Silence timeout, signaling completion');
       _state = DescribeState.idle;
-      onReturnPassive?.call();
+      _context?.output.complete();
     });
   }
 

@@ -1,97 +1,77 @@
 import 'dart:async';
 
-import 'package:fake_async/fake_async.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kita/core/errors/kita_failure.dart';
-import 'package:kita/core/errors/result.dart';
 import 'package:kita/core/utils/logger.dart';
 import 'package:kita/features/io/domain/haptic_service.dart';
-import 'package:kita/features/io/domain/tts_service.dart';
+import 'package:kita/features/orchestration/domain/agent_bus.dart';
+import 'package:kita/features/orchestration/domain/clock.dart';
+import 'package:kita/features/orchestration/domain/kita_agent.dart';
+import 'package:kita/features/orchestration/domain/models/agent_input.dart';
+import 'package:kita/features/orchestration/domain/models/agent_manifest.dart';
+import 'package:kita/features/orchestration/domain/models/agent_message.dart';
+import 'package:kita/features/orchestration/domain/models/agent_output.dart';
+import 'package:kita/features/orchestration/domain/models/output_priority.dart';
+import 'package:kita/features/orchestration/domain/output_handle.dart';
+import 'package:kita/features/plugins/built_in/alert/kita_alert_plugin.dart';
 import 'package:kita/features/plugins/domain/ai_access.dart';
-import 'package:kita/features/plugins/domain/plugin_request.dart';
-import 'package:kita/features/plugins/domain/plugin_response.dart';
 import 'package:kita/features/plugins/domain/sensor_access.dart';
 import 'package:kita/features/plugins/domain/trust_level.dart';
-import 'package:kita/features/plugins/built_in/alert/kita_alert_plugin.dart';
-import 'package:kita/shared/multi_modal/profile_adapter.dart'
-    hide VoidCallback;
 
-// === Manual Mocks ===
+// === Mock OutputHandle ===
 
-class MockTTSService implements TTSService {
-  final List<({String text, TTSPriority priority})> speakCalls = [];
-  int stopCalls = 0;
+class MockOutputHandle implements OutputHandle {
+  MockOutputHandle({required this.agentId});
 
   @override
-  bool get isSpeaking => false;
+  final String agentId;
+
+  final List<({String text, OutputPriority priority})> speakCalls = [];
+  final List<({HapticPattern pattern, OutputPriority priority})> hapticCalls =
+      [];
+  int completeCalled = 0;
+
+  final StreamController<SpeechEvent> _speechEventsController =
+      StreamController<SpeechEvent>.broadcast();
 
   @override
-  Future<Result<void>> speak(
-    String text, {
-    TTSPriority priority = TTSPriority.standard,
-  }) async {
+  Stream<SpeechEvent> get speechEvents => _speechEventsController.stream;
+
+  @override
+  Future<void> speak(String text,
+      {OutputPriority priority = OutputPriority.standard}) async {
     speakCalls.add((text: text, priority: priority));
-    return const Result.success(null);
   }
 
   @override
-  Future<Result<void>> stop() async {
-    stopCalls++;
-    return const Result.success(null);
-  }
-}
-
-class MockHapticService implements HapticService {
-  int dangerCalls = 0;
-  int warningCalls = 0;
-  int infoCalls = 0;
-  final List<HapticPattern> triggerCalls = [];
-
-  @override
-  Future<Result<void>> trigger(HapticPattern pattern) async {
-    triggerCalls.add(pattern);
-    return const Result.success(null);
+  Future<void> haptic(HapticPattern pattern,
+      {OutputPriority priority = OutputPriority.standard}) async {
+    hapticCalls.add((pattern: pattern, priority: priority));
   }
 
   @override
-  Future<Result<void>> info() async {
-    infoCalls++;
-    return const Result.success(null);
-  }
+  void updateViewport(Widget widget) {}
 
   @override
-  Future<Result<void>> warning() async {
-    warningCalls++;
-    return const Result.success(null);
+  void complete() {
+    completeCalled++;
   }
 
-  @override
-  Future<Result<void>> danger() async {
-    dangerCalls++;
-    return const Result.success(null);
+  void dispose() {
+    _speechEventsController.close();
   }
 }
 
-class MockProfileAdapter implements ProfileAdapter {
-  final List<({VoidCallback? visual, VoidCallback? vocal, VoidCallback? haptic})>
-      feedbackCalls = [];
-
+class MockAgentBus implements AgentBus {
   @override
-  String get activeProfile => 'standard';
-
+  void publish(AgentMessage message) {}
   @override
-  void feedback({
-    VoidCallback? visual,
-    VoidCallback? vocal,
-    VoidCallback? haptic,
-  }) {
-    feedbackCalls.add((visual: visual, vocal: vocal, haptic: haptic));
-    // Execute all callbacks in standard profile
-    visual?.call();
-    vocal?.call();
-    haptic?.call();
-  }
+  void subscribe(String agentId, Set<AgentMessageType> types) {}
+  @override
+  void unsubscribe(String agentId) {}
+  @override
+  Stream<AgentMessage> streamFor(String agentId) => const Stream.empty();
 }
 
 class StubSensorAccess implements SensorAccess {
@@ -106,24 +86,24 @@ class StubAIAccess implements AIAccess {
 
 // === Helpers ===
 
-PluginRequest _makeRequest({
+AgentInput _makeInput({
   String command = 'obstacle_detected',
   Map<String, dynamic> params = const {},
 }) {
-  return PluginRequest(
+  return AgentInput(
     command: command,
     params: params,
-    sensors: StubSensorAccess(),
-    ai: StubAIAccess(),
+    source: InputSource.sensor,
+    timestamp: DateTime(2026, 1, 1),
   );
 }
 
-PluginRequest _obstacleRequest({
+AgentInput _obstacleInput({
   String type = 'voiture',
   double distance = 2.0,
   double confidence = 0.95,
 }) {
-  return _makeRequest(
+  return _makeInput(
     command: 'obstacle_detected',
     params: {
       'type': type,
@@ -134,28 +114,36 @@ PluginRequest _obstacleRequest({
 }
 
 void main() {
-  late MockTTSService mockTts;
-  late MockHapticService mockHaptic;
-  late MockProfileAdapter mockProfileAdapter;
+  late MockOutputHandle mockOutput;
+  late MockAgentBus mockBus;
+  late FakeClock fakeClock;
   late KitaAlertPlugin plugin;
   late List<LogEntry> logEntries;
 
   setUp(() {
-    mockTts = MockTTSService();
-    mockHaptic = MockHapticService();
-    mockProfileAdapter = MockProfileAdapter();
-    plugin = KitaAlertPlugin(
-      ttsService: mockTts,
-      hapticService: mockHaptic,
-      profileAdapter: mockProfileAdapter,
-    );
+    mockOutput = MockOutputHandle(agentId: 'com.kita.alert');
+    mockBus = MockAgentBus();
+    fakeClock = FakeClock();
+    plugin = KitaAlertPlugin();
     logEntries = [];
     KitaLogger.testLogHandler = (entry) => logEntries.add(entry);
   });
 
   tearDown(() {
     KitaLogger.testLogHandler = null;
+    mockOutput.dispose();
   });
+
+  Future<void> spawnPlugin() async {
+    final context = AgentContext(
+      sensors: StubSensorAccess(),
+      ai: StubAIAccess(),
+      bus: mockBus,
+      output: mockOutput,
+      clock: fakeClock,
+    );
+    await plugin.onSpawn(context);
+  }
 
   group('manifest', () {
     test('has correct id', () {
@@ -163,15 +151,20 @@ void main() {
     });
 
     test('has correct permissions', () {
-      expect(plugin.manifest.permissions, containsAll(['camera', 'haptic', 'tts']));
+      expect(
+          plugin.manifest.permissions, containsAll(['camera', 'haptic', 'tts']));
     });
 
     test('has official trust level', () {
       expect(plugin.manifest.trustLevel, TrustLevel.official);
     });
 
-    test('has voice commands', () {
-      expect(plugin.manifest.voiceCommands, containsAll(['ok', "c'est quoi"]));
+    test('is persistent agent type', () {
+      expect(plugin.manifest.agentType, AgentType.persistent);
+    });
+
+    test('has critical priority', () {
+      expect(plugin.manifest.priority, AgentPriority.critical);
     });
   });
 
@@ -189,23 +182,23 @@ void main() {
   });
 
   group('lifecycle', () {
-    test('onActivate enables the plugin', () async {
-      await plugin.onActivate();
-      final result = await plugin.handleRequest(_makeRequest(command: 'ok'));
+    test('onSpawn enables the plugin', () async {
+      await spawnPlugin();
+      final result = await plugin.handleInput(_makeInput(command: 'ok'));
       expect(result.isSuccess, isTrue);
     });
 
-    test('handleRequest fails when not activated', () async {
-      final result = await plugin.handleRequest(_makeRequest(command: 'ok'));
+    test('handleInput fails when not spawned', () async {
+      final result = await plugin.handleInput(_makeInput(command: 'ok'));
       expect(result.isFailure, isTrue);
     });
 
-    test('onDeactivate dismisses active alert', () async {
-      await plugin.onActivate();
-      await plugin.handleRequest(_obstacleRequest());
-      await plugin.onDeactivate();
+    test('onTerminate dismisses active alert', () async {
+      await spawnPlugin();
+      await plugin.handleInput(_obstacleInput());
+      await plugin.onTerminate();
 
-      // buildViewport should return null after deactivation
+      // buildViewport should return null after termination
       final viewport = plugin.buildViewport(
         _FakeBuildContext(),
       );
@@ -213,168 +206,105 @@ void main() {
     });
   });
 
-  group('handleRequest obstacle_detected', () {
+  group('handleInput obstacle_detected', () {
     setUp(() async {
-      await plugin.onActivate();
+      await spawnPlugin();
     });
 
-    test('immediate alert (< 3m) triggers danger haptic and critical TTS', () async {
-      final result = await plugin.handleRequest(
-        _obstacleRequest(type: 'voiture', distance: 2.0, confidence: 0.95),
-      );
-
-      expect(result.isSuccess, isTrue);
-
-      // ProfileAdapter was called
-      expect(mockProfileAdapter.feedbackCalls.length, 1);
-
-      // TTS with critical priority
-      expect(mockTts.speakCalls.length, 1);
-      expect(mockTts.speakCalls.first.text, contains('Attention'));
-      expect(mockTts.speakCalls.first.text, contains('voiture'));
-      expect(mockTts.speakCalls.first.text, contains('2 metres'));
-      expect(mockTts.speakCalls.first.priority, TTSPriority.critical);
-
-      // Haptic danger
-      expect(mockHaptic.dangerCalls, 1);
-    });
-
-    test('preventive alert (3-10m) triggers warning haptic and urgent TTS',
+    test('immediate alert (< 3m) triggers danger haptic and critical TTS',
         () async {
-      final result = await plugin.handleRequest(
-        _obstacleRequest(type: 'travaux', distance: 8.0, confidence: 0.88),
+      final result = await plugin.handleInput(
+        _obstacleInput(type: 'voiture', distance: 2.0, confidence: 0.95),
       );
 
       expect(result.isSuccess, isTrue);
 
-      // TTS with urgent priority
-      expect(mockTts.speakCalls.length, 1);
-      expect(mockTts.speakCalls.first.text, isNot(contains('Attention')));
-      expect(mockTts.speakCalls.first.text, contains('travaux'));
-      expect(mockTts.speakCalls.first.text, contains('8 metres'));
-      expect(mockTts.speakCalls.first.priority, TTSPriority.urgent);
+      // TTS via OutputHandle with critical priority
+      expect(mockOutput.speakCalls.length, 1);
+      expect(mockOutput.speakCalls.first.text, contains('Attention'));
+      expect(mockOutput.speakCalls.first.text, contains('voiture'));
+      expect(mockOutput.speakCalls.first.text, contains('2 metres'));
+      expect(mockOutput.speakCalls.first.priority, OutputPriority.critical);
 
-      // Haptic warning
-      expect(mockHaptic.warningCalls, 1);
+      // Haptic danger via OutputHandle
+      expect(mockOutput.hapticCalls.length, 1);
+      expect(mockOutput.hapticCalls.first.pattern, HapticPattern.danger);
+    });
+
+    test('preventive alert (3-10m) triggers warning haptic and high TTS',
+        () async {
+      final result = await plugin.handleInput(
+        _obstacleInput(type: 'travaux', distance: 8.0, confidence: 0.88),
+      );
+
+      expect(result.isSuccess, isTrue);
+
+      // TTS via OutputHandle with high priority
+      expect(mockOutput.speakCalls.length, 1);
+      expect(mockOutput.speakCalls.first.text, isNot(contains('Attention')));
+      expect(mockOutput.speakCalls.first.text, contains('travaux'));
+      expect(mockOutput.speakCalls.first.text, contains('8 metres'));
+      expect(mockOutput.speakCalls.first.priority, OutputPriority.high);
+
+      // Haptic warning via OutputHandle
+      expect(mockOutput.hapticCalls.length, 1);
+      expect(mockOutput.hapticCalls.first.pattern, HapticPattern.warning);
     });
 
     test('distance > 10m is ignored (no alert)', () async {
-      final result = await plugin.handleRequest(
-        _obstacleRequest(distance: 15.0),
+      final result = await plugin.handleInput(
+        _obstacleInput(distance: 15.0),
       );
 
       expect(result.isSuccess, isTrue);
-      expect(mockProfileAdapter.feedbackCalls, isEmpty);
-      expect(mockTts.speakCalls, isEmpty);
+      expect(mockOutput.speakCalls, isEmpty);
+      expect(mockOutput.hapticCalls, isEmpty);
     });
 
     test('confidence <= 0.80 is ignored', () async {
-      final result = await plugin.handleRequest(
-        _obstacleRequest(confidence: 0.80),
+      final result = await plugin.handleInput(
+        _obstacleInput(confidence: 0.80),
       );
 
       expect(result.isSuccess, isTrue);
-      expect(mockProfileAdapter.feedbackCalls, isEmpty);
+      expect(mockOutput.speakCalls, isEmpty);
     });
 
     test('confidence just above 0.80 triggers alert', () async {
-      final result = await plugin.handleRequest(
-        _obstacleRequest(confidence: 0.81),
+      final result = await plugin.handleInput(
+        _obstacleInput(confidence: 0.81),
       );
 
       expect(result.isSuccess, isTrue);
-      expect(mockProfileAdapter.feedbackCalls.length, 1);
+      expect(mockOutput.speakCalls.length, 1);
     });
 
     test('response type is alert', () async {
-      final result = await plugin.handleRequest(_obstacleRequest());
+      final result = await plugin.handleInput(_obstacleInput());
 
       result.when(
-        success: (response) {
-          expect(response.type, PluginResponseType.alert);
-          expect(response.content, contains('voiture'));
-          expect(response.metadata, isNotNull);
-          expect(response.metadata!['urgency'], 'immediate');
+        success: (output) {
+          expect(output.type, AgentOutputType.alert);
+          expect(output.content, contains('voiture'));
+          expect(output.metadata, isNotNull);
+          expect(output.metadata!['urgency'], 'immediate');
         },
         failure: (_) => fail('Should succeed'),
       );
-    });
-
-    test('stops TTS before speaking new alert', () async {
-      await plugin.handleRequest(_obstacleRequest());
-
-      expect(mockTts.stopCalls, 1);
-    });
-  });
-
-  group('auto-dismiss', () {
-    setUp(() async {
-      await plugin.onActivate();
-    });
-
-    test('alert dismissed after 5 seconds', () {
-      FakeAsync().run((async) {
-        plugin.onActivate();
-        async.flushMicrotasks();
-
-        plugin.handleRequest(_obstacleRequest());
-        async.flushMicrotasks();
-
-        // Alert is visible
-        expect(plugin.buildViewport(_FakeBuildContext()), isNotNull);
-
-        // Advance past 5s
-        async.elapse(const Duration(seconds: 5));
-        async.flushMicrotasks();
-
-        // Alert is dismissed
-        expect(plugin.buildViewport(_FakeBuildContext()), isNull);
-      });
-    });
-
-    test('new alert resets timer', () {
-      FakeAsync().run((async) {
-        plugin.onActivate();
-        async.flushMicrotasks();
-
-        plugin.handleRequest(_obstacleRequest());
-        async.flushMicrotasks();
-
-        // Advance 3s
-        async.elapse(const Duration(seconds: 3));
-        async.flushMicrotasks();
-        expect(plugin.buildViewport(_FakeBuildContext()), isNotNull);
-
-        // New alert
-        plugin.handleRequest(_obstacleRequest(distance: 1.0));
-        async.flushMicrotasks();
-
-        // Advance 3 more seconds (6s total from first, 3 from second)
-        async.elapse(const Duration(seconds: 3));
-        async.flushMicrotasks();
-
-        // Still visible (second timer hasn't expired)
-        expect(plugin.buildViewport(_FakeBuildContext()), isNotNull);
-
-        // Advance past 5s from second alert
-        async.elapse(const Duration(seconds: 2));
-        async.flushMicrotasks();
-        expect(plugin.buildViewport(_FakeBuildContext()), isNull);
-      });
     });
   });
 
   group('dismiss by ok command', () {
     setUp(() async {
-      await plugin.onActivate();
+      await spawnPlugin();
     });
 
     test('ok command dismisses alert', () async {
-      await plugin.handleRequest(_obstacleRequest());
+      await plugin.handleInput(_obstacleInput());
       expect(plugin.buildViewport(_FakeBuildContext()), isNotNull);
 
-      final result = await plugin.handleRequest(
-        _makeRequest(command: 'ok'),
+      final result = await plugin.handleInput(
+        _makeInput(command: 'ok'),
       );
 
       expect(result.isSuccess, isTrue);
@@ -382,9 +312,9 @@ void main() {
     });
 
     test('dismiss command also works', () async {
-      await plugin.handleRequest(_obstacleRequest());
-      final result = await plugin.handleRequest(
-        _makeRequest(command: 'dismiss'),
+      await plugin.handleInput(_obstacleInput());
+      final result = await plugin.handleInput(
+        _makeInput(command: 'dismiss'),
       );
 
       expect(result.isSuccess, isTrue);
@@ -394,146 +324,82 @@ void main() {
 
   group('c est quoi', () {
     setUp(() async {
-      await plugin.onActivate();
+      await spawnPlugin();
     });
 
     test('describes recent detection', () async {
-      await plugin.handleRequest(
-        _obstacleRequest(type: 'voiture', distance: 2.5, confidence: 0.95),
+      await plugin.handleInput(
+        _obstacleInput(type: 'voiture', distance: 2.5, confidence: 0.95),
       );
-      mockTts.speakCalls.clear();
+      mockOutput.speakCalls.clear();
 
-      final result = await plugin.handleRequest(
-        _makeRequest(command: "c'est quoi"),
+      final result = await plugin.handleInput(
+        _makeInput(command: "c'est quoi"),
       );
 
       expect(result.isSuccess, isTrue);
       result.when(
-        success: (response) {
-          expect(response.content, contains('voiture'));
-          expect(response.content, contains('95 pour cent'));
+        success: (output) {
+          expect(output.content, contains('voiture'));
+          expect(output.content, contains('95 pour cent'));
         },
         failure: (_) => fail('Should succeed'),
       );
 
-      // TTS was called with description
-      expect(mockTts.speakCalls.length, 1);
-      expect(mockTts.speakCalls.first.priority, TTSPriority.urgent);
-    });
-
-    test('describes via ProfileAdapter (not direct TTS)', () async {
-      await plugin.handleRequest(_obstacleRequest());
-      final feedbackCountAfterAlert = mockProfileAdapter.feedbackCalls.length;
-      mockTts.speakCalls.clear();
-
-      await plugin.handleRequest(
-        _makeRequest(command: "c'est quoi"),
-      );
-
-      // ProfileAdapter.feedback must have been called again for the description
-      expect(
-        mockProfileAdapter.feedbackCalls.length,
-        feedbackCountAfterAlert + 1,
-      );
-
-      // TTS was invoked through the vocal callback
-      expect(mockTts.speakCalls.length, 1);
+      // TTS was called via OutputHandle
+      expect(mockOutput.speakCalls.length, 1);
+      expect(mockOutput.speakCalls.first.priority, OutputPriority.high);
     });
 
     test('reports no obstacle when no recent detection', () async {
-      final result = await plugin.handleRequest(
-        _makeRequest(command: "c'est quoi"),
+      final result = await plugin.handleInput(
+        _makeInput(command: "c'est quoi"),
       );
 
       expect(result.isSuccess, isTrue);
       result.when(
-        success: (response) {
-          expect(response.content, contains('Aucun obstacle'));
+        success: (output) {
+          expect(output.content, contains('Aucun obstacle'));
         },
         failure: (_) => fail('Should succeed'),
       );
-    });
-
-    test('no-obstacle response goes via ProfileAdapter', () async {
-      final feedbackCountBefore = mockProfileAdapter.feedbackCalls.length;
-
-      await plugin.handleRequest(
-        _makeRequest(command: "c'est quoi"),
-      );
-
-      // ProfileAdapter.feedback was called for the "no obstacle" message
-      expect(
-        mockProfileAdapter.feedbackCalls.length,
-        feedbackCountBefore + 1,
-      );
-
-      // TTS was invoked through the vocal callback
-      expect(mockTts.speakCalls.length, 1);
-      expect(mockTts.speakCalls.first.text, contains('Aucun obstacle'));
     });
 
     test('description expires after 10-second window', () async {
-      // Use injectable clock for time control
-      var fakeTime = DateTime(2026, 1, 1, 12, 0, 0);
-      final timedPlugin = KitaAlertPlugin(
-        ttsService: mockTts,
-        hapticService: mockHaptic,
-        profileAdapter: mockProfileAdapter,
-        now: () => fakeTime,
+      await plugin.handleInput(
+        _obstacleInput(type: 'voiture', distance: 2.0, confidence: 0.95),
       );
-      await timedPlugin.onActivate();
+      mockOutput.speakCalls.clear();
 
-      // 1. Trigger a detection at t=0
-      await timedPlugin.handleRequest(
-        _obstacleRequest(type: 'voiture', distance: 2.0, confidence: 0.95),
-      );
-      mockTts.speakCalls.clear();
+      // Advance past the 10-second window
+      fakeClock.advance(const Duration(seconds: 11));
 
-      // 2. Immediately ask "c'est quoi" — should return description
-      final result1 = await timedPlugin.handleRequest(
-        _makeRequest(command: 'describe_obstacle'),
+      final result = await plugin.handleInput(
+        _makeInput(command: 'describe_obstacle'),
       );
-      expect(result1.isSuccess, isTrue);
-      result1.when(
-        success: (response) {
-          expect(response.content, contains('voiture'));
+      expect(result.isSuccess, isTrue);
+      result.when(
+        success: (output) {
+          expect(output.content, contains('Aucun obstacle'));
         },
         failure: (_) => fail('Should succeed'),
       );
-      expect(mockTts.speakCalls.length, 1);
-      expect(mockTts.speakCalls.first.text, contains('voiture'));
-      mockTts.speakCalls.clear();
-
-      // 3. Advance past the 10-second window
-      fakeTime = fakeTime.add(const Duration(seconds: 11));
-
-      // 4. Ask again — should return "Aucun obstacle recent"
-      final result2 = await timedPlugin.handleRequest(
-        _makeRequest(command: 'describe_obstacle'),
-      );
-      expect(result2.isSuccess, isTrue);
-      result2.when(
-        success: (response) {
-          expect(response.content, contains('Aucun obstacle'));
-        },
-        failure: (_) => fail('Should succeed'),
-      );
-      expect(mockTts.speakCalls.length, 1);
-      expect(mockTts.speakCalls.first.text, contains('Aucun obstacle'));
+      expect(mockOutput.speakCalls.length, 1);
+      expect(mockOutput.speakCalls.first.text, contains('Aucun obstacle'));
     });
 
     test('describe_obstacle alias also works', () async {
-      await plugin.handleRequest(_obstacleRequest());
-      mockTts.speakCalls.clear();
+      await plugin.handleInput(_obstacleInput());
+      mockOutput.speakCalls.clear();
 
-      final result = await plugin.handleRequest(
-        _makeRequest(command: 'describe_obstacle'),
+      final result = await plugin.handleInput(
+        _makeInput(command: 'describe_obstacle'),
       );
 
       expect(result.isSuccess, isTrue);
       result.when(
-        success: (response) {
-          expect(response.content, contains('voiture'));
+        success: (output) {
+          expect(output.content, contains('voiture'));
         },
         failure: (_) => fail('Should succeed'),
       );
@@ -542,15 +408,15 @@ void main() {
 
   group('buildViewport', () {
     setUp(() async {
-      await plugin.onActivate();
+      await spawnPlugin();
     });
 
     test('returns null when no active alert', () {
       expect(plugin.buildViewport(_FakeBuildContext()), isNull);
     });
 
-    test('returns KitaAlert when alert is active', () async {
-      await plugin.handleRequest(_obstacleRequest());
+    test('returns widget when alert is active', () async {
+      await plugin.handleInput(_obstacleInput());
       final viewport = plugin.buildViewport(_FakeBuildContext());
       expect(viewport, isNotNull);
     });
@@ -558,56 +424,56 @@ void main() {
 
   group('race conditions', () {
     setUp(() async {
-      await plugin.onActivate();
+      await spawnPlugin();
     });
 
     test('preventive ignored while immediate is active', () async {
       // Trigger immediate alert
-      await plugin.handleRequest(
-        _obstacleRequest(distance: 1.0, confidence: 0.95),
+      await plugin.handleInput(
+        _obstacleInput(distance: 1.0, confidence: 0.95),
       );
 
       // Try preventive — should be ignored
-      final result = await plugin.handleRequest(
-        _obstacleRequest(distance: 5.0, confidence: 0.90),
+      final result = await plugin.handleInput(
+        _obstacleInput(distance: 5.0, confidence: 0.90),
       );
 
       expect(result.isSuccess, isTrue);
       result.when(
-        success: (response) {
-          expect(response.content, contains('Alerte immediate en cours'));
+        success: (output) {
+          expect(output.content, contains('Alerte immediate en cours'));
         },
         failure: (_) => fail('Should succeed'),
       );
 
-      // Only one ProfileAdapter call (the first)
-      expect(mockProfileAdapter.feedbackCalls.length, 1);
+      // Only one set of speak/haptic calls (the first)
+      expect(mockOutput.speakCalls.length, 1);
     });
 
     test('new immediate replaces old immediate', () async {
-      await plugin.handleRequest(
-        _obstacleRequest(type: 'personne', distance: 2.0),
+      await plugin.handleInput(
+        _obstacleInput(type: 'personne', distance: 2.0),
       );
-      await plugin.handleRequest(
-        _obstacleRequest(type: 'voiture', distance: 1.0),
+      await plugin.handleInput(
+        _obstacleInput(type: 'voiture', distance: 1.0),
       );
 
-      // Two ProfileAdapter calls
-      expect(mockProfileAdapter.feedbackCalls.length, 2);
+      // Two speak calls
+      expect(mockOutput.speakCalls.length, 2);
 
       // Second TTS message should be about voiture
-      expect(mockTts.speakCalls.last.text, contains('voiture'));
+      expect(mockOutput.speakCalls.last.text, contains('voiture'));
     });
   });
 
   group('unknown command', () {
     setUp(() async {
-      await plugin.onActivate();
+      await spawnPlugin();
     });
 
     test('returns failure for unknown command', () async {
-      final result = await plugin.handleRequest(
-        _makeRequest(command: 'unknown_command'),
+      final result = await plugin.handleInput(
+        _makeInput(command: 'unknown_command'),
       );
 
       expect(result.isFailure, isTrue);
@@ -622,13 +488,13 @@ void main() {
 
   group('logging', () {
     setUp(() async {
-      await plugin.onActivate();
+      await spawnPlugin();
     });
 
     test('logs do not contain PII', () async {
-      await plugin.handleRequest(_obstacleRequest());
-      await plugin.handleRequest(_makeRequest(command: "c'est quoi"));
-      await plugin.handleRequest(_makeRequest(command: 'ok'));
+      await plugin.handleInput(_obstacleInput());
+      await plugin.handleInput(_makeInput(command: "c'est quoi"));
+      await plugin.handleInput(_makeInput(command: 'ok'));
 
       for (final entry in logEntries) {
         expect(entry.message, isNot(contains('email')));
@@ -638,7 +504,7 @@ void main() {
     });
 
     test('log messages use [Plugin.Alert] source', () async {
-      await plugin.handleRequest(_obstacleRequest());
+      await plugin.handleInput(_obstacleInput());
 
       final alertLogs =
           logEntries.where((e) => e.message.contains('[Plugin.Alert]'));

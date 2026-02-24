@@ -1,4 +1,4 @@
-import 'dart:async' show unawaited;
+import 'dart:async' show StreamController, unawaited;
 import 'dart:collection';
 
 import 'package:flutter_tts/flutter_tts.dart';
@@ -6,6 +6,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import '../../../core/errors/kita_failure.dart';
 import '../../../core/errors/result.dart';
 import '../../../core/utils/logger.dart';
+import '../domain/speech_event.dart';
 import '../domain/tts_service.dart';
 
 /// A queued speech request with priority.
@@ -49,8 +50,15 @@ class TTSServiceImpl implements TTSService {
   _SpeechRequest? _currentRequest;
   bool _speaking = false;
 
+  /// Broadcast stream controller for speech lifecycle events.
+  final StreamController<SpeechEvent> _speechController =
+      StreamController<SpeechEvent>.broadcast();
+
   @override
   bool get isSpeaking => _speaking;
+
+  @override
+  Stream<SpeechEvent> get speechEvents => _speechController.stream;
 
   /// The priority of the currently speaking message, if any.
   TTSPriority? get currentPriority => _currentRequest?.priority;
@@ -68,7 +76,28 @@ class TTSServiceImpl implements TTSService {
       await _tts.setSpeechRate(0.5);
       await _tts.setVolume(1.0);
 
-      _tts.setCompletionHandler(_onSpeechComplete);
+      _tts.setStartHandler(() {
+        if (!_speechController.isClosed) {
+          _speechController
+              .add(SpeechEvent.started(text: _currentRequest?.text ?? ''));
+        }
+      });
+
+      _tts.setCompletionHandler(() {
+        if (!_speechController.isClosed) {
+          _speechController
+              .add(SpeechEvent.completed(text: _currentRequest?.text ?? ''));
+        }
+        _onSpeechComplete();
+      });
+
+      _tts.setCancelHandler(() {
+        if (!_speechController.isClosed) {
+          _speechController
+              .add(SpeechEvent.interrupted(text: _currentRequest?.text ?? ''));
+        }
+        _onSpeechComplete();
+      });
 
       _initialized = true;
       _log.info('TTS initialized, language: $language');
@@ -125,6 +154,7 @@ class TTSServiceImpl implements TTSService {
 
       await _tts.stop();
       _speaking = false;
+
       _log.info('TTS stopped');
       return const Result.success(null);
     } catch (e, stack) {
@@ -174,5 +204,6 @@ class TTSServiceImpl implements TTSService {
     if (_initialized) {
       _tts.stop();
     }
+    _speechController.close();
   }
 }

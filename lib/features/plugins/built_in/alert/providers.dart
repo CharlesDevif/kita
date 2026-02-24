@@ -2,9 +2,6 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../io/data/providers/haptic_providers.dart';
-import '../../../io/data/providers/tts_providers.dart';
-import '../../../../shared/multi_modal/profile_adapter_provider.dart';
 import 'kita_alert_plugin.dart';
 import 'obstacle_detector.dart';
 
@@ -20,18 +17,11 @@ final obstacleDetectorProvider = Provider<ObstacleDetector>((ref) {
   return detector;
 });
 
-/// Provides the [KitaAlertPlugin] instance with injected dependencies.
+/// Provides the [KitaAlertPlugin] agent instance.
 ///
-/// Reads [ttsServiceProvider], [hapticServiceProvider], and
-/// [profileAdapterProvider] to construct the plugin with all required
-/// services for multi-modal alert output.
+/// Since KitaAlertPlugin was migrated to [KitaAgent], it no longer takes
+/// constructor parameters. All services (TTS, haptics, profile adapter)
+/// are injected via [AgentContext] at spawn time.
 final kitaAlertPluginProvider = Provider<KitaAlertPlugin>((ref) {
-  final tts = ref.watch(ttsServiceProvider);
-  final haptic = ref.watch(hapticServiceProvider);
-  final profileAdapter = ref.watch(profileAdapterProvider);
-  return KitaAlertPlugin(
-    ttsService: tts,
-    hapticService: haptic,
-    profileAdapter: profileAdapter,
-  );
+  return KitaAlertPlugin();
 });

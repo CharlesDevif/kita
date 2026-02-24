@@ -66,6 +66,9 @@ class HapticServiceImpl implements HapticService {
   @override
   Future<Result<void>> danger() => trigger(HapticPattern.danger);
 
+  @override
+  Future<Result<void>> presence() => trigger(HapticPattern.presence);
+
   /// Fallback using Flutter's built-in [HapticFeedback] API.
   Future<Result<void>> _fallbackHaptic(HapticPattern pattern) async {
     try {
@@ -77,6 +80,13 @@ class HapticServiceImpl implements HapticService {
           await HapticFeedback.mediumImpact();
         case HapticPattern.danger:
           await HapticFeedback.heavyImpact();
+        case HapticPattern.presence:
+          // Triple soft heartbeat: 3x lightImpact with 80ms between each.
+          await HapticFeedback.lightImpact();
+          await Future<void>.delayed(const Duration(milliseconds: 80));
+          await HapticFeedback.lightImpact();
+          await Future<void>.delayed(const Duration(milliseconds: 80));
+          await HapticFeedback.lightImpact();
         case HapticPattern.custom:
           await HapticFeedback.vibrate();
         case HapticPattern.presence:

@@ -1,13 +1,81 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kita/core/errors/kita_failure.dart';
 import 'package:kita/core/errors/result.dart';
 import 'package:kita/core/utils/logger.dart';
+import 'package:kita/features/io/domain/haptic_service.dart';
+import 'package:kita/features/orchestration/domain/agent_bus.dart';
+import 'package:kita/features/orchestration/domain/clock.dart';
+import 'package:kita/features/orchestration/domain/kita_agent.dart';
+import 'package:kita/features/orchestration/domain/models/agent_input.dart';
+import 'package:kita/features/orchestration/domain/models/agent_manifest.dart';
+import 'package:kita/features/orchestration/domain/models/agent_message.dart';
+import 'package:kita/features/orchestration/domain/models/agent_output.dart';
+import 'package:kita/features/orchestration/domain/models/output_priority.dart';
+import 'package:kita/features/orchestration/domain/output_handle.dart';
 import 'package:kita/features/plugins/built_in/describe/describe_plugin.dart';
-import 'package:kita/features/plugins/domain/plugin_response.dart';
 import 'package:kita/features/plugins/domain/trust_level.dart';
 
 import 'describe_test_helpers.dart';
+
+// === Mock OutputHandle ===
+
+class MockOutputHandle implements OutputHandle {
+  MockOutputHandle({required this.agentId});
+
+  @override
+  final String agentId;
+
+  final List<({String text, OutputPriority priority})> speakCalls = [];
+
+  final StreamController<SpeechEvent> speechEventsController =
+      StreamController<SpeechEvent>.broadcast();
+
+  @override
+  Stream<SpeechEvent> get speechEvents => speechEventsController.stream;
+
+  @override
+  Future<void> speak(String text,
+      {OutputPriority priority = OutputPriority.standard}) async {
+    speakCalls.add((text: text, priority: priority));
+  }
+
+  @override
+  Future<void> haptic(HapticPattern pattern,
+      {OutputPriority priority = OutputPriority.standard}) async {}
+
+  @override
+  void updateViewport(Widget widget) {}
+
+  @override
+  void complete() {}
+
+  void dispose() {
+    speechEventsController.close();
+  }
+}
+
+class MockAgentBus implements AgentBus {
+  @override
+  void publish(AgentMessage message) {}
+  @override
+  void subscribe(String agentId, Set<AgentMessageType> types) {}
+  @override
+  void unsubscribe(String agentId) {}
+  @override
+  Stream<AgentMessage> streamFor(String agentId) => const Stream.empty();
+}
+
+AgentInput _agentInput({String command = 'decris'}) {
+  return AgentInput(
+    command: command,
+    params: const {},
+    source: InputSource.voice,
+    timestamp: DateTime(2026, 1, 1),
+  );
+}
 
 // --- Tests ---
 
@@ -15,19 +83,37 @@ void main() {
   late KitaDescribePlugin plugin;
   late MockSensorAccess mockSensors;
   late MockAIAccess mockAI;
+  late MockOutputHandle mockOutput;
+  late MockAgentBus mockBus;
+  late FakeClock fakeClock;
   late List<LogEntry> logEntries;
 
   setUp(() {
     plugin = KitaDescribePlugin();
     mockSensors = MockSensorAccess();
     mockAI = MockAIAccess();
+    mockOutput = MockOutputHandle(agentId: 'com.kita.describe');
+    mockBus = MockAgentBus();
+    fakeClock = FakeClock();
     logEntries = [];
     KitaLogger.testLogHandler = (entry) => logEntries.add(entry);
   });
 
   tearDown(() {
     KitaLogger.testLogHandler = null;
+    mockOutput.dispose();
   });
+
+  Future<void> spawnPlugin() async {
+    final context = AgentContext(
+      sensors: mockSensors,
+      ai: mockAI,
+      bus: mockBus,
+      output: mockOutput,
+      clock: fakeClock,
+    );
+    await plugin.onSpawn(context);
+  }
 
   group('manifest', () {
     test('has correct id', () {
@@ -61,11 +147,12 @@ void main() {
       );
     });
 
-    test('declares voice commands in manifest', () {
-      expect(
-        plugin.manifest.voiceCommands,
-        containsAll(['decris', 'describe']),
-      );
+    test('is onDemand agent type', () {
+      expect(plugin.manifest.agentType, AgentType.onDemand);
+    });
+
+    test('has standard priority', () {
+      expect(plugin.manifest.priority, AgentPriority.standard);
     });
   });
 
@@ -94,39 +181,41 @@ void main() {
     });
   });
 
-  group('handleRequest', () {
+  group('handleInput', () {
+    setUp(() async {
+      await spawnPlugin();
+    });
+
     test('returns text description on full success', () async {
       mockSensors.photoToReturn = testImage();
       mockAI.responseToReturn = testAIResponse();
 
-      final result =
-          await plugin.handleRequest(testRequest(mockSensors, mockAI));
+      final result = await plugin.handleInput(_agentInput());
 
       expect(result.isSuccess, isTrue);
-      final response = (result as Success<PluginResponse>).value;
-      expect(response.type, PluginResponseType.text);
-      expect(response.content, contains('salon'));
+      final output = (result as Success<AgentOutput>).value;
+      expect(output.type, AgentOutputType.text);
+      expect(output.content, contains('salon'));
     });
 
     test('response metadata contains provider info', () async {
       mockSensors.photoToReturn = testImage();
       mockAI.responseToReturn = testAIResponse();
 
-      final result =
-          await plugin.handleRequest(testRequest(mockSensors, mockAI));
-      final response = (result as Success<PluginResponse>).value;
+      final result = await plugin.handleInput(_agentInput());
+      final output = (result as Success<AgentOutput>).value;
 
-      expect(response.metadata, isNotNull);
-      expect(response.metadata!['provider'], 'claude');
-      expect(response.metadata!['latency_ms'], 2500);
-      expect(response.metadata!['tier'], 'cloudPowerful');
+      expect(output.metadata, isNotNull);
+      expect(output.metadata!['provider'], 'claude');
+      expect(output.metadata!['latency_ms'], 2500);
+      expect(output.metadata!['tier'], 'cloudPowerful');
     });
 
     test('sends describe prompt to AI vision', () async {
       mockSensors.photoToReturn = testImage();
       mockAI.responseToReturn = testAIResponse();
 
-      await plugin.handleRequest(testRequest(mockSensors, mockAI));
+      await plugin.handleInput(_agentInput());
 
       expect(mockAI.lastPromptReceived, KitaDescribePlugin.describePrompt);
     });
@@ -134,8 +223,7 @@ void main() {
     test('returns failure on camera error', () async {
       mockSensors.failureToReturn = PermissionFailure.denied('camera');
 
-      final result =
-          await plugin.handleRequest(testRequest(mockSensors, mockAI));
+      final result = await plugin.handleInput(_agentInput());
 
       expect(result.isFailure, isTrue);
       final failure = (result as Failure).failure;
@@ -150,8 +238,7 @@ void main() {
         logMessage: 'AI vision timeout',
       );
 
-      final result =
-          await plugin.handleRequest(testRequest(mockSensors, mockAI));
+      final result = await plugin.handleInput(_agentInput());
 
       expect(result.isFailure, isTrue);
       final failure = (result as Failure).failure;
@@ -159,14 +246,10 @@ void main() {
     });
 
     test('continues with original image when EXIF strip fails', () async {
-      // ExifStripper.strip will fail on our minimal JPEG bytes since they
-      // can't be decoded as a real image, but the plugin should gracefully
-      // degrade and use the original image.
       mockSensors.photoToReturn = testImage();
       mockAI.responseToReturn = testAIResponse();
 
-      final result =
-          await plugin.handleRequest(testRequest(mockSensors, mockAI));
+      final result = await plugin.handleInput(_agentInput());
 
       // Should still succeed — graceful degradation
       expect(result.isSuccess, isTrue);
@@ -183,7 +266,7 @@ void main() {
       mockSensors.photoToReturn = testImage();
       mockAI.responseToReturn = testAIResponse();
 
-      await plugin.handleRequest(testRequest(mockSensors, mockAI));
+      await plugin.handleInput(_agentInput());
 
       final messages = logEntries.map((e) => e.message).toList();
       expect(messages, contains(contains('Handling command')));
@@ -195,7 +278,7 @@ void main() {
       mockSensors.photoToReturn = testImage();
       mockAI.responseToReturn = testAIResponse();
 
-      await plugin.handleRequest(testRequest(mockSensors, mockAI));
+      await plugin.handleInput(_agentInput());
 
       // Filter to only plugin logs (ExifStripper logs with [IO] source)
       final pluginLogs = logEntries
@@ -208,8 +291,7 @@ void main() {
     test('camera failure userMessage is in French', () async {
       mockSensors.failureToReturn = PermissionFailure.denied('camera');
 
-      final result =
-          await plugin.handleRequest(testRequest(mockSensors, mockAI));
+      final result = await plugin.handleInput(_agentInput());
       final failure = (result as Failure).failure;
 
       expect(failure.userMessage, 'Impossible de prendre la photo.');
@@ -222,8 +304,7 @@ void main() {
         logMessage: 'AI request timed out',
       );
 
-      final result =
-          await plugin.handleRequest(testRequest(mockSensors, mockAI));
+      final result = await plugin.handleInput(_agentInput());
       final failure = (result as Failure).failure;
 
       expect(failure.userMessage, "Je n'ai pas pu analyser l'image.");
@@ -231,26 +312,28 @@ void main() {
   });
 
   group('lifecycle', () {
-    test('onActivate completes without error', () async {
-      await expectLater(plugin.onActivate(), completes);
+    test('onSpawn completes without error', () async {
+      await expectLater(spawnPlugin(), completes);
     });
 
-    test('onDeactivate completes without error', () async {
-      await expectLater(plugin.onDeactivate(), completes);
+    test('onTerminate completes without error', () async {
+      await spawnPlugin();
+      await expectLater(plugin.onTerminate(), completes);
     });
 
-    test('onActivate logs activation', () async {
-      await plugin.onActivate();
+    test('onSpawn logs activation', () async {
+      await spawnPlugin();
 
       final messages = logEntries.map((e) => e.message).toList();
-      expect(messages, contains(contains('Describe plugin activated')));
+      expect(messages, contains(contains('Describe agent spawned')));
     });
 
-    test('onDeactivate logs deactivation', () async {
-      await plugin.onDeactivate();
+    test('onTerminate logs deactivation', () async {
+      await spawnPlugin();
+      await plugin.onTerminate();
 
       final messages = logEntries.map((e) => e.message).toList();
-      expect(messages, contains(contains('Describe plugin deactivated')));
+      expect(messages, contains(contains('Describe agent terminated')));
     });
   });
 

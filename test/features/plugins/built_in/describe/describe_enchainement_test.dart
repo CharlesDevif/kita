@@ -1,18 +1,84 @@
-// ignore_for_file: depend_on_referenced_packages
-// fake_async is a transitive dependency via flutter_test;
-// cannot add to pubspec.yaml (owned by E1).
-import 'package:fake_async/fake_async.dart';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kita/core/errors/kita_failure.dart';
 import 'package:kita/core/errors/result.dart';
 import 'package:kita/core/utils/logger.dart';
 import 'package:kita/features/ai/domain/ai_response.dart';
+import 'package:kita/features/io/domain/haptic_service.dart';
+import 'package:kita/features/orchestration/domain/agent_bus.dart';
+import 'package:kita/features/orchestration/domain/clock.dart';
+import 'package:kita/features/orchestration/domain/kita_agent.dart';
+import 'package:kita/features/orchestration/domain/models/agent_input.dart';
+import 'package:kita/features/orchestration/domain/models/agent_message.dart';
+import 'package:kita/features/orchestration/domain/models/agent_output.dart';
+import 'package:kita/features/orchestration/domain/models/output_priority.dart';
+import 'package:kita/features/orchestration/domain/output_handle.dart';
 import 'package:kita/features/plugins/built_in/describe/describe_plugin.dart';
 import 'package:kita/features/plugins/built_in/describe/describe_state.dart';
-import 'package:kita/features/plugins/domain/plugin_response.dart';
 
 import 'describe_test_helpers.dart';
+
+// === Mock OutputHandle ===
+
+class MockOutputHandle implements OutputHandle {
+  MockOutputHandle({required this.agentId});
+
+  @override
+  final String agentId;
+
+  final List<({String text, OutputPriority priority})> speakCalls = [];
+  int completeCalled = 0;
+
+  final StreamController<SpeechEvent> speechEventsController =
+      StreamController<SpeechEvent>.broadcast();
+
+  @override
+  Stream<SpeechEvent> get speechEvents => speechEventsController.stream;
+
+  @override
+  Future<void> speak(String text,
+      {OutputPriority priority = OutputPriority.standard}) async {
+    speakCalls.add((text: text, priority: priority));
+  }
+
+  @override
+  Future<void> haptic(HapticPattern pattern,
+      {OutputPriority priority = OutputPriority.standard}) async {}
+
+  @override
+  void updateViewport(Widget widget) {}
+
+  @override
+  void complete() {
+    completeCalled++;
+  }
+
+  void dispose() {
+    speechEventsController.close();
+  }
+}
+
+class MockAgentBus implements AgentBus {
+  @override
+  void publish(AgentMessage message) {}
+  @override
+  void subscribe(String agentId, Set<AgentMessageType> types) {}
+  @override
+  void unsubscribe(String agentId) {}
+  @override
+  Stream<AgentMessage> streamFor(String agentId) => const Stream.empty();
+}
+
+AgentInput _agentInput({String command = 'decris'}) {
+  return AgentInput(
+    command: command,
+    params: const {},
+    source: InputSource.voice,
+    timestamp: DateTime(2026, 1, 1),
+  );
+}
 
 // --- Tests ---
 
@@ -20,28 +86,50 @@ void main() {
   late KitaDescribePlugin plugin;
   late MockSensorAccess mockSensors;
   late MockAIAccess mockAI;
+  late MockOutputHandle mockOutput;
+  late MockAgentBus mockBus;
+  late FakeClock fakeClock;
   late List<LogEntry> logEntries;
 
   setUp(() {
     plugin = KitaDescribePlugin();
     mockSensors = MockSensorAccess();
     mockAI = MockAIAccess();
+    mockOutput = MockOutputHandle(agentId: 'com.kita.describe');
+    mockBus = MockAgentBus();
+    fakeClock = FakeClock();
     logEntries = [];
     KitaLogger.testLogHandler = (entry) => logEntries.add(entry);
   });
 
   tearDown(() {
     KitaLogger.testLogHandler = null;
+    mockOutput.dispose();
   });
 
+  Future<void> spawnPlugin() async {
+    final context = AgentContext(
+      sensors: mockSensors,
+      ai: mockAI,
+      bus: mockBus,
+      output: mockOutput,
+      clock: fakeClock,
+    );
+    await plugin.onSpawn(context);
+  }
+
   /// Helper to do initial describe and set up state.
-  Future<void> doInitialDescribe() async {
+  Future<void> doInitialDescribe({String content = 'Un salon lumineux.'}) async {
     mockSensors.photoToReturn = testImage();
-    mockAI.responseToReturn = testAIResponse(content: 'Un salon lumineux.');
-    await plugin.handleRequest(testRequest(mockSensors, mockAI));
+    mockAI.responseToReturn = testAIResponse(content: content);
+    await plugin.handleInput(_agentInput());
   }
 
   group('initial describe', () {
+    setUp(() async {
+      await spawnPlugin();
+    });
+
     test('sets state to describing with image and description', () async {
       await doInitialDescribe();
 
@@ -54,23 +142,27 @@ void main() {
       mockSensors.photoToReturn = testImage();
       mockAI.responseToReturn = testAIResponse();
 
-      final result = await plugin.handleRequest(testRequest(mockSensors, mockAI));
+      final result = await plugin.handleInput(_agentInput());
 
       expect(result.isSuccess, isTrue);
-      final response = (result as Success<PluginResponse>).value;
-      expect(response.type, PluginResponseType.text);
-      expect(response.content, contains('salon'));
+      final output = (result as Success<AgentOutput>).value;
+      expect(output.type, AgentOutputType.text);
+      expect(output.content, contains('salon'));
     });
   });
 
   group('plus de details', () {
+    setUp(() async {
+      await spawnPlugin();
+    });
+
     test('sends enriched prompt to AI', () async {
       await doInitialDescribe();
 
       mockAI.responseToReturn =
           testAIResponse(content: 'Description detaillee du salon.');
-      await plugin.handleRequest(
-        testRequest(mockSensors, mockAI, command: 'plus de details'),
+      await plugin.handleInput(
+        _agentInput(command: 'plus de details'),
       );
 
       expect(mockAI.lastPromptReceived, KitaDescribePlugin.detailedPrompt);
@@ -81,8 +173,8 @@ void main() {
 
       mockAI.responseToReturn =
           testAIResponse(content: 'Description detaillee.');
-      await plugin.handleRequest(
-        testRequest(mockSensors, mockAI, command: 'plus de details'),
+      await plugin.handleInput(
+        _agentInput(command: 'plus de details'),
       );
 
       expect(plugin.state.phase, DescribePhase.detailed);
@@ -95,19 +187,19 @@ void main() {
 
       mockAI.responseToReturn =
           testAIResponse(content: 'Description detaillee du salon.');
-      final result = await plugin.handleRequest(
-        testRequest(mockSensors, mockAI, command: 'plus de details'),
+      final result = await plugin.handleInput(
+        _agentInput(command: 'plus de details'),
       );
 
       expect(result.isSuccess, isTrue);
-      final response = (result as Success<PluginResponse>).value;
-      expect(response.content, contains('detaillee'));
-      expect(response.metadata!['detailed'], true);
+      final output = (result as Success<AgentOutput>).value;
+      expect(output.content, contains('detaillee'));
+      expect(output.metadata!['detailed'], true);
     });
 
     test('fails gracefully without prior describe', () async {
-      final result = await plugin.handleRequest(
-        testRequest(mockSensors, mockAI, command: 'plus de details'),
+      final result = await plugin.handleInput(
+        _agentInput(command: 'plus de details'),
       );
 
       expect(result.isFailure, isTrue);
@@ -119,8 +211,8 @@ void main() {
       await doInitialDescribe();
 
       mockAI.responseToReturn = testAIResponse(content: 'Details.');
-      final result = await plugin.handleRequest(
-        testRequest(mockSensors, mockAI, command: 'details'),
+      final result = await plugin.handleInput(
+        _agentInput(command: 'details'),
       );
 
       expect(result.isSuccess, isTrue);
@@ -130,8 +222,8 @@ void main() {
       await doInitialDescribe();
 
       mockAI.responseToReturn = testAIResponse(content: 'Details.');
-      final result = await plugin.handleRequest(
-        testRequest(mockSensors, mockAI, command: 'detaille'),
+      final result = await plugin.handleInput(
+        _agentInput(command: 'detaille'),
       );
 
       expect(result.isSuccess, isTrue);
@@ -139,20 +231,24 @@ void main() {
   });
 
   group('repete', () {
+    setUp(() async {
+      await spawnPlugin();
+    });
+
     test('returns last description without calling AI', () async {
       await doInitialDescribe();
 
       // Reset AI mock to verify it is NOT called
       mockAI.lastPromptReceived = null;
 
-      final result = await plugin.handleRequest(
-        testRequest(mockSensors, mockAI, command: 'repete'),
+      final result = await plugin.handleInput(
+        _agentInput(command: 'repete'),
       );
 
       expect(result.isSuccess, isTrue);
-      final response = (result as Success<PluginResponse>).value;
-      expect(response.content, 'Un salon lumineux.');
-      expect(response.metadata!['repeated'], true);
+      final output = (result as Success<AgentOutput>).value;
+      expect(output.content, 'Un salon lumineux.');
+      expect(output.metadata!['repeated'], true);
       expect(mockAI.lastPromptReceived, isNull);
     });
 
@@ -161,23 +257,23 @@ void main() {
 
       mockAI.responseToReturn =
           testAIResponse(content: 'Description detaillee.');
-      await plugin.handleRequest(
-        testRequest(mockSensors, mockAI, command: 'plus de details'),
+      await plugin.handleInput(
+        _agentInput(command: 'plus de details'),
       );
 
       mockAI.lastPromptReceived = null;
 
-      final result = await plugin.handleRequest(
-        testRequest(mockSensors, mockAI, command: 'repete'),
+      final result = await plugin.handleInput(
+        _agentInput(command: 'repete'),
       );
 
-      final response = (result as Success<PluginResponse>).value;
-      expect(response.content, 'Description detaillee.');
+      final output = (result as Success<AgentOutput>).value;
+      expect(output.content, 'Description detaillee.');
     });
 
     test('fails gracefully without prior describe', () async {
-      final result = await plugin.handleRequest(
-        testRequest(mockSensors, mockAI, command: 'repete'),
+      final result = await plugin.handleInput(
+        _agentInput(command: 'repete'),
       );
 
       expect(result.isFailure, isTrue);
@@ -187,24 +283,35 @@ void main() {
   });
 
   group('merci', () {
-    test('returns to idle state', () async {
+    setUp(() async {
+      await spawnPlugin();
+    });
+
+    test('returns to idle state and calls complete()', () async {
       await doInitialDescribe();
 
-      final result = await plugin.handleRequest(
-        testRequest(mockSensors, mockAI, command: 'merci'),
+      final result = await plugin.handleInput(
+        _agentInput(command: 'merci'),
       );
 
       expect(result.isSuccess, isTrue);
       expect(plugin.state.phase, DescribePhase.idle);
-      final response = (result as Success<PluginResponse>).value;
-      expect(response.metadata!['action'], 'return_passive');
+      final output = (result as Success<AgentOutput>).value;
+      expect(output.metadata!['action'], 'return_passive');
+
+      // complete() was called on OutputHandle
+      expect(mockOutput.completeCalled, 1);
     });
   });
 
   group('unknown command', () {
+    setUp(() async {
+      await spawnPlugin();
+    });
+
     test('returns failure for unrecognized command', () async {
-      final result = await plugin.handleRequest(
-        testRequest(mockSensors, mockAI, command: 'zoomer'),
+      final result = await plugin.handleInput(
+        _agentInput(command: 'zoomer'),
       );
 
       expect(result.isFailure, isTrue);
@@ -218,8 +325,8 @@ void main() {
       mockSensors.photoToReturn = testImage();
       mockAI.responseToReturn = testAIResponse();
 
-      final result = await plugin.handleRequest(
-        testRequest(mockSensors, mockAI, command: 'unknown'),
+      final result = await plugin.handleInput(
+        _agentInput(command: 'unknown'),
       );
 
       expect(result.isFailure, isTrue);
@@ -229,116 +336,119 @@ void main() {
   });
 
   group('silence timeout', () {
-    test('resets state to idle and calls onReturnPassive after 5s',
-        () {
-      fakeAsync((async) {
-        final fakePlugin = KitaDescribePlugin();
-        final fakeSensors = MockSensorAccess();
-        final fakeAI = MockAIAccess();
-        var passiveCalled = false;
-        fakePlugin.onReturnPassive = () => passiveCalled = true;
-
-        fakeSensors.photoToReturn = testImage();
-        fakeAI.responseToReturn =
-            testAIResponse(content: 'Un salon lumineux.');
-
-        // Run the async handleRequest synchronously within fakeAsync
-        fakePlugin
-            .handleRequest(testRequest(fakeSensors, fakeAI))
-            .then((_) {});
-        async.flushMicrotasks();
-
-        expect(fakePlugin.state.phase, DescribePhase.describing);
-        expect(passiveCalled, isFalse);
-
-        // Advance time by 4s — should still be describing
-        async.elapse(const Duration(seconds: 4));
-        expect(fakePlugin.state.phase, DescribePhase.describing);
-        expect(passiveCalled, isFalse);
-
-        // Advance time by 1 more second (total 5s) — should be idle
-        async.elapse(const Duration(seconds: 1));
-        expect(fakePlugin.state.phase, DescribePhase.idle);
-        expect(passiveCalled, isTrue);
-      });
+    setUp(() async {
+      await spawnPlugin();
     });
 
-    test('timer resets on new command before expiry', () {
-      fakeAsync((async) {
-        final fakePlugin = KitaDescribePlugin();
-        final fakeSensors = MockSensorAccess();
-        final fakeAI = MockAIAccess();
-        var passiveCalled = false;
-        fakePlugin.onReturnPassive = () => passiveCalled = true;
+    test('resets state to idle and calls complete() after speech completes + 5s',
+        () async {
+      await doInitialDescribe();
+      expect(plugin.state.phase, DescribePhase.describing);
+      expect(mockOutput.completeCalled, 0);
 
-        fakeSensors.photoToReturn = testImage();
-        fakeAI.responseToReturn = testAIResponse(content: 'Salon.');
+      // Simulate speech completed event (starts silence timer via Clock.delayed)
+      mockOutput.speechEventsController.add(SpeechEvent.completed);
+      await Future<void>.delayed(Duration.zero);
 
-        // Initial describe
-        fakePlugin
-            .handleRequest(testRequest(fakeSensors, fakeAI))
-            .then((_) {});
-        async.flushMicrotasks();
+      // Advance 4s — should still be describing
+      fakeClock.advance(const Duration(seconds: 4));
+      expect(plugin.state.phase, DescribePhase.describing);
+      expect(mockOutput.completeCalled, 0);
 
-        // Advance 3s, then send "repete" which resets the timer
-        async.elapse(const Duration(seconds: 3));
-        expect(fakePlugin.state.phase, DescribePhase.describing);
-
-        fakePlugin
-            .handleRequest(
-                testRequest(fakeSensors, fakeAI, command: 'repete'))
-            .then((_) {});
-        async.flushMicrotasks();
-
-        // Advance 4s after repete — should still NOT be idle (timer was reset)
-        async.elapse(const Duration(seconds: 4));
-        expect(fakePlugin.state.phase, DescribePhase.describing);
-        expect(passiveCalled, isFalse);
-
-        // Advance 1 more second (5s since repete) — should now be idle
-        async.elapse(const Duration(seconds: 1));
-        expect(fakePlugin.state.phase, DescribePhase.idle);
-        expect(passiveCalled, isTrue);
-      });
+      // Advance 1 more second (total 5s) — should be idle
+      fakeClock.advance(const Duration(seconds: 1));
+      expect(plugin.state.phase, DescribePhase.idle);
+      expect(mockOutput.completeCalled, 1);
     });
 
-    test('onDeactivate cancels silence timer (no callback fire)', () async {
+    test('timer resets on new command before expiry', () async {
+      await doInitialDescribe();
+
+      // Simulate speech completed (starts silence timer)
+      mockOutput.speechEventsController.add(SpeechEvent.completed);
+      await Future<void>.delayed(Duration.zero);
+
+      // Advance 3s
+      fakeClock.advance(const Duration(seconds: 3));
+      expect(plugin.state.phase, DescribePhase.describing);
+
+      // Send "repete" which resets the timer (handleInput cancels current timer)
+      await plugin.handleInput(_agentInput(command: 'repete'));
+
+      // Simulate speech completed again (restarts silence timer)
+      mockOutput.speechEventsController.add(SpeechEvent.completed);
+      await Future<void>.delayed(Duration.zero);
+
+      // Advance 4s after repete — should still NOT be idle (timer was reset)
+      fakeClock.advance(const Duration(seconds: 4));
+      expect(plugin.state.phase, DescribePhase.describing);
+      expect(mockOutput.completeCalled, 0);
+
+      // Advance 1 more second (5s since repete speech completed) — should now be idle
+      fakeClock.advance(const Duration(seconds: 1));
+      expect(plugin.state.phase, DescribePhase.idle);
+      expect(mockOutput.completeCalled, 1);
+    });
+
+    test('onTerminate cancels silence timer (no complete() fire)', () async {
       await doInitialDescribe();
       expect(plugin.state.phase, DescribePhase.describing);
 
-      await plugin.onDeactivate();
+      // Simulate speech completed (starts timer)
+      mockOutput.speechEventsController.add(SpeechEvent.completed);
+      await Future<void>.delayed(Duration.zero);
+
+      await plugin.onTerminate();
       expect(plugin.state.phase, DescribePhase.idle);
+
+      // Advance past timeout — complete() should NOT have been called
+      fakeClock.advance(KitaDescribePlugin.silenceTimeout);
+      expect(mockOutput.completeCalled, 0);
     });
   });
 
-  group('onReturnPassive callback', () {
-    test('callback can be set on the plugin', () {
-      var called = false;
-      plugin.onReturnPassive = () => called = true;
-
-      // Verify the callback is stored and callable
-      plugin.onReturnPassive!();
-      expect(called, isTrue);
+  group('complete() callback', () {
+    setUp(() async {
+      await spawnPlugin();
     });
 
-    test('callback defaults to null', () {
-      expect(plugin.onReturnPassive, isNull);
-    });
-
-    test('onDeactivate does not invoke callback (it is for timer only)',
-        () async {
-      var called = false;
-      plugin.onReturnPassive = () => called = true;
-
+    test('merci calls output.complete()', () async {
       await doInitialDescribe();
-      await plugin.onDeactivate();
 
-      // onDeactivate cancels the timer, so callback should NOT fire
-      expect(called, isFalse);
+      await plugin.handleInput(_agentInput(command: 'merci'));
+
+      expect(mockOutput.completeCalled, 1);
+    });
+
+    test('silence timeout calls output.complete()', () async {
+      await doInitialDescribe();
+
+      // Simulate speech completed (starts silence timer)
+      mockOutput.speechEventsController.add(SpeechEvent.completed);
+      await Future<void>.delayed(Duration.zero);
+
+      // Advance past timeout
+      fakeClock.advance(KitaDescribePlugin.silenceTimeout);
+
+      expect(mockOutput.completeCalled, 1);
+    });
+
+    test('onTerminate does not invoke complete() (it is for timer only)',
+        () async {
+      await doInitialDescribe();
+
+      await plugin.onTerminate();
+
+      // onTerminate cancels the timer, so complete() should NOT fire
+      expect(mockOutput.completeCalled, 0);
     });
   });
 
   group('fallback offline', () {
+    setUp(() async {
+      await spawnPlugin();
+    });
+
     test('flags offline when AI response is degraded', () async {
       mockSensors.photoToReturn = testImage();
       mockAI.responseToReturn = testAIResponse(
@@ -346,21 +456,18 @@ void main() {
         status: AIResponseStatus.degraded,
       );
 
-      final result =
-          await plugin.handleRequest(testRequest(mockSensors, mockAI));
+      final result = await plugin.handleInput(_agentInput());
 
       expect(result.isSuccess, isTrue);
       expect(plugin.state.isOffline, isTrue);
-      final response = (result as Success<PluginResponse>).value;
-      expect(response.content, contains('Mode local'));
-      expect(response.metadata!['offline'], true);
+      final output = (result as Success<AgentOutput>).value;
+      expect(output.content, contains('Mode local'));
+      expect(output.metadata!['offline'], true);
     });
 
     test('detailed request with degraded response flags offline', () async {
       // First: normal describe
-      mockSensors.photoToReturn = testImage();
-      mockAI.responseToReturn = testAIResponse(content: 'Normal.');
-      await plugin.handleRequest(testRequest(mockSensors, mockAI));
+      await doInitialDescribe(content: 'Normal.');
 
       // Then: detailed, but degraded
       mockAI.responseToReturn = testAIResponse(
@@ -368,52 +475,60 @@ void main() {
         status: AIResponseStatus.degraded,
       );
 
-      final result = await plugin.handleRequest(
-        testRequest(mockSensors, mockAI, command: 'plus de details'),
+      final result = await plugin.handleInput(
+        _agentInput(command: 'plus de details'),
       );
 
       expect(result.isSuccess, isTrue);
-      final response = (result as Success<PluginResponse>).value;
-      expect(response.content, contains('Mode local'));
+      final output = (result as Success<AgentOutput>).value;
+      expect(output.content, contains('Mode local'));
     });
   });
 
   group('full conversation cycle', () {
+    setUp(() async {
+      await spawnPlugin();
+    });
+
     test('decris -> plus de details -> repete -> merci', () async {
       // Step 1: decris
       mockSensors.photoToReturn = testImage();
       mockAI.responseToReturn = testAIResponse(content: 'Un salon.');
-      var result =
-          await plugin.handleRequest(testRequest(mockSensors, mockAI));
+      var result = await plugin.handleInput(_agentInput());
       expect(result.isSuccess, isTrue);
       expect(plugin.state.phase, DescribePhase.describing);
 
       // Step 2: plus de details
       mockAI.responseToReturn = testAIResponse(content: 'Salon detaille.');
-      result = await plugin.handleRequest(
-        testRequest(mockSensors, mockAI, command: 'plus de details'),
+      result = await plugin.handleInput(
+        _agentInput(command: 'plus de details'),
       );
       expect(result.isSuccess, isTrue);
       expect(plugin.state.phase, DescribePhase.detailed);
 
       // Step 3: repete
-      result = await plugin.handleRequest(
-        testRequest(mockSensors, mockAI, command: 'repete'),
+      result = await plugin.handleInput(
+        _agentInput(command: 'repete'),
       );
       expect(result.isSuccess, isTrue);
       expect(
-          (result as Success<PluginResponse>).value.content, 'Salon detaille.');
+          (result as Success<AgentOutput>).value.content, 'Salon detaille.');
 
       // Step 4: merci
-      result = await plugin.handleRequest(
-        testRequest(mockSensors, mockAI, command: 'merci'),
+      result = await plugin.handleInput(
+        _agentInput(command: 'merci'),
       );
       expect(result.isSuccess, isTrue);
       expect(plugin.state.phase, DescribePhase.idle);
+      expect(mockOutput.completeCalled, 1);
     });
   });
 
   group('buildViewport', () {
+    setUp(() async {
+      await spawnPlugin();
+    });
+
     testWidgets('returns null when idle', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
@@ -447,17 +562,22 @@ void main() {
       );
       await tester.pump(); // Let error builders render
 
-      // Cancel the silence timer to avoid pending timer assertion
-      await plugin.onDeactivate();
+      // Terminate to cancel the silence timer and avoid pending timer assertion.
+      // Use tester.runAsync because onTerminate awaits stream subscription cancel.
+      await tester.runAsync(() => plugin.onTerminate());
     });
   });
 
-  group('onDeactivate', () {
+  group('onTerminate', () {
+    setUp(() async {
+      await spawnPlugin();
+    });
+
     test('cancels silence timer and resets state', () async {
       await doInitialDescribe();
       expect(plugin.state.phase, DescribePhase.describing);
 
-      await plugin.onDeactivate();
+      await plugin.onTerminate();
 
       expect(plugin.state.phase, DescribePhase.idle);
     });
@@ -472,52 +592,49 @@ void main() {
       expect(moreDetailsCmd.aliases, contains('detaille'));
       expect(moreDetailsCmd.aliases, contains('details'));
     });
-
-    test('manifest includes chaining commands', () {
-      expect(plugin.manifest.voiceCommands, contains('plus de details'));
-      expect(plugin.manifest.voiceCommands, contains('repete'));
-      expect(plugin.manifest.voiceCommands, contains('merci'));
-    });
   });
 
-  group('PluginResponse integration (H2)', () {
-    test('describe response contains fields needed for Shell/ProfileAdapter',
+  group('AgentOutput integration', () {
+    setUp(() async {
+      await spawnPlugin();
+    });
+
+    test('describe response contains fields for Shell/ProfileAdapter',
         () async {
       mockSensors.photoToReturn = testImage();
       mockAI.responseToReturn = testAIResponse(content: 'Un salon lumineux.');
 
-      final result =
-          await plugin.handleRequest(testRequest(mockSensors, mockAI));
+      final result = await plugin.handleInput(_agentInput());
 
       expect(result.isSuccess, isTrue);
-      final response = (result as Success<PluginResponse>).value;
+      final output = (result as Success<AgentOutput>).value;
 
       // The Shell uses these fields to route through ProfileAdapter:
       // - type: determines output modality
       // - content: text for TTS (vocal) and viewport (visual)
       // - metadata: provider info for logging/analytics
-      expect(response.type, PluginResponseType.text);
-      expect(response.content, isNotEmpty);
-      expect(response.metadata, isNotNull);
-      expect(response.metadata!['provider'], isA<String>());
-      expect(response.metadata!['latency_ms'], isA<int>());
-      expect(response.metadata!['tier'], isA<String>());
+      expect(output.type, AgentOutputType.text);
+      expect(output.content, isNotEmpty);
+      expect(output.metadata, isNotNull);
+      expect(output.metadata!['provider'], isA<String>());
+      expect(output.metadata!['latency_ms'], isA<int>());
+      expect(output.metadata!['tier'], isA<String>());
     });
 
     test('merci response contains return_passive action for Shell', () async {
       await doInitialDescribe();
 
-      final result = await plugin.handleRequest(
-        testRequest(mockSensors, mockAI, command: 'merci'),
+      final result = await plugin.handleInput(
+        _agentInput(command: 'merci'),
       );
 
-      final response = (result as Success<PluginResponse>).value;
+      final output = (result as Success<AgentOutput>).value;
 
       // The Shell checks metadata['action'] == 'return_passive' to know
       // it should transition back to passive mode via ProfileAdapter.
-      expect(response.metadata, isNotNull);
-      expect(response.metadata!['action'], 'return_passive');
-      expect(response.content, isEmpty);
+      expect(output.metadata, isNotNull);
+      expect(output.metadata!['action'], 'return_passive');
+      expect(output.content, isEmpty);
     });
 
     test('offline response contains offline flag for Shell', () async {
@@ -527,15 +644,14 @@ void main() {
         status: AIResponseStatus.degraded,
       );
 
-      final result =
-          await plugin.handleRequest(testRequest(mockSensors, mockAI));
+      final result = await plugin.handleInput(_agentInput());
 
-      final response = (result as Success<PluginResponse>).value;
+      final output = (result as Success<AgentOutput>).value;
 
       // The Shell uses 'offline' metadata to adjust ProfileAdapter output
       // (e.g., announce "Mode local" prefix via TTS).
-      expect(response.metadata!['offline'], true);
-      expect(response.content, contains('Mode local'));
+      expect(output.metadata!['offline'], true);
+      expect(output.content, contains('Mode local'));
     });
   });
 }

@@ -6,6 +6,11 @@ import 'voice_command.dart';
 /// Abstract interface for the plugin registry.
 ///
 /// Manages plugin lifecycle: register -> activate -> use -> deactivate.
+///
+/// **Deprecated:** Use [AgentSupervisor] from
+/// `lib/features/orchestration/data/agent_supervisor.dart` instead.
+/// See `docs/spec-agent-orchestrator.md` for the migration guide.
+@Deprecated('Use AgentSupervisor instead. See docs/spec-agent-orchestrator.md')
 abstract interface class PluginRegistryService {
   Result<void> register(KitaPlugin plugin);
   Future<Result<void>> activate(String pluginId);

@@ -1,6 +1,11 @@
 import '../../../core/errors/kita_failure.dart';
 import '../../../core/errors/result.dart';
 import '../../../core/utils/logger.dart';
+import '../../orchestration/domain/agent_bus.dart';
+import '../../orchestration/domain/clock.dart';
+import '../../orchestration/domain/kita_agent.dart';
+import '../../orchestration/domain/models/agent_manifest.dart';
+import '../../orchestration/domain/output_handle.dart';
 import '../domain/ai_access.dart';
 import '../domain/kita_plugin.dart';
 import '../domain/memory_access.dart';
@@ -172,5 +177,64 @@ class PluginSandboxImpl implements PluginSandbox {
         _log.info('Plugin ${manifest.id} (official): shared memory');
         return memoryAccess;
     }
+  }
+
+  MemoryAccess? _buildAgentMemoryAccess(AgentManifest manifest) {
+    if (memoryAccess == null) return null;
+
+    switch (manifest.trustLevel) {
+      case TrustLevel.unverified:
+        _log.info('Agent ${manifest.id} (unverified): no memory access');
+        return null;
+      case TrustLevel.communityVerified:
+        _log.info('Agent ${manifest.id} (community): sandboxed memory');
+        return SandboxedMemoryAccess(
+          delegate: memoryAccess!,
+          pluginId: manifest.id,
+          allowedPermissions: manifest.permissions.toSet(),
+        );
+      case TrustLevel.official:
+        _log.info('Agent ${manifest.id} (official): shared memory');
+        return memoryAccess;
+    }
+  }
+
+  /// Builds a sandboxed [AgentContext] for a [KitaAgent] based on its manifest.
+  ///
+  /// Reuses the same sandboxing logic (permissions, quotas) as the
+  /// plugin sandbox but returns an [AgentContext] instead of a [PluginRequest].
+  AgentContext buildAgentContext({
+    required AgentManifest manifest,
+    required AgentBus bus,
+    required OutputHandle output,
+    required Clock clock,
+  }) {
+    final permissions = manifest.permissions.toSet();
+
+    final sandboxedSensors = SandboxedSensorAccess(
+      delegate: sensorAccess,
+      allowedPermissions: permissions,
+      pluginId: manifest.id,
+    );
+
+    final sandboxedAI = SandboxedAIAccess(
+      delegate: aiAccess,
+      pluginId: manifest.id,
+      quotaManager: quotaManager,
+      allowedPermissions: permissions,
+    );
+
+    final sandboxedMemory = _buildAgentMemoryAccess(manifest);
+
+    _log.info('Built AgentContext for agent ${manifest.id}');
+
+    return AgentContext(
+      sensors: sandboxedSensors,
+      ai: sandboxedAI,
+      memory: sandboxedMemory,
+      bus: bus,
+      output: output,
+      clock: clock,
+    );
   }
 }
