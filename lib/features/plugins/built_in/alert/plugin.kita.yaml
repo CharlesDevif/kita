@@ -1,0 +1,15 @@
+id: com.kita.alert
+name: Alert
+version: 1.0.0
+description: Detection et alerte d'obstacles en temps reel
+trust_level: official
+permissions:
+  - camera
+  - haptic
+  - tts
+capabilities:
+  - obstacle_detection
+  - real_time_alert
+voice_commands:
+  - ok
+  - c'est quoi

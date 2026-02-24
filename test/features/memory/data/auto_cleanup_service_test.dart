@@ -27,18 +27,18 @@ void main() {
     await db.close();
   });
 
-  /// Inserts an episode created [daysAgo] days ago.
+  /// Inserts an episode created [daysAgo] days ago with expires_at set to the same date.
   Future<int> insertEpisodeAt({
     required int daysAgo,
     bool isPinned = false,
     String summary = 'Test',
   }) async {
-    // We insert via raw SQL so we can set created_at in the past.
+    // We insert via raw SQL so we can set created_at and expires_at in the past.
     final createdAt = DateTime.now().subtract(Duration(days: daysAgo));
     final iso = createdAt.toIso8601String();
     await db.customStatement(
-      "INSERT INTO episodes (source, event_type, summary, importance_score, is_pinned, created_at)"
-      " VALUES ('test', 'test', '$summary', 0.5, ${isPinned ? 1 : 0}, '$iso')",
+      "INSERT INTO episodes (source, event_type, summary, importance_score, is_pinned, created_at, expires_at)"
+      " VALUES ('test', 'test', '$summary', 0.5, ${isPinned ? 1 : 0}, '$iso', '$iso')",
     );
     final result = await db.customSelect(
       'SELECT last_insert_rowid() AS id',

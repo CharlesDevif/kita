@@ -134,7 +134,7 @@ class EpisodeDao {
     try {
       final count = await (_db.delete(_db.episodes)
             ..where(
-                (t) => t.isPinned.equals(false) & t.createdAt.isSmallerThanValue(cutoff)))
+                (t) => t.isPinned.equals(false) & t.expiresAt.isSmallerThanValue(cutoff)))
           .go();
       _log.info('Cleaned up $count expired episode(s)');
       return Result.success(count);

@@ -10,6 +10,7 @@ enum VoiceCommand {
   help,
   thanks,
   repeat,
+  moreDetails,
 }
 
 /// Handles voice command recognition from STT transcripts.
@@ -66,6 +67,18 @@ class VoiceCommandHandler {
       'repetez',
       'redis',
       'encore',
+    ],
+    VoiceCommand.moreDetails: [
+      'plus de details',
+      'plus de détails',
+      'details',
+      'détails',
+      'detaille',
+      'détaille',
+      'approfondi',
+      'approfondir',
+      'en detail',
+      'en détail',
     ],
   };
 

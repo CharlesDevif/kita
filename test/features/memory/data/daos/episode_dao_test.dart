@@ -157,23 +157,25 @@ void main() {
 
     test('deleteExpiredBefore removes old non-pinned episodes', () async {
       final now = DateTime.now();
-      // Insert old episode
+      final pastExpiry = now.subtract(const Duration(days: 10));
+      // Insert expired episode
       await dao.insert(
         source: 'old',
         eventType: 'test',
         summary: 'Old episode',
+        expiresAt: pastExpiry,
       );
-      // Insert pinned episode (should be preserved)
+      // Insert pinned expired episode (should be preserved)
       await dao.insert(
         source: 'pinned',
         eventType: 'test',
         summary: 'Pinned episode',
         isPinned: true,
+        expiresAt: pastExpiry,
       );
 
-      // Delete episodes older than future date (catches everything non-pinned)
-      final result =
-          await dao.deleteExpiredBefore(now.add(const Duration(days: 1)));
+      // Delete episodes expired before now
+      final result = await dao.deleteExpiredBefore(now);
       expect(result.isSuccess, isTrue);
       expect(result.getOrNull(), equals(1));
 

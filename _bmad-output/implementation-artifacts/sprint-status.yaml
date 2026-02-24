@@ -94,15 +94,15 @@ development_status:
   epic-8-retrospective: done
 
   # === PHASE 3 : Plugins (2 agents) ===
-  epic-6: backlog
-  6-1-kita-describe-plugin-photo-description-vocale: backlog
-  6-2-describe-viewport-enchainement-naturel: backlog
+  epic-6: in-progress
+  6-1-kita-describe-plugin-photo-description-vocale: review
+  6-2-describe-viewport-enchainement-naturel: review
   epic-6-retrospective: optional
 
-  epic-7: backlog
-  7-1-obstacle-detector-detection-tflite-yolo: backlog
-  7-2-kita-alert-plugin-alertes-multi-modales: backlog
-  7-3-integration-gate-phase-3: backlog
+  epic-7: in-progress
+  7-1-obstacle-detector-detection-tflite-yolo: review
+  7-2-kita-alert-plugin-alertes-multi-modales: review
+  7-3-integration-gate-phase-3: review
   epic-7-retrospective: optional
 
   # === PHASE 4 : Intégration utilisateur (2 agents) ===
