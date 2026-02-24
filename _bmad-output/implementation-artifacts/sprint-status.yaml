@@ -49,7 +49,7 @@ development_status:
   epic-1-retrospective: done
 
   # === PHASE 2 : Features parallèles (5 agents) ===
-  epic-2: in-progress
+  epic-2: done
   2-1-request-classifier-classification-requetes: review
   2-2-fallback-chain-never-fail: review
   2-3-ai-router-orchestration-providers: review
@@ -57,7 +57,7 @@ development_status:
   2-5-provider-openai: review
   2-6-providers-locaux-ml-kit-coreml: review
   2-7-response-cache-cache-reponses-ia: review
-  2-8-integration-gate-phase-2: backlog
+  2-8-integration-gate-phase-2: done
   epic-2-retrospective: optional
 
   epic-3: done
