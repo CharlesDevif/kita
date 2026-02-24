@@ -16,3 +16,6 @@ compatible_profiles:
 voice_commands:
   - decris
   - describe
+  - plus de details
+  - repete
+  - merci

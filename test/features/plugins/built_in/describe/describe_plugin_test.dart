@@ -1,83 +1,13 @@
-import 'dart:typed_data';
-
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kita/core/errors/kita_failure.dart';
 import 'package:kita/core/errors/result.dart';
 import 'package:kita/core/utils/logger.dart';
-import 'package:kita/features/ai/domain/ai_request.dart';
-import 'package:kita/features/ai/domain/ai_response.dart';
-import 'package:kita/features/ai/domain/image_data.dart';
-import 'package:kita/features/ai/domain/provider_tier.dart';
-import 'package:kita/features/io/domain/location_service.dart';
-import 'package:kita/features/io/domain/motion_service.dart';
 import 'package:kita/features/plugins/built_in/describe/describe_plugin.dart';
-import 'package:kita/features/plugins/domain/ai_access.dart';
-import 'package:kita/features/plugins/domain/plugin_request.dart';
 import 'package:kita/features/plugins/domain/plugin_response.dart';
-import 'package:kita/features/plugins/domain/sensor_access.dart';
 import 'package:kita/features/plugins/domain/trust_level.dart';
 
-// --- Mocks ---
-
-class MockSensorAccess implements SensorAccess {
-  ImageData? photoToReturn;
-  KitaFailure? failureToReturn;
-
-  @override
-  Future<Result<ImageData>> capturePhoto() async {
-    if (failureToReturn != null) return Result.failure(failureToReturn!);
-    return Result.success(photoToReturn!);
-  }
-
-  @override
-  Future<Result<Position>> getCurrentPosition() async =>
-      throw UnimplementedError();
-
-  @override
-  Future<Result<MotionState>> getMotionState() async =>
-      throw UnimplementedError();
-}
-
-class MockAIAccess implements AIAccess {
-  AIResponse? responseToReturn;
-  KitaFailure? failureToReturn;
-  ImageData? lastImageReceived;
-  String? lastPromptReceived;
-
-  @override
-  Future<Result<AIResponse>> complete(AIRequest request) async =>
-      throw UnimplementedError();
-
-  @override
-  Future<Result<AIResponse>> vision(ImageData image, String prompt) async {
-    lastImageReceived = image;
-    lastPromptReceived = prompt;
-    if (failureToReturn != null) return Result.failure(failureToReturn!);
-    return Result.success(responseToReturn!);
-  }
-}
-
-// --- Helpers ---
-
-/// Minimal valid JPEG bytes (SOI + EOI markers).
-Uint8List _minimalJpeg() => Uint8List.fromList([0xFF, 0xD8, 0xFF, 0xE0, 0xFF, 0xD9]);
-
-ImageData _testImage() => ImageData(bytes: _minimalJpeg(), mimeType: 'image/jpeg');
-
-AIResponse _testAIResponse({String content = 'Un salon lumineux avec un canape bleu.'}) =>
-    AIResponse(
-      content: content,
-      meta: const AIResponseMeta(
-        providerId: 'claude',
-        latency: Duration(milliseconds: 2500),
-        tier: ProviderTier.cloudPowerful,
-      ),
-      status: AIResponseStatus.success,
-    );
-
-PluginRequest _request(MockSensorAccess sensors, MockAIAccess ai) =>
-    PluginRequest(command: 'decris', sensors: sensors, ai: ai);
+import 'describe_test_helpers.dart';
 
 // --- Tests ---
 
@@ -166,10 +96,11 @@ void main() {
 
   group('handleRequest', () {
     test('returns text description on full success', () async {
-      mockSensors.photoToReturn = _testImage();
-      mockAI.responseToReturn = _testAIResponse();
+      mockSensors.photoToReturn = testImage();
+      mockAI.responseToReturn = testAIResponse();
 
-      final result = await plugin.handleRequest(_request(mockSensors, mockAI));
+      final result =
+          await plugin.handleRequest(testRequest(mockSensors, mockAI));
 
       expect(result.isSuccess, isTrue);
       final response = (result as Success<PluginResponse>).value;
@@ -178,10 +109,11 @@ void main() {
     });
 
     test('response metadata contains provider info', () async {
-      mockSensors.photoToReturn = _testImage();
-      mockAI.responseToReturn = _testAIResponse();
+      mockSensors.photoToReturn = testImage();
+      mockAI.responseToReturn = testAIResponse();
 
-      final result = await plugin.handleRequest(_request(mockSensors, mockAI));
+      final result =
+          await plugin.handleRequest(testRequest(mockSensors, mockAI));
       final response = (result as Success<PluginResponse>).value;
 
       expect(response.metadata, isNotNull);
@@ -191,10 +123,10 @@ void main() {
     });
 
     test('sends describe prompt to AI vision', () async {
-      mockSensors.photoToReturn = _testImage();
-      mockAI.responseToReturn = _testAIResponse();
+      mockSensors.photoToReturn = testImage();
+      mockAI.responseToReturn = testAIResponse();
 
-      await plugin.handleRequest(_request(mockSensors, mockAI));
+      await plugin.handleRequest(testRequest(mockSensors, mockAI));
 
       expect(mockAI.lastPromptReceived, KitaDescribePlugin.describePrompt);
     });
@@ -202,7 +134,8 @@ void main() {
     test('returns failure on camera error', () async {
       mockSensors.failureToReturn = PermissionFailure.denied('camera');
 
-      final result = await plugin.handleRequest(_request(mockSensors, mockAI));
+      final result =
+          await plugin.handleRequest(testRequest(mockSensors, mockAI));
 
       expect(result.isFailure, isTrue);
       final failure = (result as Failure).failure;
@@ -211,13 +144,14 @@ void main() {
     });
 
     test('returns failure on AI error', () async {
-      mockSensors.photoToReturn = _testImage();
+      mockSensors.photoToReturn = testImage();
       mockAI.failureToReturn = const AIProviderFailure(
         userMessage: 'Service IA indisponible.',
         logMessage: 'AI vision timeout',
       );
 
-      final result = await plugin.handleRequest(_request(mockSensors, mockAI));
+      final result =
+          await plugin.handleRequest(testRequest(mockSensors, mockAI));
 
       expect(result.isFailure, isTrue);
       final failure = (result as Failure).failure;
@@ -228,10 +162,11 @@ void main() {
       // ExifStripper.strip will fail on our minimal JPEG bytes since they
       // can't be decoded as a real image, but the plugin should gracefully
       // degrade and use the original image.
-      mockSensors.photoToReturn = _testImage();
-      mockAI.responseToReturn = _testAIResponse();
+      mockSensors.photoToReturn = testImage();
+      mockAI.responseToReturn = testAIResponse();
 
-      final result = await plugin.handleRequest(_request(mockSensors, mockAI));
+      final result =
+          await plugin.handleRequest(testRequest(mockSensors, mockAI));
 
       // Should still succeed — graceful degradation
       expect(result.isSuccess, isTrue);
@@ -245,10 +180,10 @@ void main() {
     });
 
     test('logs each pipeline step', () async {
-      mockSensors.photoToReturn = _testImage();
-      mockAI.responseToReturn = _testAIResponse();
+      mockSensors.photoToReturn = testImage();
+      mockAI.responseToReturn = testAIResponse();
 
-      await plugin.handleRequest(_request(mockSensors, mockAI));
+      await plugin.handleRequest(testRequest(mockSensors, mockAI));
 
       final messages = logEntries.map((e) => e.message).toList();
       expect(messages, contains(contains('Handling command')));
@@ -257,10 +192,10 @@ void main() {
     });
 
     test('plugin logs contain [Plugin.Describe] source', () async {
-      mockSensors.photoToReturn = _testImage();
-      mockAI.responseToReturn = _testAIResponse();
+      mockSensors.photoToReturn = testImage();
+      mockAI.responseToReturn = testAIResponse();
 
-      await plugin.handleRequest(_request(mockSensors, mockAI));
+      await plugin.handleRequest(testRequest(mockSensors, mockAI));
 
       // Filter to only plugin logs (ExifStripper logs with [IO] source)
       final pluginLogs = logEntries
@@ -273,20 +208,22 @@ void main() {
     test('camera failure userMessage is in French', () async {
       mockSensors.failureToReturn = PermissionFailure.denied('camera');
 
-      final result = await plugin.handleRequest(_request(mockSensors, mockAI));
+      final result =
+          await plugin.handleRequest(testRequest(mockSensors, mockAI));
       final failure = (result as Failure).failure;
 
       expect(failure.userMessage, 'Impossible de prendre la photo.');
     });
 
     test('AI failure userMessage is in French', () async {
-      mockSensors.photoToReturn = _testImage();
+      mockSensors.photoToReturn = testImage();
       mockAI.failureToReturn = const NetworkFailure(
         userMessage: 'Timeout',
         logMessage: 'AI request timed out',
       );
 
-      final result = await plugin.handleRequest(_request(mockSensors, mockAI));
+      final result =
+          await plugin.handleRequest(testRequest(mockSensors, mockAI));
       final failure = (result as Failure).failure;
 
       expect(failure.userMessage, "Je n'ai pas pu analyser l'image.");
@@ -335,7 +272,7 @@ void main() {
     test('is in French', () {
       expect(
         KitaDescribePlugin.describePrompt,
-        contains('francais'),
+        contains('français'),
       );
     });
 

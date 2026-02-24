@@ -240,5 +240,46 @@ void main() {
         expect(v, lessThanOrEqualTo(1.0));
       }
     });
+
+    test('throws ArgumentError when buffer is too small', () {
+      final bgra = Uint8List(4 * 4 * 4);
+      final small = const FramePreprocessor(inputSize: 4);
+      final frame = ImageData(
+        bytes: bgra,
+        mimeType: 'image/bgra8888',
+        width: 4,
+        height: 4,
+      );
+      // Expected size is 4*4*3=48, provide only 10
+      final tooSmall = Float32List(10);
+
+      expect(
+        () => small.preprocessFrameInto(
+          frame,
+          pixelFormat: 'bgra8888',
+          buffer: tooSmall,
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+  });
+
+  group('resizeRgb bilinear interpolation', () {
+    test('blends pixel values when upscaling', () {
+      // Create a 2x1 image: pixel 0 = (0,0,0), pixel 1 = (255,255,255)
+      final src = Uint8List.fromList([0, 0, 0, 255, 255, 255]);
+      // Upscale to 4x1 — intermediate pixels should be blended
+      final result = preprocessor.resizeRgb(src, 2, 1, 4, 1);
+
+      expect(result.length, 4 * 1 * 3);
+      // First pixel maps to src (0,0) — should be black
+      expect(result[0], 0);
+      // Last pixel maps near src (1,0) — should be close to white
+      expect(result[9], greaterThan(200));
+      // Middle pixels should be interpolated (not just 0 or 255)
+      // Pixel at x=1 maps to srcX = 1 * (2/4) = 0.5 — blend of black and white
+      expect(result[3], greaterThan(50));
+      expect(result[3], lessThan(200));
+    });
   });
 }

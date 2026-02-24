@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:ui' show Rect;
 
 import 'coco_labels.dart';
@@ -34,12 +35,32 @@ class DetectionPostprocessor {
   }
 
   /// Transpose raw [1][84][8400] -> [8400][84].
+  ///
+  /// Uses a pre-allocated [Float64List] buffer to avoid creating ~705K
+  /// small [double] objects that would pressure the GC.
   List<List<double>> transpose(List<List<List<double>>> raw) {
     final numPredictions = raw[0][0].length; // 8400
     final numFields = raw[0].length; // 84
+    final batch = raw[0];
+
+    // Pre-allocate a flat buffer, then build views
+    final flat = Float64List(numPredictions * numFields);
+    for (int j = 0; j < numFields; j++) {
+      final field = batch[j];
+      for (int i = 0; i < numPredictions; i++) {
+        flat[i * numFields + j] = field[i];
+      }
+    }
+
     return List.generate(
       numPredictions,
-      (i) => List.generate(numFields, (j) => raw[0][j][i]),
+      (i) {
+        final offset = i * numFields;
+        return List<double>.generate(
+          numFields,
+          (j) => flat[offset + j],
+        );
+      },
     );
   }
 

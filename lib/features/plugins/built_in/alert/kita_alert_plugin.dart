@@ -36,11 +36,15 @@ class KitaAlertPlugin implements KitaPlugin {
     required this.ttsService,
     required this.hapticService,
     required this.profileAdapter,
-  });
+    DateTime Function()? now,
+  }) : _now = now ?? DateTime.now;
 
   final TTSService ttsService;
   final HapticService hapticService;
   final ProfileAdapter profileAdapter;
+
+  /// Clock function for current time, injectable for testing.
+  final DateTime Function() _now;
 
   static final _log = KitaLogger('Plugin.Alert');
 
@@ -182,7 +186,7 @@ class KitaAlertPlugin implements KitaPlugin {
 
     // Store detection
     _lastDetection = detection;
-    _lastDetectionTime = DateTime.now();
+    _lastDetectionTime = _now();
 
     // Cancel previous alert timer
     _alertTimer?.cancel();
@@ -250,7 +254,7 @@ class KitaAlertPlugin implements KitaPlugin {
 
     if (detection != null &&
         detectionTime != null &&
-        DateTime.now().difference(detectionTime) < _descriptionWindow) {
+        _now().difference(detectionTime) < _descriptionWindow) {
       final description = buildDetailedDescription(detection);
       profileAdapter.feedback(
         vocal: () => unawaited(

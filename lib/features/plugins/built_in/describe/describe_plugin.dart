@@ -20,38 +20,58 @@ import 'describe_viewport.dart';
 ///
 /// Pipeline: capture photo -> strip EXIF -> AI vision -> PluginResponse.text.
 /// Supports chaining: "plus de details", "repete", "merci" / silence timeout.
-/// The TTS output is handled by the Shell via ProfileAdapter.
+///
+/// ## Output pattern: Plugin -> PluginResponse -> Shell -> ProfileAdapter
+///
+/// This plugin returns [PluginResponse] objects containing text content and
+/// metadata. The Shell layer is responsible for routing the response through
+/// [ProfileAdapter.feedback()] to produce multi-modal output:
+/// - **visual:** updates the viewport via [buildViewport()]
+/// - **vocal:** calls TTSService.speak() with the response content
+/// - **haptic:** triggers confirmation vibration
+///
+/// The plugin does NOT call ProfileAdapter or TTSService directly. This
+/// separation allows the Shell to adapt output to the user's accessibility
+/// profile (blind, low_vision, standard).
+// TODO(H3): Le timer de silence devrait démarrer après la fin du TTS,
+// pas après la réponse. Nécessite TTSService.onComplete callback.
+// TODO(H4): Stopper le TTS en cours avant nouvelle requête AI lors d'un
+// enchaînement rapide. Nécessite injection de TTSService dans le plugin.
 class KitaDescribePlugin implements KitaPlugin {
   static final _log = KitaLogger('Plugin.Describe');
 
   /// Prompt for initial concise description (2-3 sentences).
   static const describePrompt = '''
-Decris cette image en francais pour une personne aveugle.
-Sois precis et utile. Inclus :
-- Les objets principaux et leur position relative (gauche, droite, devant, derriere)
-- Les personnes presentes (nombre, posture, activite) sans les identifier
-- Le texte visible (panneaux, etiquettes, ecrans)
-- Les couleurs dominantes et l'ambiance (interieur/exterieur, luminosite)
+Décris cette image en français pour une personne aveugle.
+Sois précis et utile. Inclus :
+- Les objets principaux et leur position relative (gauche, droite, devant, derrière)
+- Les personnes présentes (nombre, posture, activité) sans les identifier
+- Le texte visible (panneaux, étiquettes, écrans)
+- Les couleurs dominantes et l'ambiance (intérieur/extérieur, luminosité)
 - Les obstacles ou dangers potentiels
 
-Reponds en 2-3 phrases concises. Pas de formule d'introduction.''';
+Réponds en 2-3 phrases concises. Pas de formule d'introduction.''';
 
   /// Prompt for detailed description (5-8 sentences).
   static const detailedPrompt = '''
-Decris cette image en detail en francais pour une personne aveugle.
-Sois exhaustif et precis. Inclus :
-- La scene complete : lieu, moment de la journee, ambiance
-- Tous les objets visibles et leur position relative (gauche, droite, devant, derriere, haut, bas)
-- Les personnes presentes : nombre, posture, activite, vetements (sans les identifier)
-- Tout le texte visible : panneaux, etiquettes, ecrans, affiches
-- Les couleurs, textures et materiaux
+Décris cette image en détail en français pour une personne aveugle.
+Sois exhaustif et précis. Inclus :
+- La scène complète : lieu, moment de la journée, ambiance
+- Tous les objets visibles et leur position relative (gauche, droite, devant, derrière, haut, bas)
+- Les personnes présentes : nombre, posture, activité, vêtements (sans les identifier)
+- Tout le texte visible : panneaux, étiquettes, écrans, affiches
+- Les couleurs, textures et matériaux
 - Les obstacles ou dangers potentiels
 - Les sons ou mouvements qu'on pourrait deviner (vent, eau, foule)
 
-Reponds en 5-8 phrases. Pas de formule d'introduction.''';
+Réponds en 5-8 phrases. Pas de formule d'introduction.''';
 
   /// Duration of silence before auto-returning to passive mode.
   static const silenceTimeout = Duration(seconds: 5);
+
+  /// Whether the plugin has been deactivated, to prevent timer callbacks
+  /// from modifying state after disposal.
+  bool _disposed = false;
 
   /// Current conversation state.
   DescribeState _state = DescribeState.idle;
@@ -96,11 +116,13 @@ Reponds en 5-8 phrases. Pas de formule d'introduction.''';
 
   @override
   Future<void> onActivate() async {
+    _disposed = false;
     _log.info('Describe plugin activated');
   }
 
   @override
   Future<void> onDeactivate() async {
+    _disposed = true;
     _silenceTimer?.cancel();
     _silenceTimer = null;
     _state = DescribeState.idle;
@@ -282,6 +304,9 @@ Reponds en 5-8 phrases. Pas de formule d'introduction.''';
   Future<Result<PluginResponse>> _handleThanks() async {
     _log.info('Returning to passive mode (merci)');
     _silenceTimer?.cancel();
+    // Transition through completed before returning to idle, so the full
+    // state machine lifecycle is respected: describing -> completed -> idle.
+    _state = _state.toCompleted();
     _state = DescribeState.idle;
 
     return const Result.success(PluginResponse(
@@ -296,6 +321,7 @@ Reponds en 5-8 phrases. Pas de formule d'introduction.''';
   void _startSilenceTimer() {
     _silenceTimer?.cancel();
     _silenceTimer = Timer(silenceTimeout, () {
+      if (_disposed) return;
       _log.info('Silence timeout, returning to passive mode');
       _state = DescribeState.idle;
       onReturnPassive?.call();

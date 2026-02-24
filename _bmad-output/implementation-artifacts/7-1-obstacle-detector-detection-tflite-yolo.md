@@ -125,7 +125,7 @@ L'`ObstacleDetector` est le coeur du pipeline de detection d'obstacles de Kita. 
 - [x] Set `obstacleClassIds` des IDs pertinents pour la detection d'obstacles (sous-ensemble de COCO)
 
 ### 6. Configurer l'asset du modele TFLite
-- [x] Ajouter `assets/models/` au `pubspec.yaml` dans la section `flutter.assets`
+- [ ] ~~Ajouter `assets/models/` au `pubspec.yaml` dans la section `flutter.assets`~~ — **skipped per E1 ownership rules** (pubspec.yaml is owned by E1)
 - [x] Documenter dans le story file la commande d'export du modele YOLOv8n :
   ```
   yolo export model=yolov8n.pt format=tflite imgsz=640
@@ -686,8 +686,8 @@ _A remplir par l'agent dev pendant l'implementation._
 | `test/features/plugins/built_in/alert/detection_test.dart` | Create | Tests Detection model |
 | `test/features/plugins/built_in/alert/frame_preprocessor_test.dart` | Create | Tests preprocessing |
 | `test/features/plugins/built_in/alert/detection_postprocessor_test.dart` | Create | Tests post-processing + NMS |
-| `lib/features/ai/domain/image_data.dart` | Modify | Ajouter champ optionnel pixelFormat |
-| `pubspec.yaml` | Modify | Ajouter `assets/models/` dans flutter.assets |
+| `lib/features/ai/domain/image_data.dart` | ~~Modify~~ **Skipped** | ~~Ajouter champ optionnel pixelFormat~~ — skipped per E1 ownership rules |
+| `pubspec.yaml` | ~~Modify~~ **Skipped** | ~~Ajouter `assets/models/` dans flutter.assets~~ — skipped per E1 ownership rules |
 | `assets/models/.gitkeep` | Create | Placeholder pour le dossier models |
 
 ---
@@ -702,10 +702,10 @@ _A remplir par l'agent dev pendant l'implementation._
 | Model | claude-opus-4-6 |
 | Started | 2026-02-24 |
 | Completed | 2026-02-24 |
-| Tests passing | 61/61 |
+| Tests passing | 118/118 (was 61 pre-review; includes alert_models + kita_alert_plugin tests from Story 7.2) |
 | dart analyze | Clean (0 issues) |
-| Files modified | 6 created, 0 modified |
-| Completion notes | All files created in `lib/features/plugins/built_in/alert/`. Used `GpuDelegateV2` instead of `NnApiDelegate` (not available in tflite_flutter 0.12.1). TestableObstacleDetector subclass for unit tests (TFLite native not available in test env). Confidence threshold uses strict `>` (0.80 exactly is filtered). pubspec.yaml and ImageData NOT modified per E1 ownership rules — noted as doc-only tasks. |
+| Files modified | 6 created, 0 modified (+ code review fixes applied 2026-02-24) |
+| Completion notes | All files created in `lib/features/plugins/built_in/alert/`. Used `GpuDelegateV2` instead of `NnApiDelegate` (not available in tflite_flutter 0.12.1). TestableObstacleDetector subclass for unit tests (TFLite native not available in test env). Confidence threshold uses strict `>` (0.80 exactly is filtered). pubspec.yaml and ImageData NOT modified per E1 ownership rules — tasks unchecked and marked as skipped. **Code review fixes:** H2 bilinear interpolation, H3 production code tests added, M1 unawaited dispose, M2 frame-skip debug log, M3 latency test, M4 buffer size guard, L1 cat height 0.5, L3 transpose optimization. |
 
 ---
 
@@ -715,3 +715,4 @@ _A remplir par l'agent dev pendant l'implementation._
 |------|--------|-------------|
 | 2026-02-24 | Scrum Master (Claude Opus 4.6) | Creation du story file enrichi |
 | 2026-02-24 | E7-Alert (claude-opus-4-6) | Implementation complete — 6 source files, 4 test files, 61 tests passing |
+| 2026-02-24 | Fix Agent (claude-opus-4-6) | Code review fixes: H1 story task checkboxes, H2 bilinear resize, H3 production tests, M1 unawaited dispose, M2 frame-skip log, M3 latency test, M4 buffer guard, L1 cat height, L2 test count, L3 transpose optimization |

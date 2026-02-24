@@ -24,37 +24,42 @@ class DescribeViewport extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Photo
-        if (state.imageData != null) _buildImage(),
+    final timestamp = state.describedAt ?? DateTime.now();
 
-        // Offline indicator
-        if (state.isOffline) _buildOfflineIndicator(),
+    return Container(
+      color: _backgroundColor,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Photo
+          if (state.imageData != null) _buildImage(),
 
-        // Description bubble
-        if (state.description != null)
-          Semantics(
-            liveRegion: true,
-            child: KitaFeedbackBubble(
-              content: state.description!,
-              timestamp: DateTime.now(),
-              variant: BubbleVariant.image,
+          // Offline indicator
+          if (state.isOffline) _buildOfflineIndicator(),
+
+          // Description bubble
+          if (state.description != null)
+            Semantics(
+              liveRegion: true,
+              child: KitaFeedbackBubble(
+                content: state.description!,
+                timestamp: timestamp,
+                variant: BubbleVariant.image,
+              ),
             ),
-          ),
 
-        // Detailed description bubble
-        if (state.detailedDescription != null)
-          Semantics(
-            liveRegion: true,
-            child: KitaFeedbackBubble(
-              content: state.detailedDescription!,
-              timestamp: DateTime.now(),
+          // Detailed description bubble
+          if (state.detailedDescription != null)
+            Semantics(
+              liveRegion: true,
+              child: KitaFeedbackBubble(
+                content: state.detailedDescription!,
+                timestamp: timestamp,
+              ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 

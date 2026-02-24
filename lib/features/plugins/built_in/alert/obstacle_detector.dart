@@ -95,6 +95,7 @@ class ObstacleDetector {
     // _outputBuffer). At 15+ FPS, overlapping detect() calls would corrupt
     // the pre-allocated buffers. We skip the frame instead of queuing.
     if (_processing) {
+      _log.debug('Frame skipped: inference already in progress');
       return const Result.success([]);
     }
     _processing = true;

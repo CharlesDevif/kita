@@ -70,7 +70,7 @@ void main() {
       );
       final desc = buildDetailedDescription(detection);
       expect(desc, contains('voiture'));
-      expect(desc, contains('3 metres')); // 2.5 rounds to 3 (actually to 2)
+      expect(desc, contains('3 metres')); // 2.5.round() == 3 in Dart (rounds half up)
       expect(desc, contains('95 pour cent'));
     });
   });

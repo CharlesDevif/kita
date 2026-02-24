@@ -64,6 +64,24 @@ void main() {
         expect(result.getOrNull(), equals(VoiceCommand.repeat));
       });
 
+      test('recognizes "plus de details" as moreDetails', () {
+        final result = VoiceCommandHandler.recognize('plus de details');
+        expect(result.isSuccess, isTrue);
+        expect(result.getOrNull(), equals(VoiceCommand.moreDetails));
+      });
+
+      test('recognizes "détaille" as moreDetails (with accent)', () {
+        final result = VoiceCommandHandler.recognize('détaille');
+        expect(result.isSuccess, isTrue);
+        expect(result.getOrNull(), equals(VoiceCommand.moreDetails));
+      });
+
+      test('recognizes "approfondir" as moreDetails', () {
+        final result = VoiceCommandHandler.recognize('approfondir');
+        expect(result.isSuccess, isTrue);
+        expect(result.getOrNull(), equals(VoiceCommand.moreDetails));
+      });
+
       test('is case-insensitive', () {
         final result = VoiceCommandHandler.recognize('DECRIS');
         expect(result.isSuccess, isTrue);
@@ -103,7 +121,7 @@ void main() {
         expect(result.isFailure, isTrue);
       });
 
-      test('all 6 commands are recognizable', () {
+      test('all 7 commands are recognizable', () {
         final commands = {
           'decris': VoiceCommand.describe,
           'lis ca': VoiceCommand.read,
@@ -111,6 +129,7 @@ void main() {
           'aide': VoiceCommand.help,
           'merci': VoiceCommand.thanks,
           'repete': VoiceCommand.repeat,
+          'plus de details': VoiceCommand.moreDetails,
         };
 
         for (final entry in commands.entries) {

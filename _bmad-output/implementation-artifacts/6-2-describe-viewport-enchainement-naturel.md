@@ -642,10 +642,11 @@ Marie dit "decris"
 | `lib/features/plugins/built_in/describe/describe_viewport.dart` | Widget viewport photo + description | [x] |
 | `lib/features/plugins/built_in/describe/describe_plugin.dart` | Extension handleRequest enchainement (modif Story 6.1) | [x] |
 | `lib/features/io/data/voice_command_handler.dart` | Ajout `moreDetails` command | [x] |
-| `test/features/plugins/built_in/describe/describe_viewport_test.dart` | Tests viewport (12 tests) | [x] |
+| `test/features/plugins/built_in/describe/describe_test_helpers.dart` | Shared mocks and helpers for describe tests | [x] |
+| `test/features/plugins/built_in/describe/describe_viewport_test.dart` | Tests viewport (13 tests) | [x] |
 | `test/features/plugins/built_in/describe/describe_state_test.dart` | Tests state machine (13 tests) | [x] |
-| `test/features/plugins/built_in/describe/describe_enchainement_test.dart` | Tests enchainement vocal (21 tests) | [x] |
-| `test/features/io/data/voice_command_handler_test.dart` | Tests moreDetails (existant, tous passent) | [x] |
+| `test/features/plugins/built_in/describe/describe_enchainement_test.dart` | Tests enchainement vocal (31 tests) | [x] |
+| `test/features/io/data/voice_command_handler_test.dart` | Tests moreDetails (21 tests, tous passent) | [x] |
 
 ---
 
@@ -656,7 +657,7 @@ Marie dit "decris"
 | Agent | agent-e6 |
 | Started | 2026-02-24 |
 | Completed | 2026-02-24 |
-| Tests | 80 tests (34 plugin + 13 state + 12 viewport + 21 enchainement) — all pass |
+| Tests | 91 describe tests (34 plugin + 13 state + 13 viewport + 31 enchainement) + 21 voice_command_handler — all pass |
 | Coverage | >80% of added code |
 
 ---
@@ -667,3 +668,4 @@ Marie dit "decris"
 |------|--------|--------|
 | 2026-02-24 | SM (create-story) | Story file cree avec Technical Intelligence complete |
 | 2026-02-24 | agent-e6 | Implementation complete: DescribeState, DescribeViewport, enchainement vocal, fallback offline, 80 tests passing, dart analyze clean |
+| 2026-02-24 | agent-fix | Code review fixes: H1 fakeAsync timer test, H2 ProfileAdapter pattern documented + integration tests, H3/H4 TTS coordination TODOs, M1 background color applied, M2 real WCAG contrast calculations, M3 moreDetails voice command tests, M4 toCompleted() in _handleThanks, L1 describedAt timestamp in state, L2 shared test helpers, L3 corrected test counts (91+21) |

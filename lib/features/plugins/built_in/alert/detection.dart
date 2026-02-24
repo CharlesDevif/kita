@@ -94,7 +94,7 @@ class Detection {
       'bench': 0.9,
       'traffic light': 0.6,
       'potted plant': 0.5,
-      'cat': 0.4,
+      'cat': 0.5,
     };
 
     final realHeight = realHeights[label];

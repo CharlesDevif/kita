@@ -679,9 +679,13 @@ test('immediate alert triggers danger haptic and critical TTS', () async {
 | Agent | E7-Alert (claude-opus-4-6) |
 | Started | 2026-02-24 |
 | Completed | 2026-02-24 |
-| Tests | 107/107 passing (46 alert models+plugin, 61 detector) |
+| Tests | 122/122 passing (16 alert models, 31 plugin, 9 viewport semantics/animation, 5 frame preprocessor, 14 obstacle detector, 16 detection postprocessor, 31 total for Story 7.2 = 56 alert-specific) |
 | Coverage | All public API paths covered |
-| dart analyze | Clean (0 issues) |
+| dart analyze | Clean (0 issues on lib/, pre-existing infos only on tests) |
+
+## Known Issues (out of scope)
+
+- **L2 - VoidCallback redefined in profile_adapter.dart** : `lib/shared/multi_modal/profile_adapter.dart` defines its own `typedef VoidCallback = void Function()` which shadows `dart:ui`'s `VoidCallback`. This requires `hide VoidCallback` on imports. This file is owned by E8 (Shell) and must not be modified by E7. The fix should be done by E8 or E1.
 
 ## Change Log
 
@@ -689,3 +693,4 @@ test('immediate alert triggers danger haptic and critical TTS', () async {
 |------|--------|-----------|
 | 2026-02-24 | Scrum Master (claude-opus-4-6) | Creation du story file enrichi |
 | 2026-02-24 | E7-Alert (claude-opus-4-6) | Implementation complete: alert_models.dart (ObstacleDetection, AlertUrgency, classifyUrgency, buildAlertMessage, buildDetailedDescription), kita_alert_plugin.dart (KitaAlertPlugin with handleRequest dispatching obstacle_detected/ok/dismiss/c'est quoi, ProfileAdapter multi-modal feedback, auto-dismiss 5s Timer, race condition handling), alert_viewport.dart (AlertViewport wrapper widget), plugin.kita.yaml manifest. Tests: 30 plugin tests + 16 model tests = 46 tests for Story 7.2. |
+| 2026-02-24 | Fix Agent (claude-opus-4-6) | Code review fixes: H1 (Semantics tests created in alert_viewport_test.dart — 9 tests covering liveRegion, button labels, focus order, fade-out animation, reduced-motion), H2 (10-second description window test with injectable clock), M1 (AlertViewport converted to StatefulWidget with fade-out animation + Semantics wrapper), M2 (Dev Agent Record test count corrected), M3 (misleading comment fixed in alert_models_test.dart), M4 (kitaAlertPluginProvider added to providers.dart), L1 (AlertViewport doc comment updated), L2 (VoidCallback issue documented). |

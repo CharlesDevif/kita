@@ -1,88 +1,18 @@
-import 'dart:typed_data';
-
+// ignore_for_file: depend_on_referenced_packages
+// fake_async is a transitive dependency via flutter_test;
+// cannot add to pubspec.yaml (owned by E1).
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kita/core/errors/kita_failure.dart';
 import 'package:kita/core/errors/result.dart';
 import 'package:kita/core/utils/logger.dart';
-import 'package:kita/features/ai/domain/ai_request.dart';
 import 'package:kita/features/ai/domain/ai_response.dart';
-import 'package:kita/features/ai/domain/image_data.dart';
-import 'package:kita/features/ai/domain/provider_tier.dart';
-import 'package:kita/features/io/domain/location_service.dart';
-import 'package:kita/features/io/domain/motion_service.dart';
 import 'package:kita/features/plugins/built_in/describe/describe_plugin.dart';
 import 'package:kita/features/plugins/built_in/describe/describe_state.dart';
-import 'package:kita/features/plugins/domain/ai_access.dart';
-import 'package:kita/features/plugins/domain/plugin_request.dart';
 import 'package:kita/features/plugins/domain/plugin_response.dart';
-import 'package:kita/features/plugins/domain/sensor_access.dart';
 
-// --- Mocks ---
-
-class MockSensorAccess implements SensorAccess {
-  ImageData? photoToReturn;
-  KitaFailure? failureToReturn;
-
-  @override
-  Future<Result<ImageData>> capturePhoto() async {
-    if (failureToReturn != null) return Result.failure(failureToReturn!);
-    return Result.success(photoToReturn!);
-  }
-
-  @override
-  Future<Result<Position>> getCurrentPosition() async =>
-      throw UnimplementedError();
-
-  @override
-  Future<Result<MotionState>> getMotionState() async =>
-      throw UnimplementedError();
-}
-
-class MockAIAccess implements AIAccess {
-  AIResponse? responseToReturn;
-  KitaFailure? failureToReturn;
-  String? lastPromptReceived;
-
-  @override
-  Future<Result<AIResponse>> complete(AIRequest request) async =>
-      throw UnimplementedError();
-
-  @override
-  Future<Result<AIResponse>> vision(ImageData image, String prompt) async {
-    lastPromptReceived = prompt;
-    if (failureToReturn != null) return Result.failure(failureToReturn!);
-    return Result.success(responseToReturn!);
-  }
-}
-
-// --- Helpers ---
-
-Uint8List _minimalJpeg() =>
-    Uint8List.fromList([0xFF, 0xD8, 0xFF, 0xE0, 0xFF, 0xD9]);
-
-ImageData _testImage() => ImageData(bytes: _minimalJpeg(), mimeType: 'image/jpeg');
-
-AIResponse _aiResponse({
-  String content = 'Un salon lumineux.',
-  AIResponseStatus status = AIResponseStatus.success,
-}) =>
-    AIResponse(
-      content: content,
-      meta: const AIResponseMeta(
-        providerId: 'claude',
-        latency: Duration(milliseconds: 2000),
-        tier: ProviderTier.cloudPowerful,
-      ),
-      status: status,
-    );
-
-PluginRequest _request(
-  MockSensorAccess sensors,
-  MockAIAccess ai, {
-  String command = 'decris',
-}) =>
-    PluginRequest(command: command, sensors: sensors, ai: ai);
+import 'describe_test_helpers.dart';
 
 // --- Tests ---
 
@@ -106,9 +36,9 @@ void main() {
 
   /// Helper to do initial describe and set up state.
   Future<void> doInitialDescribe() async {
-    mockSensors.photoToReturn = _testImage();
-    mockAI.responseToReturn = _aiResponse(content: 'Un salon lumineux.');
-    await plugin.handleRequest(_request(mockSensors, mockAI));
+    mockSensors.photoToReturn = testImage();
+    mockAI.responseToReturn = testAIResponse(content: 'Un salon lumineux.');
+    await plugin.handleRequest(testRequest(mockSensors, mockAI));
   }
 
   group('initial describe', () {
@@ -121,10 +51,10 @@ void main() {
     });
 
     test('returns text response with description', () async {
-      mockSensors.photoToReturn = _testImage();
-      mockAI.responseToReturn = _aiResponse();
+      mockSensors.photoToReturn = testImage();
+      mockAI.responseToReturn = testAIResponse();
 
-      final result = await plugin.handleRequest(_request(mockSensors, mockAI));
+      final result = await plugin.handleRequest(testRequest(mockSensors, mockAI));
 
       expect(result.isSuccess, isTrue);
       final response = (result as Success<PluginResponse>).value;
@@ -138,9 +68,9 @@ void main() {
       await doInitialDescribe();
 
       mockAI.responseToReturn =
-          _aiResponse(content: 'Description detaillee du salon.');
+          testAIResponse(content: 'Description detaillee du salon.');
       await plugin.handleRequest(
-        _request(mockSensors, mockAI, command: 'plus de details'),
+        testRequest(mockSensors, mockAI, command: 'plus de details'),
       );
 
       expect(mockAI.lastPromptReceived, KitaDescribePlugin.detailedPrompt);
@@ -150,9 +80,9 @@ void main() {
       await doInitialDescribe();
 
       mockAI.responseToReturn =
-          _aiResponse(content: 'Description detaillee.');
+          testAIResponse(content: 'Description detaillee.');
       await plugin.handleRequest(
-        _request(mockSensors, mockAI, command: 'plus de details'),
+        testRequest(mockSensors, mockAI, command: 'plus de details'),
       );
 
       expect(plugin.state.phase, DescribePhase.detailed);
@@ -164,9 +94,9 @@ void main() {
       await doInitialDescribe();
 
       mockAI.responseToReturn =
-          _aiResponse(content: 'Description detaillee du salon.');
+          testAIResponse(content: 'Description detaillee du salon.');
       final result = await plugin.handleRequest(
-        _request(mockSensors, mockAI, command: 'plus de details'),
+        testRequest(mockSensors, mockAI, command: 'plus de details'),
       );
 
       expect(result.isSuccess, isTrue);
@@ -177,7 +107,7 @@ void main() {
 
     test('fails gracefully without prior describe', () async {
       final result = await plugin.handleRequest(
-        _request(mockSensors, mockAI, command: 'plus de details'),
+        testRequest(mockSensors, mockAI, command: 'plus de details'),
       );
 
       expect(result.isFailure, isTrue);
@@ -188,9 +118,9 @@ void main() {
     test('also works with "details" alias', () async {
       await doInitialDescribe();
 
-      mockAI.responseToReturn = _aiResponse(content: 'Details.');
+      mockAI.responseToReturn = testAIResponse(content: 'Details.');
       final result = await plugin.handleRequest(
-        _request(mockSensors, mockAI, command: 'details'),
+        testRequest(mockSensors, mockAI, command: 'details'),
       );
 
       expect(result.isSuccess, isTrue);
@@ -199,9 +129,9 @@ void main() {
     test('also works with "detaille" alias', () async {
       await doInitialDescribe();
 
-      mockAI.responseToReturn = _aiResponse(content: 'Details.');
+      mockAI.responseToReturn = testAIResponse(content: 'Details.');
       final result = await plugin.handleRequest(
-        _request(mockSensors, mockAI, command: 'detaille'),
+        testRequest(mockSensors, mockAI, command: 'detaille'),
       );
 
       expect(result.isSuccess, isTrue);
@@ -216,7 +146,7 @@ void main() {
       mockAI.lastPromptReceived = null;
 
       final result = await plugin.handleRequest(
-        _request(mockSensors, mockAI, command: 'repete'),
+        testRequest(mockSensors, mockAI, command: 'repete'),
       );
 
       expect(result.isSuccess, isTrue);
@@ -230,15 +160,15 @@ void main() {
       await doInitialDescribe();
 
       mockAI.responseToReturn =
-          _aiResponse(content: 'Description detaillee.');
+          testAIResponse(content: 'Description detaillee.');
       await plugin.handleRequest(
-        _request(mockSensors, mockAI, command: 'plus de details'),
+        testRequest(mockSensors, mockAI, command: 'plus de details'),
       );
 
       mockAI.lastPromptReceived = null;
 
       final result = await plugin.handleRequest(
-        _request(mockSensors, mockAI, command: 'repete'),
+        testRequest(mockSensors, mockAI, command: 'repete'),
       );
 
       final response = (result as Success<PluginResponse>).value;
@@ -247,7 +177,7 @@ void main() {
 
     test('fails gracefully without prior describe', () async {
       final result = await plugin.handleRequest(
-        _request(mockSensors, mockAI, command: 'repete'),
+        testRequest(mockSensors, mockAI, command: 'repete'),
       );
 
       expect(result.isFailure, isTrue);
@@ -261,7 +191,7 @@ void main() {
       await doInitialDescribe();
 
       final result = await plugin.handleRequest(
-        _request(mockSensors, mockAI, command: 'merci'),
+        testRequest(mockSensors, mockAI, command: 'merci'),
       );
 
       expect(result.isSuccess, isTrue);
@@ -274,7 +204,7 @@ void main() {
   group('unknown command', () {
     test('returns failure for unrecognized command', () async {
       final result = await plugin.handleRequest(
-        _request(mockSensors, mockAI, command: 'zoomer'),
+        testRequest(mockSensors, mockAI, command: 'zoomer'),
       );
 
       expect(result.isFailure, isTrue);
@@ -285,11 +215,11 @@ void main() {
     });
 
     test('does not trigger camera capture for unknown command', () async {
-      mockSensors.photoToReturn = _testImage();
-      mockAI.responseToReturn = _aiResponse();
+      mockSensors.photoToReturn = testImage();
+      mockAI.responseToReturn = testAIResponse();
 
       final result = await plugin.handleRequest(
-        _request(mockSensors, mockAI, command: 'unknown'),
+        testRequest(mockSensors, mockAI, command: 'unknown'),
       );
 
       expect(result.isFailure, isTrue);
@@ -299,13 +229,83 @@ void main() {
   });
 
   group('silence timeout', () {
-    test('resets state to idle after timeout', () async {
+    test('resets state to idle and calls onReturnPassive after 5s',
+        () {
+      fakeAsync((async) {
+        final fakePlugin = KitaDescribePlugin();
+        final fakeSensors = MockSensorAccess();
+        final fakeAI = MockAIAccess();
+        var passiveCalled = false;
+        fakePlugin.onReturnPassive = () => passiveCalled = true;
+
+        fakeSensors.photoToReturn = testImage();
+        fakeAI.responseToReturn =
+            testAIResponse(content: 'Un salon lumineux.');
+
+        // Run the async handleRequest synchronously within fakeAsync
+        fakePlugin
+            .handleRequest(testRequest(fakeSensors, fakeAI))
+            .then((_) {});
+        async.flushMicrotasks();
+
+        expect(fakePlugin.state.phase, DescribePhase.describing);
+        expect(passiveCalled, isFalse);
+
+        // Advance time by 4s — should still be describing
+        async.elapse(const Duration(seconds: 4));
+        expect(fakePlugin.state.phase, DescribePhase.describing);
+        expect(passiveCalled, isFalse);
+
+        // Advance time by 1 more second (total 5s) — should be idle
+        async.elapse(const Duration(seconds: 1));
+        expect(fakePlugin.state.phase, DescribePhase.idle);
+        expect(passiveCalled, isTrue);
+      });
+    });
+
+    test('timer resets on new command before expiry', () {
+      fakeAsync((async) {
+        final fakePlugin = KitaDescribePlugin();
+        final fakeSensors = MockSensorAccess();
+        final fakeAI = MockAIAccess();
+        var passiveCalled = false;
+        fakePlugin.onReturnPassive = () => passiveCalled = true;
+
+        fakeSensors.photoToReturn = testImage();
+        fakeAI.responseToReturn = testAIResponse(content: 'Salon.');
+
+        // Initial describe
+        fakePlugin
+            .handleRequest(testRequest(fakeSensors, fakeAI))
+            .then((_) {});
+        async.flushMicrotasks();
+
+        // Advance 3s, then send "repete" which resets the timer
+        async.elapse(const Duration(seconds: 3));
+        expect(fakePlugin.state.phase, DescribePhase.describing);
+
+        fakePlugin
+            .handleRequest(
+                testRequest(fakeSensors, fakeAI, command: 'repete'))
+            .then((_) {});
+        async.flushMicrotasks();
+
+        // Advance 4s after repete — should still NOT be idle (timer was reset)
+        async.elapse(const Duration(seconds: 4));
+        expect(fakePlugin.state.phase, DescribePhase.describing);
+        expect(passiveCalled, isFalse);
+
+        // Advance 1 more second (5s since repete) — should now be idle
+        async.elapse(const Duration(seconds: 1));
+        expect(fakePlugin.state.phase, DescribePhase.idle);
+        expect(passiveCalled, isTrue);
+      });
+    });
+
+    test('onDeactivate cancels silence timer (no callback fire)', () async {
       await doInitialDescribe();
       expect(plugin.state.phase, DescribePhase.describing);
 
-      // Advance the timer past the silence timeout
-      // Since we can't easily fake timers in this context,
-      // verify state resets after deactivate
       await plugin.onDeactivate();
       expect(plugin.state.phase, DescribePhase.idle);
     });
@@ -325,7 +325,8 @@ void main() {
       expect(plugin.onReturnPassive, isNull);
     });
 
-    test('onDeactivate does not invoke callback (it is for timer only)', () async {
+    test('onDeactivate does not invoke callback (it is for timer only)',
+        () async {
       var called = false;
       plugin.onReturnPassive = () => called = true;
 
@@ -339,13 +340,14 @@ void main() {
 
   group('fallback offline', () {
     test('flags offline when AI response is degraded', () async {
-      mockSensors.photoToReturn = _testImage();
-      mockAI.responseToReturn = _aiResponse(
+      mockSensors.photoToReturn = testImage();
+      mockAI.responseToReturn = testAIResponse(
         content: 'Texte OCR brut.',
         status: AIResponseStatus.degraded,
       );
 
-      final result = await plugin.handleRequest(_request(mockSensors, mockAI));
+      final result =
+          await plugin.handleRequest(testRequest(mockSensors, mockAI));
 
       expect(result.isSuccess, isTrue);
       expect(plugin.state.isOffline, isTrue);
@@ -356,18 +358,18 @@ void main() {
 
     test('detailed request with degraded response flags offline', () async {
       // First: normal describe
-      mockSensors.photoToReturn = _testImage();
-      mockAI.responseToReturn = _aiResponse(content: 'Normal.');
-      await plugin.handleRequest(_request(mockSensors, mockAI));
+      mockSensors.photoToReturn = testImage();
+      mockAI.responseToReturn = testAIResponse(content: 'Normal.');
+      await plugin.handleRequest(testRequest(mockSensors, mockAI));
 
       // Then: detailed, but degraded
-      mockAI.responseToReturn = _aiResponse(
+      mockAI.responseToReturn = testAIResponse(
         content: 'Texte OCR detaille.',
         status: AIResponseStatus.degraded,
       );
 
       final result = await plugin.handleRequest(
-        _request(mockSensors, mockAI, command: 'plus de details'),
+        testRequest(mockSensors, mockAI, command: 'plus de details'),
       );
 
       expect(result.isSuccess, isTrue);
@@ -379,30 +381,32 @@ void main() {
   group('full conversation cycle', () {
     test('decris -> plus de details -> repete -> merci', () async {
       // Step 1: decris
-      mockSensors.photoToReturn = _testImage();
-      mockAI.responseToReturn = _aiResponse(content: 'Un salon.');
-      var result = await plugin.handleRequest(_request(mockSensors, mockAI));
+      mockSensors.photoToReturn = testImage();
+      mockAI.responseToReturn = testAIResponse(content: 'Un salon.');
+      var result =
+          await plugin.handleRequest(testRequest(mockSensors, mockAI));
       expect(result.isSuccess, isTrue);
       expect(plugin.state.phase, DescribePhase.describing);
 
       // Step 2: plus de details
-      mockAI.responseToReturn = _aiResponse(content: 'Salon detaille.');
+      mockAI.responseToReturn = testAIResponse(content: 'Salon detaille.');
       result = await plugin.handleRequest(
-        _request(mockSensors, mockAI, command: 'plus de details'),
+        testRequest(mockSensors, mockAI, command: 'plus de details'),
       );
       expect(result.isSuccess, isTrue);
       expect(plugin.state.phase, DescribePhase.detailed);
 
       // Step 3: repete
       result = await plugin.handleRequest(
-        _request(mockSensors, mockAI, command: 'repete'),
+        testRequest(mockSensors, mockAI, command: 'repete'),
       );
       expect(result.isSuccess, isTrue);
-      expect((result as Success<PluginResponse>).value.content, 'Salon detaille.');
+      expect(
+          (result as Success<PluginResponse>).value.content, 'Salon detaille.');
 
       // Step 4: merci
       result = await plugin.handleRequest(
-        _request(mockSensors, mockAI, command: 'merci'),
+        testRequest(mockSensors, mockAI, command: 'merci'),
       );
       expect(result.isSuccess, isTrue);
       expect(plugin.state.phase, DescribePhase.idle);
@@ -473,6 +477,65 @@ void main() {
       expect(plugin.manifest.voiceCommands, contains('plus de details'));
       expect(plugin.manifest.voiceCommands, contains('repete'));
       expect(plugin.manifest.voiceCommands, contains('merci'));
+    });
+  });
+
+  group('PluginResponse integration (H2)', () {
+    test('describe response contains fields needed for Shell/ProfileAdapter',
+        () async {
+      mockSensors.photoToReturn = testImage();
+      mockAI.responseToReturn = testAIResponse(content: 'Un salon lumineux.');
+
+      final result =
+          await plugin.handleRequest(testRequest(mockSensors, mockAI));
+
+      expect(result.isSuccess, isTrue);
+      final response = (result as Success<PluginResponse>).value;
+
+      // The Shell uses these fields to route through ProfileAdapter:
+      // - type: determines output modality
+      // - content: text for TTS (vocal) and viewport (visual)
+      // - metadata: provider info for logging/analytics
+      expect(response.type, PluginResponseType.text);
+      expect(response.content, isNotEmpty);
+      expect(response.metadata, isNotNull);
+      expect(response.metadata!['provider'], isA<String>());
+      expect(response.metadata!['latency_ms'], isA<int>());
+      expect(response.metadata!['tier'], isA<String>());
+    });
+
+    test('merci response contains return_passive action for Shell', () async {
+      await doInitialDescribe();
+
+      final result = await plugin.handleRequest(
+        testRequest(mockSensors, mockAI, command: 'merci'),
+      );
+
+      final response = (result as Success<PluginResponse>).value;
+
+      // The Shell checks metadata['action'] == 'return_passive' to know
+      // it should transition back to passive mode via ProfileAdapter.
+      expect(response.metadata, isNotNull);
+      expect(response.metadata!['action'], 'return_passive');
+      expect(response.content, isEmpty);
+    });
+
+    test('offline response contains offline flag for Shell', () async {
+      mockSensors.photoToReturn = testImage();
+      mockAI.responseToReturn = testAIResponse(
+        content: 'Texte OCR.',
+        status: AIResponseStatus.degraded,
+      );
+
+      final result =
+          await plugin.handleRequest(testRequest(mockSensors, mockAI));
+
+      final response = (result as Success<PluginResponse>).value;
+
+      // The Shell uses 'offline' metadata to adjust ProfileAdapter output
+      // (e.g., announce "Mode local" prefix via TTS).
+      expect(response.metadata!['offline'], true);
+      expect(response.content, contains('Mode local'));
     });
   });
 }

@@ -16,7 +16,6 @@ import 'package:kita/features/plugins/domain/trust_level.dart';
 import 'package:kita/features/plugins/built_in/alert/kita_alert_plugin.dart';
 import 'package:kita/shared/multi_modal/profile_adapter.dart'
     hide VoidCallback;
-import 'package:kita/shared/widgets/kita_alert.dart';
 
 // === Manual Mocks ===
 
@@ -469,6 +468,56 @@ void main() {
       );
 
       // TTS was invoked through the vocal callback
+      expect(mockTts.speakCalls.length, 1);
+      expect(mockTts.speakCalls.first.text, contains('Aucun obstacle'));
+    });
+
+    test('description expires after 10-second window', () async {
+      // Use injectable clock for time control
+      var fakeTime = DateTime(2026, 1, 1, 12, 0, 0);
+      final timedPlugin = KitaAlertPlugin(
+        ttsService: mockTts,
+        hapticService: mockHaptic,
+        profileAdapter: mockProfileAdapter,
+        now: () => fakeTime,
+      );
+      await timedPlugin.onActivate();
+
+      // 1. Trigger a detection at t=0
+      await timedPlugin.handleRequest(
+        _obstacleRequest(type: 'voiture', distance: 2.0, confidence: 0.95),
+      );
+      mockTts.speakCalls.clear();
+
+      // 2. Immediately ask "c'est quoi" — should return description
+      final result1 = await timedPlugin.handleRequest(
+        _makeRequest(command: 'describe_obstacle'),
+      );
+      expect(result1.isSuccess, isTrue);
+      result1.when(
+        success: (response) {
+          expect(response.content, contains('voiture'));
+        },
+        failure: (_) => fail('Should succeed'),
+      );
+      expect(mockTts.speakCalls.length, 1);
+      expect(mockTts.speakCalls.first.text, contains('voiture'));
+      mockTts.speakCalls.clear();
+
+      // 3. Advance past the 10-second window
+      fakeTime = fakeTime.add(const Duration(seconds: 11));
+
+      // 4. Ask again — should return "Aucun obstacle recent"
+      final result2 = await timedPlugin.handleRequest(
+        _makeRequest(command: 'describe_obstacle'),
+      );
+      expect(result2.isSuccess, isTrue);
+      result2.when(
+        success: (response) {
+          expect(response.content, contains('Aucun obstacle'));
+        },
+        failure: (_) => fail('Should succeed'),
+      );
       expect(mockTts.speakCalls.length, 1);
       expect(mockTts.speakCalls.first.text, contains('Aucun obstacle'));
     });

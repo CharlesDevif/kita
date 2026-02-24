@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -183,16 +184,59 @@ void main() {
     });
 
     group('contrast values', () {
-      test('text color meets 4.5:1 on background', () {
-        // #E2E8F0 on #1A1A2E: ratio ~12.4:1 (verified via WCAG contrast checker)
-        // #E2E8F0 on #16213E: ratio ~9.2:1 (verified)
-        // Both pass AA and AAA requirements.
-        expect(true, isTrue);
+      /// Converts a single sRGB channel (0.0-1.0) to linear RGB.
+      double srgbToLinear(double s) {
+        return s <= 0.04045
+            ? s / 12.92
+            : math.pow((s + 0.055) / 1.055, 2.4).toDouble();
+      }
+
+      /// Computes the WCAG 2.1 relative luminance of a [Color].
+      double relativeLuminance(Color c) {
+        final r = srgbToLinear(c.r);
+        final g = srgbToLinear(c.g);
+        final b = srgbToLinear(c.b);
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      }
+
+      /// Computes the WCAG 2.1 contrast ratio between two colors.
+      /// Returns a value >= 1.0 where higher means more contrast.
+      double contrastRatio(Color lighter, Color darker) {
+        final l1 = relativeLuminance(lighter);
+        final l2 = relativeLuminance(darker);
+        final high = l1 > l2 ? l1 : l2;
+        final low = l1 > l2 ? l2 : l1;
+        return (high + 0.05) / (low + 0.05);
+      }
+
+      test('text color (#E2E8F0) meets 4.5:1 on background (#1A1A2E)', () {
+        const textColor = Color(0xFFE2E8F0);
+        const backgroundColor = Color(0xFF1A1A2E);
+        final ratio = contrastRatio(textColor, backgroundColor);
+
+        // Must meet WCAG AA for normal text (>= 4.5:1)
+        expect(ratio, greaterThanOrEqualTo(4.5),
+            reason: 'Text contrast ratio $ratio should be >= 4.5:1');
       });
 
-      test('offline text color meets 4.5:1 on background', () {
-        // #94A3B8 on #1A1A2E: ratio ~5.4:1 (passes AA)
-        expect(true, isTrue);
+      test('text color (#E2E8F0) meets 4.5:1 on bubble (#16213E)', () {
+        const textColor = Color(0xFFE2E8F0);
+        const bubbleColor = Color(0xFF16213E);
+        final ratio = contrastRatio(textColor, bubbleColor);
+
+        expect(ratio, greaterThanOrEqualTo(4.5),
+            reason: 'Bubble text contrast ratio $ratio should be >= 4.5:1');
+      });
+
+      test('offline text color (#94A3B8) meets 4.5:1 on background (#1A1A2E)',
+          () {
+        const offlineTextColor = Color(0xFF94A3B8);
+        const backgroundColor = Color(0xFF1A1A2E);
+        final ratio = contrastRatio(offlineTextColor, backgroundColor);
+
+        expect(ratio, greaterThanOrEqualTo(4.5),
+            reason:
+                'Offline text contrast ratio $ratio should be >= 4.5:1');
       });
     });
   });

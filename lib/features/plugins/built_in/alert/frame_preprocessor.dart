@@ -42,11 +42,21 @@ class FramePreprocessor {
   }
 
   /// Fill a pre-allocated buffer instead of creating a new one.
+  ///
+  /// Throws [ArgumentError] if [buffer] is too small for the expected
+  /// output size (`inputSize * inputSize * 3` floats).
   void preprocessFrameInto(
     ImageData frame, {
     required String pixelFormat,
     required Float32List buffer,
   }) {
+    final expectedSize = inputSize * inputSize * 3;
+    if (buffer.length < expectedSize) {
+      throw ArgumentError(
+        'Buffer too small: ${buffer.length} < $expectedSize',
+      );
+    }
+
     final width = frame.width ?? inputSize;
     final height = frame.height ?? inputSize;
 
@@ -114,9 +124,11 @@ class FramePreprocessor {
     return rgb;
   }
 
-  /// Resize an RGB image using nearest-neighbor interpolation.
+  /// Resize an RGB image using bilinear interpolation.
   ///
-  /// Simple and fast for real-time preprocessing.
+  /// For each output pixel, computes the four nearest source pixels and
+  /// blends them weighted by fractional distance — producing smoother
+  /// results than nearest-neighbor and better input for ML inference.
   Uint8List resizeRgb(
     Uint8List rgbBytes,
     int srcWidth,
@@ -131,16 +143,44 @@ class FramePreprocessor {
     final result = Uint8List(dstWidth * dstHeight * 3);
     final double xRatio = srcWidth / dstWidth;
     final double yRatio = srcHeight / dstHeight;
+    final int maxSrcX = srcWidth - 1;
+    final int maxSrcY = srcHeight - 1;
 
     for (int y = 0; y < dstHeight; y++) {
-      final int srcY = (y * yRatio).floor().clamp(0, srcHeight - 1);
+      final double srcYf = y * yRatio;
+      final int y0 = srcYf.floor().clamp(0, maxSrcY);
+      final int y1 = (y0 + 1).clamp(0, maxSrcY);
+      final double yFrac = srcYf - y0;
+      final double yFracInv = 1.0 - yFrac;
+
       for (int x = 0; x < dstWidth; x++) {
-        final int srcX = (x * xRatio).floor().clamp(0, srcWidth - 1);
-        final int srcIndex = (srcY * srcWidth + srcX) * 3;
+        final double srcXf = x * xRatio;
+        final int x0 = srcXf.floor().clamp(0, maxSrcX);
+        final int x1 = (x0 + 1).clamp(0, maxSrcX);
+        final double xFrac = srcXf - x0;
+        final double xFracInv = 1.0 - xFrac;
+
+        // Indices of the 4 surrounding source pixels
+        final int i00 = (y0 * srcWidth + x0) * 3;
+        final int i10 = (y0 * srcWidth + x1) * 3;
+        final int i01 = (y1 * srcWidth + x0) * 3;
+        final int i11 = (y1 * srcWidth + x1) * 3;
+
+        // Weights for each corner
+        final double w00 = xFracInv * yFracInv;
+        final double w10 = xFrac * yFracInv;
+        final double w01 = xFracInv * yFrac;
+        final double w11 = xFrac * yFrac;
+
         final int dstIndex = (y * dstWidth + x) * 3;
-        result[dstIndex] = rgbBytes[srcIndex];
-        result[dstIndex + 1] = rgbBytes[srcIndex + 1];
-        result[dstIndex + 2] = rgbBytes[srcIndex + 2];
+        for (int c = 0; c < 3; c++) {
+          result[dstIndex + c] = (rgbBytes[i00 + c] * w00 +
+                  rgbBytes[i10 + c] * w10 +
+                  rgbBytes[i01 + c] * w01 +
+                  rgbBytes[i11 + c] * w11)
+              .round()
+              .clamp(0, 255);
+        }
       }
     }
     return result;

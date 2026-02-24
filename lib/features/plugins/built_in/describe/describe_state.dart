@@ -26,6 +26,7 @@ class DescribeState {
     this.description,
     this.detailedDescription,
     this.isOffline = false,
+    this.describedAt,
   });
 
   final DescribePhase phase;
@@ -33,6 +34,11 @@ class DescribeState {
   final String? description;
   final String? detailedDescription;
   final bool isOffline;
+
+  /// Timestamp when the description was received from AI.
+  /// Used by the viewport to display the time without calling DateTime.now()
+  /// on every build.
+  final DateTime? describedAt;
 
   /// Returns the last description available (detailed if present, else standard).
   String? get lastDescription => detailedDescription ?? description;
@@ -43,6 +49,7 @@ class DescribeState {
     String? description,
     String? detailedDescription,
     bool? isOffline,
+    DateTime? describedAt,
   }) {
     return DescribeState(
       phase: phase ?? this.phase,
@@ -50,6 +57,7 @@ class DescribeState {
       description: description ?? this.description,
       detailedDescription: detailedDescription ?? this.detailedDescription,
       isOffline: isOffline ?? this.isOffline,
+      describedAt: describedAt ?? this.describedAt,
     );
   }
 
@@ -58,21 +66,28 @@ class DescribeState {
     ImageData image,
     String desc, {
     bool offline = false,
+    DateTime? describedAt,
   }) {
     return DescribeState(
       phase: DescribePhase.describing,
       imageData: image,
       description: desc,
       isOffline: offline,
+      describedAt: describedAt ?? DateTime.now(),
     );
   }
 
   /// Transition to detailed phase with enriched description.
-  DescribeState withDetailedDescription(String detail, {bool offline = false}) {
+  DescribeState withDetailedDescription(
+    String detail, {
+    bool offline = false,
+    DateTime? describedAt,
+  }) {
     return copyWith(
       phase: DescribePhase.detailed,
       detailedDescription: detail,
       isOffline: offline,
+      describedAt: describedAt ?? DateTime.now(),
     );
   }
 
