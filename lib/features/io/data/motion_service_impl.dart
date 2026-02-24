@@ -34,9 +34,13 @@ class MotionServiceImpl implements MotionService {
   StreamSubscription<UserAccelerometerEvent>? _subscription;
   void Function(MotionState state)? _onStateChanged;
   final List<double> _magnitudes = [];
+  bool _hasError = false;
 
   @override
   MotionState get currentState => _currentState;
+
+  /// Whether the accelerometer stream has encountered an error.
+  bool get hasError => _hasError;
 
   @override
   Future<Result<void>> startMonitoring({
@@ -48,6 +52,7 @@ class MotionServiceImpl implements MotionService {
     }
 
     _onStateChanged = onStateChanged;
+    _hasError = false;
 
     try {
       final stream = userAccelerometerEventStream(
@@ -58,6 +63,8 @@ class MotionServiceImpl implements MotionService {
         _onAccelerometerEvent,
         onError: (Object error) {
           _log.error('Accelerometer stream error', error: error);
+          _hasError = true;
+          // Stream continues (cancelOnError: false) but state is tracked
         },
         cancelOnError: false,
       );

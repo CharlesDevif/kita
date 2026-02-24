@@ -40,7 +40,17 @@ class PluginQuotaManager {
       ));
     }
 
+    // Remove stale plugin entries with empty history to prevent memory leak.
+    pruneInactivePlugins();
+
     return const Result.success(null);
+  }
+
+  /// Removes entries for plugins with no recent call history.
+  ///
+  /// Prevents memory leak when many plugins are registered but inactive.
+  void pruneInactivePlugins() {
+    _callHistory.removeWhere((_, timestamps) => timestamps.isEmpty);
   }
 
   /// Records a successful API call for quota tracking.

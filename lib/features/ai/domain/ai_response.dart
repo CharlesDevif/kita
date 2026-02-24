@@ -1,6 +1,6 @@
 import 'provider_tier.dart';
 
-enum AIResponseStatus { success, fallback, degraded, error }
+enum AIResponseStatus { success, degraded, error }
 
 class AIResponseMeta {
   const AIResponseMeta({

@@ -22,13 +22,13 @@ class FallbackChain {
   final List<AIProvider> _providers;
 
   static const _bruteAlertContent =
-      'Attention ! Situation detectee mais impossible de fournir plus de details.';
+      'Attention ! Situation détectée mais impossible de fournir plus de détails.';
 
   /// Execute the request through the fallback chain.
   ///
   /// Returns [Result.success] guaranteed — the brute alert is the last resort.
   Future<Result<AIResponse>> execute(AIRequest request) async {
-    final tiers = _tiersForPriority(request.priority);
+    final tiers = _tiersForPriority(request.priority ?? RequestPriority.standard);
 
     for (final tier in tiers) {
       final providersForTier =
@@ -77,7 +77,7 @@ class FallbackChain {
 
     try {
       final future = request.imageData != null
-          ? provider.vision(request.imageData!, request.prompt)
+          ? provider.vision(request.imageData!, request.prompt, maxTokens: request.maxTokens)
           : provider.complete(request);
 
       final result = await future.timeout(timeout, onTimeout: () {

@@ -30,7 +30,7 @@ class LocationServiceImpl implements LocationService {
         ),
       );
 
-      _log.info('Position acquired: ${pos.latitude}, ${pos.longitude}');
+      _log.info('Position acquired successfully');
       return Result.success(Position(
         latitude: pos.latitude,
         longitude: pos.longitude,

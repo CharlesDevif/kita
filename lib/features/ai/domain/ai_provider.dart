@@ -11,6 +11,6 @@ abstract interface class AIProvider {
   bool get isAvailable;
 
   Future<Result<AIResponse>> complete(AIRequest request);
-  Future<Result<AIResponse>> vision(ImageData image, String prompt);
+  Future<Result<AIResponse>> vision(ImageData image, String prompt, {int? maxTokens});
   Future<Result<void>> validateApiKey(String key);
 }

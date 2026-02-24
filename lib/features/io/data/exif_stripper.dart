@@ -33,14 +33,31 @@ class ExifStripper {
       // Clear all EXIF metadata.
       decoded.exif.clear();
 
-      // Re-encode as JPEG (strips any remaining metadata).
-      final cleanBytes = img.encodeJpg(decoded, quality: 95);
+      // Detect format from bytes to preserve original encoding.
+      // JPEG starts with 0xFF 0xD8, PNG with 0x89 0x50 0x4E 0x47.
+      final bytes = imageData.bytes;
+      final isPng = bytes.length >= 4 &&
+          bytes[0] == 0x89 &&
+          bytes[1] == 0x50 &&
+          bytes[2] == 0x4E &&
+          bytes[3] == 0x47;
+
+      List<int> cleanBytes;
+      String mimeType;
+      if (isPng) {
+        cleanBytes = img.encodePng(decoded);
+        mimeType = 'image/png';
+      } else {
+        // Default to JPEG for JPEG and other/unknown formats.
+        cleanBytes = img.encodeJpg(decoded, quality: 95);
+        mimeType = 'image/jpeg';
+      }
 
       _log.info('EXIF stripped: ${imageData.bytes.length} -> ${cleanBytes.length} bytes');
 
       return Result.success(ImageData(
         bytes: Uint8List.fromList(cleanBytes),
-        mimeType: 'image/jpeg',
+        mimeType: mimeType,
         width: decoded.width,
         height: decoded.height,
       ));

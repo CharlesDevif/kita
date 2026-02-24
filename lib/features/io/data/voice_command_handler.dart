@@ -109,7 +109,7 @@ class VoiceCommandHandler {
   /// Strips common French diacritical marks for tolerant matching.
   static String _stripAccents(String text) {
     const accented = 'àâäéèêëïîôùûüÿçœæ';
-    const replaced = 'aaaeeeeiioouuycoa';
+    const replaced = 'aaaeeeeiiouuuycoa';
 
     final buffer = StringBuffer();
     for (final char in text.runes) {

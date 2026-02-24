@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:collection';
 
 import 'package:flutter_tts/flutter_tts.dart';
@@ -161,6 +162,17 @@ class TTSServiceImpl implements TTSService {
   void _onSpeechComplete() {
     _currentRequest = null;
     _speaking = false;
-    _processQueue();
+    unawaited(_processQueue());
+  }
+
+  /// Releases TTS resources, stops playback and clears the queue.
+  void dispose() {
+    _queue.clear();
+    _currentRequest = null;
+    _speaking = false;
+    // Don't call _tts.stop() if not initialized
+    if (_initialized) {
+      _tts.stop();
+    }
   }
 }

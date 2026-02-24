@@ -6,7 +6,9 @@ import 'stt_providers.dart';
 
 /// Provides the [AudioService] implementation (AudioMultiplexer).
 final audioServiceProvider = Provider<AudioService>((ref) {
-  return AudioMultiplexerImpl(
+  final service = AudioMultiplexerImpl(
     sttService: ref.watch(sttServiceProvider),
   );
+  ref.onDispose(service.dispose);
+  return service;
 });

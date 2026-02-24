@@ -29,6 +29,7 @@ class CameraServiceImpl implements CameraService {
   CameraDescription? _cameraDescription;
   CameraController? _controller;
   bool _isStreaming = false;
+  bool _processingFrame = false;
   DateTime _lastFrameTime = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
@@ -148,14 +149,17 @@ class CameraServiceImpl implements CameraService {
       );
 
       await _controller!.startImageStream((CameraImage image) {
+        if (_processingFrame) return;
         final now = DateTime.now();
         if (now.difference(_lastFrameTime) < frameDuration) {
           return; // Throttle: skip frame
         }
+        _processingFrame = true;
         _lastFrameTime = now;
 
         final imageData = _convertCameraImage(image);
         onFrame(imageData);
+        _processingFrame = false;
       });
 
       _isStreaming = true;

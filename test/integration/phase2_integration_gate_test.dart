@@ -89,7 +89,7 @@ class _MockAIProvider implements AIProvider {
   }
 
   @override
-  Future<Result<AIResponse>> vision(ImageData image, String prompt) async {
+  Future<Result<AIResponse>> vision(ImageData image, String prompt, {int? maxTokens}) async {
     if (shouldFail) {
       return const Result.failure(
         AIProviderFailure(

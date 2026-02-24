@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -65,7 +66,7 @@ class ClaudeProvider implements AIProvider {
   }
 
   @override
-  Future<Result<AIResponse>> vision(ImageData image, String prompt) async {
+  Future<Result<AIResponse>> vision(ImageData image, String prompt, {int? maxTokens}) async {
     final stopwatch = Stopwatch()..start();
 
     final base64Image = base64Encode(image.bytes);
@@ -73,7 +74,7 @@ class ClaudeProvider implements AIProvider {
 
     final body = {
       'model': model,
-      'max_tokens': 1024,
+      'max_tokens': maxTokens ?? 1024,
       'messages': [
         {
           'role': 'user',
@@ -170,7 +171,7 @@ class ClaudeProvider implements AIProvider {
     } on Exception catch (e, stack) {
       stopwatch.stop();
 
-      if (e.toString().contains('TimeoutException')) {
+      if (e is TimeoutException) {
         _log.warning('Request timed out');
         return Result.failure(NetworkFailure.timeout(endpoint: _baseUrl));
       }
@@ -197,6 +198,10 @@ class ClaudeProvider implements AIProvider {
       ) as Map<String, dynamic>;
 
       final text = textBlock['text'] as String? ?? '';
+
+      if (text.isEmpty) {
+        _log.warning('Response parsed but text content is empty');
+      }
 
       return Result.success(AIResponse(
         content: text,

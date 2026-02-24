@@ -1,6 +1,7 @@
 CREATE TABLE request_cache (
   id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   request_hash TEXT NOT NULL,
+  normalized_prompt TEXT NOT NULL DEFAULT '',
   request_type TEXT NOT NULL,
   response_content TEXT NOT NULL,
   provider_id TEXT NOT NULL,

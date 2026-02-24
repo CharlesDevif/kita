@@ -22,8 +22,8 @@ void main() {
       expect(RequestPriority.values, hasLength(4));
     });
 
-    test('AIResponseStatus has 4 values', () {
-      expect(AIResponseStatus.values, hasLength(4));
+    test('AIResponseStatus has 3 values', () {
+      expect(AIResponseStatus.values, hasLength(3));
     });
 
     test('ImageData holds bytes and metadata', () {
@@ -40,7 +40,7 @@ void main() {
     test('AIRequest has required and optional fields', () {
       const request = AIRequest(prompt: 'Describe this');
       expect(request.prompt, equals('Describe this'));
-      expect(request.priority, equals(RequestPriority.standard));
+      expect(request.priority, isNull);
       expect(request.imageData, isNull);
       expect(request.maxTokens, isNull);
     });

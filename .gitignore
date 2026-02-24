@@ -59,8 +59,9 @@ coverage/
 *.jks
 *.keystore
 
-# Claude Code (session data)
-.claude/
+# Claude Code (session data — keep agents/ for team config)
+.claude/*
+!.claude/agents/
 
 # Temp
 .tmp/

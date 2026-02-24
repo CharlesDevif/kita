@@ -41,7 +41,7 @@ class AIRouterImpl implements AIRouter {
     final classifiedRequest = _classifyIfNeeded(request);
 
     _log.debug(
-      'Routing request with priority ${classifiedRequest.priority.name}',
+      'Routing request with priority ${classifiedRequest.priority?.name ?? 'standard'}',
     );
 
     final result = await _fallbackChain.execute(classifiedRequest);
@@ -68,15 +68,13 @@ class AIRouterImpl implements AIRouter {
   }
 
   AIRequest _classifyIfNeeded(AIRequest request) {
-    // If the request already has a non-default priority, respect it.
-    if (request.priority != RequestPriority.standard) {
+    // Explicit priority (even standard) — respect it, skip classification.
+    if (request.priority != null) {
       return request;
     }
 
     final result = _classifier.classify(request.prompt);
     final priority = result.getOrElse((_) => RequestPriority.standard);
-
-    if (priority == request.priority) return request;
 
     return AIRequest(
       prompt: request.prompt,

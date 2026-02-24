@@ -5,5 +5,7 @@ import '../tts_service_impl.dart';
 
 /// Provides the [TTSService] implementation.
 final ttsServiceProvider = Provider<TTSService>((ref) {
-  return TTSServiceImpl();
+  final service = TTSServiceImpl();
+  ref.onDispose(service.dispose);
+  return service;
 });

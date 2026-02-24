@@ -140,6 +140,13 @@ class AudioMultiplexerImpl implements AudioService {
     }
   }
 
+  /// Releases audio multiplexer resources.
+  void dispose() {
+    _listening = false;
+    _currentMode = AudioMode.idle;
+    _ambientCallback = null;
+  }
+
   Future<Result<void>> _stopAmbientInternal() async {
     try {
       _currentMode = AudioMode.idle;

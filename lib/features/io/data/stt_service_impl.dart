@@ -138,4 +138,12 @@ class STTServiceImpl implements STTService {
       );
     }
   }
+
+  /// Releases STT resources.
+  void dispose() {
+    if (_speech.isListening) {
+      _speech.stop();
+    }
+    _currentCallback = null;
+  }
 }

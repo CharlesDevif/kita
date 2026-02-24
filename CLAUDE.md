@@ -274,3 +274,62 @@ Ces pièges s'appliquent à l'ensemble du projet. Les intégrer dans les story f
 ### Mix framework
 - Package actif mais communauté limitée — avoir un plan B (`ThemeExtension` custom) si maintenance s'arrête
 - Vérifier la compatibilité avec la version Flutter utilisée
+
+---
+
+## Règles de qualité (leçons Phase 2)
+
+Ces règles sont issues de la code review adversariale Phase 2. Tout agent DOIT les respecter.
+
+### Zero PII dans les logs — STRICT
+- **JAMAIS** de coordonnées GPS, noms, emails, clés API, tokens dans les logs
+- Exemple interdit : `_log.info('Position: ${pos.latitude}, ${pos.longitude}')`
+- Exemple correct : `_log.info('Position acquired successfully')`
+- Vérifier chaque `_log.*()` avant de marquer "review"
+
+### Resource disposal — OBLIGATOIRE
+- Tout `Provider` qui crée un service avec état DOIT avoir `ref.onDispose()`
+- Tout service avec `Timer`, `StreamSubscription`, ou ressource native DOIT avoir un `dispose()`
+- Les callbacks async dans `ref.onDispose()` doivent utiliser `unawaited()` (import `dart:async`)
+- Exemple :
+  ```dart
+  final myServiceProvider = Provider<MyService>((ref) {
+    final service = MyServiceImpl();
+    ref.onDispose(service.dispose);
+    return service;
+  });
+  ```
+
+### Race conditions — VÉRIFIER
+- Pas de TOCTOU (Time-of-Check-Time-of-Use) : si on vérifie une condition puis agit dessus, l'opération doit être atomique
+- Les callbacks haute fréquence (camera stream, accelerometer) doivent avoir un guard `_processing` pour éviter les appels concurrents
+- Les `Timer.periodic` avec callbacks async doivent utiliser `unawaited()` + `.catchError()` et un flag `_disposed`
+
+### Permissions et sécurité
+- `enforcePermissions()` doit **réellement vérifier** les permissions, jamais retourner success par défaut
+- Les accès sandboxés (mémoire, capteurs, IA) doivent valider les permissions du plugin avant chaque opération
+- Les strings de permission doivent être validées contre un set connu (`camera`, `microphone`, `location`, etc.)
+- Le champ `context` de `AIRequest` est metadata interne — JAMAIS envoyé aux providers IA externes
+
+### Exception handling — TYPE CHECK
+- Utiliser `is TimeoutException` au lieu de `e.toString().contains('TimeoutException')`
+- Toujours utiliser des type checks (`is`) plutôt que du string matching pour les exceptions
+- Import `dart:async` pour `TimeoutException` et `unawaited`
+
+### Parsing et valeurs par défaut
+- Ne jamais retourner silencieusement une string vide quand un parsing échoue — logger un warning
+- Les paramètres de requête (ex: `maxTokens`) doivent être respectés dans toutes les méthodes, pas hardcodés
+
+### Cohérence API
+- Utiliser `MediaQuery.of(context).disableAnimations` pour la détection reduced motion (pas `platformDispatcher`)
+- Les enums ne doivent pas contenir de valeurs inutilisées — supprimer ou marquer `@Deprecated`
+- Les constantes magiques (`'data_storage'`) doivent être extraites en `static const`
+
+### Textes français
+- Toujours utiliser les accents corrects dans les strings françaises (`détectée`, pas `detectee`)
+- Les tables d'accent-stripping doivent être vérifiées caractère par caractère
+
+### Agent custom pour le développement
+- Utiliser `subagent_type: "kita-dev"` (défini dans `.claude/agents/kita-dev.md`) pour spawner les agents de développement
+- Cet agent précharge le skill BMAD `dev-story` et force le Dev Agent Record
+- Ne plus utiliser `general-purpose` pour les agents de dev

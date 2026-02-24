@@ -71,7 +71,7 @@ class LocalProvider implements AIProvider {
   }
 
   @override
-  Future<Result<AIResponse>> vision(ImageData image, String prompt) async {
+  Future<Result<AIResponse>> vision(ImageData image, String prompt, {int? maxTokens}) async {
     if (!isAvailable) {
       return Result.failure(AIProviderFailure(
         userMessage: 'IA locale non disponible sur cette plateforme.',

@@ -69,7 +69,7 @@ class FakeAIProvider implements AIProvider {
   }
 
   @override
-  Future<Result<AIResponse>> vision(ImageData image, String prompt) async {
+  Future<Result<AIResponse>> vision(ImageData image, String prompt, {int? maxTokens}) async {
     callCount++;
     if (shouldFail) {
       return Result.failure(
@@ -247,6 +247,9 @@ void main() {
         expect(result.isSuccess, isTrue);
         final response = (result as Success<AIResponse>).value;
         expect(response.meta.providerId, equals('mlkit'));
+        // Verify both cloud providers were attempted before falling back to local
+        expect(cloudFast.callCount, greaterThanOrEqualTo(1));
+        expect(cloudPowerful.callCount, greaterThanOrEqualTo(1));
       });
     });
 

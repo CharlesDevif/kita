@@ -5,5 +5,7 @@ import '../stt_service_impl.dart';
 
 /// Provides the [STTService] implementation.
 final sttServiceProvider = Provider<STTService>((ref) {
-  return STTServiceImpl();
+  final service = STTServiceImpl();
+  ref.onDispose(service.dispose);
+  return service;
 });

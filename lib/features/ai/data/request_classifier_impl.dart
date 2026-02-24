@@ -53,6 +53,9 @@ class RequestClassifierImpl implements RequestClassifier {
   Result<RequestPriority> classify(String prompt) {
     final normalized = prompt.toLowerCase().trim();
 
+    // Empty prompts are classified as background priority.
+    // This avoids wasting resources on accidental or programmatic empty submissions.
+    // Background tier uses cached results when available.
     if (normalized.isEmpty) {
       _log.debug('Empty prompt classified as background');
       return const Result.success(RequestPriority.background);

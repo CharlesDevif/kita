@@ -36,8 +36,10 @@ class ResponseCache {
     final hash = _hashPrompt(prompt);
     final now = DateTime.now().toIso8601String();
 
+    final normalized = prompt.trim().toLowerCase();
+
     final rows = await _db.customSelect(
-      'SELECT response_content, provider_id FROM request_cache '
+      'SELECT response_content, provider_id, normalized_prompt FROM request_cache '
       'WHERE request_hash = ? AND expires_at > ? LIMIT 1',
       variables: [Variable.withString(hash), Variable.withString(now)],
     ).get();
@@ -45,6 +47,14 @@ class ResponseCache {
     if (rows.isEmpty) return null;
 
     final row = rows.first;
+
+    // Verify the stored prompt matches to guard against hash collisions.
+    final storedPrompt = row.read<String>('normalized_prompt');
+    if (storedPrompt != normalized) {
+      _log.warning('Hash collision detected for hash $hash — cache miss');
+      return null;
+    }
+
     _log.debug('Cache hit for hash $hash');
 
     return AIResponse(
@@ -72,6 +82,7 @@ class ResponseCache {
     final ttl = _ttlForPriority(priority);
     if (ttl == Duration.zero) return;
 
+    final normalized = prompt.trim().toLowerCase();
     final hash = _hashPrompt(prompt);
     final now = DateTime.now();
     final expiresAt = now.add(ttl);
@@ -85,10 +96,11 @@ class ResponseCache {
 
     await _db.customInsert(
       'INSERT INTO request_cache '
-      '(request_hash, request_type, response_content, provider_id, ttl_seconds, created_at, expires_at) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?)',
+      '(request_hash, normalized_prompt, request_type, response_content, provider_id, ttl_seconds, created_at, expires_at) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       variables: [
         Variable.withString(hash),
+        Variable.withString(normalized),
         Variable.withString(priority.name),
         Variable.withString(response.content),
         Variable.withString(response.meta.providerId),

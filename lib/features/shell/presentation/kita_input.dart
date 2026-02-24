@@ -72,6 +72,7 @@ class _KitaInputState extends State<KitaInput> {
     if (text.trim().isEmpty) return;
     widget.onTextSubmit?.call(text.trim());
     _textController.clear();
+    _textController.selection = const TextSelection.collapsed(offset: 0);
   }
 
   @override
@@ -181,6 +182,7 @@ class _ListeningIndicator extends StatefulWidget {
 class _ListeningIndicatorState extends State<_ListeningIndicator>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  bool _animationStarted = false;
 
   @override
   void initState() {
@@ -189,12 +191,20 @@ class _ListeningIndicatorState extends State<_ListeningIndicator>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     );
-    _startAnimation();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_animationStarted) {
+      _startAnimation();
+      _animationStarted = true;
+    }
   }
 
   void _startAnimation() {
-    final reduceMotion = WidgetsBinding.instance.platformDispatcher
-            .accessibilityFeatures.reduceMotion;
+    // Use MediaQuery for consistency with KitaShell and KitaOrb.
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
     if (!reduceMotion) {
       _controller.repeat(reverse: true);
     }

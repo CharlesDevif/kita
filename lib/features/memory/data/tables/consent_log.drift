@@ -5,5 +5,6 @@ CREATE TABLE consent_log (
   granted BOOLEAN NOT NULL,
   granted_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   revoked_at DATETIME,
-  details TEXT
+  details TEXT,
+  operation TEXT NOT NULL DEFAULT 'grant'
 );

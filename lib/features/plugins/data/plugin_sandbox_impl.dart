@@ -34,6 +34,20 @@ class PluginSandboxImpl implements PluginSandbox {
 
   static final _log = KitaLogger('Plugin.Sandbox');
 
+  /// Set of known valid permission strings for manifest validation.
+  static const _validPermissions = {
+    'camera',
+    'microphone',
+    'location',
+    'motion',
+    'haptic',
+    'memory',
+    'tts',
+    'stt',
+    'ai.text',
+    'ai.vision',
+  };
+
   @override
   Future<Result<PluginResponse>> execute(
     KitaPlugin plugin,
@@ -75,9 +89,38 @@ class PluginSandboxImpl implements PluginSandbox {
     PluginManifest manifest,
     PluginRequest request,
   ) {
-    // Check that the request isn't using sensors that aren't in the manifest
-    // This is a structural check — the proxies do the real enforcement.
     _log.debug('Enforcing permissions for plugin ${manifest.id}');
+
+    // Validate that all declared permissions are known.
+    for (final perm in manifest.permissions) {
+      if (!_validPermissions.contains(perm)) {
+        _log.warning(
+          'Plugin ${manifest.id} declares unknown permission: $perm',
+        );
+        return Result.failure(PluginFailure(
+          userMessage: 'Le plugin declare une permission inconnue.',
+          logMessage:
+              'Plugin ${manifest.id} declares unknown permission: $perm',
+          pluginId: manifest.id,
+        ));
+      }
+    }
+
+    // Memory access requires the 'memory' permission for non-official plugins.
+    if (request.memory != null &&
+        !manifest.permissions.contains('memory') &&
+        manifest.trustLevel != TrustLevel.official) {
+      _log.warning(
+        'Plugin ${manifest.id} requests memory without permission',
+      );
+      return Result.failure(PluginFailure(
+        userMessage: "Le plugin n'a pas la permission memoire.",
+        logMessage:
+            'Plugin ${manifest.id} requests memory without permission',
+        pluginId: manifest.id,
+      ));
+    }
+
     return const Result.success(null);
   }
 
@@ -123,6 +166,7 @@ class PluginSandboxImpl implements PluginSandbox {
         return SandboxedMemoryAccess(
           delegate: memoryAccess!,
           pluginId: manifest.id,
+          allowedPermissions: manifest.permissions.toSet(),
         );
       case TrustLevel.official:
         _log.info('Plugin ${manifest.id} (official): shared memory');

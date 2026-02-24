@@ -30,6 +30,7 @@ class AutoCleanupService {
 
   Timer? _timer;
   bool _isRunning = false;
+  bool _disposed = false;
 
   /// Whether the periodic timer is active.
   bool get isRunning => _isRunning;
@@ -73,14 +74,22 @@ class AutoCleanupService {
   void _schedulePeriodicCleanup() {
     _timer?.cancel();
     _timer = Timer.periodic(cleanupInterval, (_) {
-      runCleanup();
+      if (_disposed) return;
+      unawaited(runCleanup().catchError((Object e) {
+        _log.error('Periodic cleanup failed', error: e);
+        return const Result.success(0);
+      }));
     });
     _isRunning = true;
     _log.info('Auto-cleanup scheduled every ${cleanupInterval.inHours}h');
   }
 
   /// Disposes the service and cancels the timer.
+  ///
+  /// After calling [dispose], the timer callback will no longer fire
+  /// even if a tick was already scheduled.
   void dispose() {
+    _disposed = true;
     stop();
   }
 }

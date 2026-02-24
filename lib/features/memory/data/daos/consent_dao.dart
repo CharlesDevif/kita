@@ -30,6 +30,7 @@ class ConsentDao {
     required String scope,
     required bool granted,
     String? details,
+    String operation = 'grant',
   }) async {
     try {
       final id = await _db.into(_db.consentLog).insert(
@@ -38,9 +39,10 @@ class ConsentDao {
               scope: scope,
               granted: granted,
               details: Value(details),
+              operation: Value(operation),
             ),
           );
-      _log.debug('Consent entry inserted with id=$id');
+      _log.debug('Consent entry inserted with id=$id (operation=$operation)');
       return Result.success(id);
     } catch (e, stack) {
       _log.error('Failed to insert consent entry', error: e, stackTrace: stack);
@@ -124,6 +126,7 @@ class ConsentDao {
             ..where((t) => t.id.equals(id)))
           .write(db.ConsentLogCompanion(
             revokedAt: Value(DateTime.now()),
+            operation: const Value('revoke'),
           ));
       _log.info('Consent revoked');
       return Result.success(count > 0);

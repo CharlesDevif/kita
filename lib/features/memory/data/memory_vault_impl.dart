@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../../core/errors/kita_failure.dart';
 import '../../../core/errors/result.dart';
 import '../../../core/utils/logger.dart';
@@ -38,30 +40,36 @@ class MemoryVaultImpl implements MemoryVault {
   final PluginDataDao pluginDataDao;
   final ConsentDao consentDao;
 
+  /// Consent type constant for data storage operations.
+  static const _consentDataStorage = 'data_storage';
+
+  /// Lock to prevent TOCTOU race between consent check and storage operation.
+  /// Ensures consent cannot be revoked between verification and use.
+  Completer<void>? _consentLock;
+
   // --- Episodic domain ---
 
   @override
   Future<Result<void>> saveEpisode(KitaEpisode episode) async {
-    // Check consent for episodic data storage
-    final consentResult = await _requireConsent(
-      consentType: 'data_storage',
+    return _withConsentLock(
+      consentType: _consentDataStorage,
       scope: 'episodic',
+      action: () async {
+        final result = await episodeDao.insert(
+          source: episode.source,
+          eventType: episode.eventType,
+          summary: episode.summary,
+          details: episode.details,
+          tags: episode.tags,
+          importanceScore: episode.importanceScore,
+          isPinned: episode.isPinned,
+          expiresAt: episode.expiresAt,
+        );
+        return result.map((_) {
+          _log.info('Episode saved');
+        });
+      },
     );
-    if (consentResult.isFailure) return consentResult;
-
-    final result = await episodeDao.insert(
-      source: episode.source,
-      eventType: episode.eventType,
-      summary: episode.summary,
-      details: episode.details,
-      tags: episode.tags,
-      importanceScore: episode.importanceScore,
-      isPinned: episode.isPinned,
-      expiresAt: episode.expiresAt,
-    );
-    return result.map((_) {
-      _log.info('Episode saved');
-    });
   }
 
   @override
@@ -84,22 +92,21 @@ class MemoryVaultImpl implements MemoryVault {
     required String category,
     required String source,
   }) async {
-    // Check consent for semantic data storage
-    final consentResult = await _requireConsent(
-      consentType: 'data_storage',
+    return _withConsentLock(
+      consentType: _consentDataStorage,
       scope: 'semantic',
+      action: () async {
+        final result = await preferenceDao.upsert(
+          category: category,
+          key: key,
+          value: value,
+          source: source,
+        );
+        return result.map((_) {
+          _log.info('Preference saved');
+        });
+      },
     );
-    if (consentResult.isFailure) return consentResult;
-
-    final result = await preferenceDao.upsert(
-      category: category,
-      key: key,
-      value: value,
-      source: source,
-    );
-    return result.map((_) {
-      _log.info('Preference saved');
-    });
   }
 
   @override
@@ -111,22 +118,21 @@ class MemoryVaultImpl implements MemoryVault {
 
   @override
   Future<Result<void>> savePerson(KitaPerson person) async {
-    // Check consent for relational data storage
-    final consentResult = await _requireConsent(
-      consentType: 'data_storage',
+    return _withConsentLock(
+      consentType: _consentDataStorage,
       scope: 'relational',
+      action: () async {
+        final result = await personDao.insert(
+          name: person.name,
+          relationship: person.relationship,
+          notes: person.notes,
+          interests: person.interests,
+        );
+        return result.map((_) {
+          _log.info('Person saved');
+        });
+      },
     );
-    if (consentResult.isFailure) return consentResult;
-
-    final result = await personDao.insert(
-      name: person.name,
-      relationship: person.relationship,
-      notes: person.notes,
-      interests: person.interests,
-    );
-    return result.map((_) {
-      _log.info('Person saved');
-    });
   }
 
   @override
@@ -285,6 +291,36 @@ class MemoryVaultImpl implements MemoryVault {
   }
 
   // --- Private helpers ---
+
+  /// Atomically checks consent and executes [action] under a lock.
+  ///
+  /// Prevents TOCTOU race where consent could be revoked between the check
+  /// and the storage operation.
+  Future<Result<T>> _withConsentLock<T>({
+    required String consentType,
+    required String scope,
+    required Future<Result<T>> Function() action,
+  }) async {
+    // Wait for any in-flight consent-guarded operation to complete.
+    while (_consentLock != null) {
+      await _consentLock!.future;
+    }
+    _consentLock = Completer<void>();
+    try {
+      final consentResult = await _requireConsent(
+        consentType: consentType,
+        scope: scope,
+      );
+      if (consentResult.isFailure) {
+        return Result.failure((consentResult as Failure).failure);
+      }
+      return await action();
+    } finally {
+      final lock = _consentLock;
+      _consentLock = null;
+      lock?.complete();
+    }
+  }
 
   Future<Result<void>> _requireConsent({
     required String consentType,

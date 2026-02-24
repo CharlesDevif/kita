@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -63,7 +64,7 @@ class OpenAIProvider implements AIProvider {
   }
 
   @override
-  Future<Result<AIResponse>> vision(ImageData image, String prompt) async {
+  Future<Result<AIResponse>> vision(ImageData image, String prompt, {int? maxTokens}) async {
     final stopwatch = Stopwatch()..start();
 
     final base64Image = base64Encode(image.bytes);
@@ -71,7 +72,7 @@ class OpenAIProvider implements AIProvider {
 
     final body = {
       'model': model,
-      'max_tokens': 1024,
+      'max_tokens': maxTokens ?? 1024,
       'messages': [
         {
           'role': 'user',
@@ -163,7 +164,7 @@ class OpenAIProvider implements AIProvider {
     } on Exception catch (e, stack) {
       stopwatch.stop();
 
-      if (e.toString().contains('TimeoutException')) {
+      if (e is TimeoutException) {
         _log.warning('Request timed out');
         return Result.failure(NetworkFailure.timeout(endpoint: _baseUrl));
       }
@@ -185,6 +186,10 @@ class OpenAIProvider implements AIProvider {
       final message =
           (choices[0] as Map<String, dynamic>)['message'] as Map<String, dynamic>;
       final text = message['content'] as String? ?? '';
+
+      if (text.isEmpty) {
+        _log.warning('Response parsed but text content is empty');
+      }
 
       return Result.success(AIResponse(
         content: text,
