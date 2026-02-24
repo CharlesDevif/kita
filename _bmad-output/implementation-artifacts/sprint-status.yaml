@@ -27,7 +27,7 @@
 # - Mark epic as 'in-progress' when starting work on its first story
 # - SM typically creates next story ONLY after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then Dev runs code-review (fresh context, ideally different LLM)
-# - Phase 1: E1 (1 agent) → Phase 2: E2+E3+E4+E5+E8 (5 agents) → Phase 3: E6+E7 (2 agents) → Phase 4: E9+E10 (2 agents) → Phase 5: E11 (1 agent)
+# - Phase 1: E1 (1 agent) → Phase 2: E2+E3+E4+E5+E8 (5 agents) → Phase 3: E6+E7 (2 agents) → Phase 3.5: E12 (1 agent) → Phase 4: E9+E10 (2 agents) → Phase 5: E11 (1 agent)
 
 generated: 2026-02-23
 project: kita
@@ -94,16 +94,24 @@ development_status:
   epic-8-retrospective: done
 
   # === PHASE 3 : Plugins (2 agents) ===
-  epic-6: in-progress
-  6-1-kita-describe-plugin-photo-description-vocale: review
-  6-2-describe-viewport-enchainement-naturel: review
+  epic-6: done
+  6-1-kita-describe-plugin-photo-description-vocale: done
+  6-2-describe-viewport-enchainement-naturel: done
   epic-6-retrospective: optional
 
-  epic-7: in-progress
-  7-1-obstacle-detector-detection-tflite-yolo: review
-  7-2-kita-alert-plugin-alertes-multi-modales: review
-  7-3-integration-gate-phase-3: review
+  epic-7: done
+  7-1-obstacle-detector-detection-tflite-yolo: done
+  7-2-kita-alert-plugin-alertes-multi-modales: done
+  7-3-integration-gate-phase-3: done
   epic-7-retrospective: optional
+
+  # === PHASE 3.5 : Orchestrateur Multi-Agents (1 agent) ===
+  epic-12: backlog
+  12-1-kita-agent-interface-bus-clock-modeles: backlog
+  12-2-agent-supervisor-migration-plugins-agents: backlog
+  12-3-output-coordinator-arbitrage-multi-modal: backlog
+  12-4-input-router-orchestrator-facade-cablage-shell: backlog
+  epic-12-retrospective: optional
 
   # === PHASE 4 : Intégration utilisateur (2 agents) ===
   epic-9: backlog
