@@ -1,0 +1,8 @@
+{
+  "content": "The weather in Paris today is 18 degrees Celsius with partly cloudy skies.",
+  "providerId": "openai",
+  "latencyMs": 850,
+  "tier": "cloudFast",
+  "cached": false,
+  "status": "success"
+}

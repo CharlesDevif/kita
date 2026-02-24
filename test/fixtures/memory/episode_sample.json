@@ -1,0 +1,9 @@
+{
+  "id": "ep-001",
+  "timestamp": "2026-02-24T14:30:00.000Z",
+  "source": "plugin.describe",
+  "summary": "Described a park scene with fountain and two people on a bench",
+  "tags": ["outdoor", "park", "description"],
+  "important": false,
+  "domain": "episodic"
+}

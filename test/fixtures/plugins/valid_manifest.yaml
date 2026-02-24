@@ -1,0 +1,19 @@
+id: com.kita.describe
+name: Kita Describe
+version: 1.0.0
+description: Describes scenes and objects using AI vision
+trustLevel: official
+permissions:
+  - camera
+  - ai.vision
+  - memory.write
+capabilities:
+  - scene_description
+  - object_identification
+compatibleProfiles:
+  - blind
+  - low_vision
+voiceCommands:
+  - decris
+  - describe
+  - what do you see

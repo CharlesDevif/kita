@@ -1,0 +1,129 @@
+# generated: 2026-02-23
+# project: kita
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created, ready for development
+#   - in-progress: Developer actively working on implementation
+#   - review: Implementation complete, ready for review
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Mark epic as 'in-progress' when starting work on its first story
+# - SM typically creates next story ONLY after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then Dev runs code-review (fresh context, ideally different LLM)
+# - Phase 1: E1 (1 agent) → Phase 2: E2+E3+E4+E5+E8 (5 agents) → Phase 3: E6+E7 (2 agents) → Phase 4: E9+E10 (2 agents) → Phase 5: E11 (1 agent)
+
+generated: 2026-02-23
+project: kita
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # === PHASE 1 : Fondation (1 agent) ===
+  epic-1: done
+  1-1-initialisation-projet-flutter-structure-feature-first: done
+  1-2-core-patterns-gestion-erreurs-logging: done
+  1-3-state-management-riverpod-di: done
+  1-4-design-system-mix-tokens-multi-modaux: done
+  1-5-navigation-go-router-ecrans-placeholder: done
+  1-6-infrastructure-drift-sqlcipher: done
+  1-7-interfaces-domain-contrats-travail-parallele: done
+  1-8-ci-cd-stub-infrastructure-open-source: done
+  epic-1-retrospective: done
+
+  # === PHASE 2 : Features parallèles (5 agents) ===
+  epic-2: backlog
+  2-1-request-classifier-classification-requetes: backlog
+  2-2-fallback-chain-never-fail: backlog
+  2-3-ai-router-orchestration-providers: backlog
+  2-4-provider-claude-anthropic-api: backlog
+  2-5-provider-openai: backlog
+  2-6-providers-locaux-ml-kit-coreml: backlog
+  2-7-response-cache-cache-reponses-ia: backlog
+  2-8-integration-gate-phase-2: backlog
+  epic-2-retrospective: optional
+
+  epic-3: backlog
+  3-1-camera-service-capture-photo-flux-video: backlog
+  3-2-stt-service-reconnaissance-vocale-locale: backlog
+  3-3-tts-service-synthese-vocale-file-priorite: backlog
+  3-4-haptic-service-retour-haptique-differencie: backlog
+  3-5-audio-multiplexer-multiplexage-microphone: backlog
+  3-6-location-service-motion-service: backlog
+  3-7-exif-stripper-commandes-vocales: backlog
+  epic-3-retrospective: optional
+
+  epic-4: backlog
+  4-1-tables-drift-daos-schema-memoire: backlog
+  4-2-memory-vault-stockage-consentement: backlog
+  4-3-droit-oubli-forget-transparence: backlog
+  4-4-profil-utilisateur-persistant-secure-storage: backlog
+  4-5-nettoyage-automatique-politique-donnees: backlog
+  epic-4-retrospective: optional
+
+  epic-5: backlog
+  5-1-plugin-manifest-parsing-validation-yaml: backlog
+  5-2-plugin-sandbox-isolation-enforcement-permissions: backlog
+  5-3-plugin-registry-enregistrement-lifecycle: backlog
+  epic-5-retrospective: optional
+
+  epic-8: backlog
+  8-1-kita-orb-widget-anime-signature: backlog
+  8-2-kita-shell-scaffold-principal-living-aura: backlog
+  8-3-kita-input-zone-input-unifiee-voix-texte: backlog
+  8-4-plugin-viewport-kita-feedback-bubble: backlog
+  8-5-kita-alert-kita-permission-card: backlog
+  8-6-profile-adapter-routage-multi-modal: backlog
+  epic-8-retrospective: optional
+
+  # === PHASE 3 : Plugins (2 agents) ===
+  epic-6: backlog
+  6-1-kita-describe-plugin-photo-description-vocale: backlog
+  6-2-describe-viewport-enchainement-naturel: backlog
+  epic-6-retrospective: optional
+
+  epic-7: backlog
+  7-1-obstacle-detector-detection-tflite-yolo: backlog
+  7-2-kita-alert-plugin-alertes-multi-modales: backlog
+  7-3-integration-gate-phase-3: backlog
+  epic-7-retrospective: optional
+
+  # === PHASE 4 : Intégration utilisateur (2 agents) ===
+  epic-9: backlog
+  9-1-detection-accessibilite-adaptation-automatique: backlog
+  9-2-onboarding-vocal-first-flow-principal: backlog
+  9-3-permission-storytelling: backlog
+  9-4-premier-moment-magique-configuration-providers: backlog
+  9-5-mode-aidant-sophie-configure-pour-marie: backlog
+  epic-9-retrospective: optional
+
+  epic-10: backlog
+  10-1-background-service-android-foreground-service: backlog
+  10-2-background-service-ios-background-audio-location: backlog
+  10-3-mode-passif-intelligent-gestion-batterie: backlog
+  10-4-integration-gate-phase-4: backlog
+  epic-10-retrospective: optional
+
+  # === PHASE 5 : Qualité & Déploiement (1 agent) ===
+  epic-11: backlog
+  11-1-pipeline-ci-cd-complet: backlog
+  11-2-tests-integration-journeys: backlog
+  11-3-deploiement-stores-conformite: backlog
+  epic-11-retrospective: optional

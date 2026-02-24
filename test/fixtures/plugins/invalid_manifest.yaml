@@ -1,0 +1,5 @@
+id: com.example.broken
+name: Broken Plugin
+version: 0.0.1
+# Missing required fields: description, trustLevel
+permissions: []

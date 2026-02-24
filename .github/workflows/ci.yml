@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze-and-test:
+    name: Analyze & Test
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.2'
+          channel: 'stable'
+          cache: true
+          cache-key: 'flutter-:os:-:channel:-:version:-:arch:-:hash:'
+          cache-path: '${{ runner.tool_cache }}/flutter/:channel:-:version:-:arch:'
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate code (build_runner)
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Analyze
+        run: dart analyze --fatal-infos
+
+      - name: Run tests with coverage
+        run: flutter test --coverage
+
+      - name: Run accessibility tests
+        continue-on-error: true
+        run: flutter test --tags accessibility
+
+      - name: Install lcov
+        run: sudo apt-get update && sudo apt-get install -y lcov
+
+      - name: Filter coverage (exclude generated files)
+        run: |
+          lcov --remove coverage/lcov.info \
+            '**/*.g.dart' \
+            '**/*.freezed.dart' \
+            '**/*.drift.dart' \
+            -o coverage/lcov_filtered.info
+
+      - name: Check coverage threshold
+        run: |
+          if [ -f coverage/lcov_filtered.info ]; then
+            echo "Coverage report generated successfully"
+            lcov --summary coverage/lcov_filtered.info || true
+            # Threshold enforcement will be added in Story 11.1
+          fi

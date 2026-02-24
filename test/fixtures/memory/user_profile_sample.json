@@ -1,0 +1,8 @@
+{
+  "displayName": "Marie",
+  "accessibilityProfile": "blind",
+  "language": "fr",
+  "ttsSpeed": 1.2,
+  "ttsVoice": "fr-FR-Wavenet-A",
+  "hapticEnabled": true
+}

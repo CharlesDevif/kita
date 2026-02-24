@@ -1,0 +1,67 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Generated files — never commit
+*.g.dart
+*.freezed.dart
+*.drift.dart
+*.mocks.dart
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Android
+**/android/.gradle/
+**/android/local.properties
+**/android/key.properties
+**/android/app/release/
+**/android/app/debug/
+
+# iOS
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/app.flx
+**/ios/Flutter/app.zip
+**/ios/Flutter/engine/
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/ServiceDefinitions.json
+
+# Coverage
+coverage/
+*.lcov
+
+# Pub
+.pub-cache/
+.pub/
+
+# Secrets — never commit
+*.env
+*.env.*
+!.env.example
+**/secrets/
+**/credentials/
+
+# Secure storage test keys
+*.jks
+*.keystore
+
+# Claude Code (session data)
+.claude/
+
+# Temp
+.tmp/
+*.tmp

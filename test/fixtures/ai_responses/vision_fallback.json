@@ -1,0 +1,8 @@
+{
+  "content": "Image detected: outdoor scene with people",
+  "providerId": "mlkit-local",
+  "latencyMs": 200,
+  "tier": "local",
+  "cached": false,
+  "status": "fallback"
+}

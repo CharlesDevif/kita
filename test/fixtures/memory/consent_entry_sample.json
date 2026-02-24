@@ -1,0 +1,8 @@
+{
+  "id": "c-001",
+  "domain": "episodic",
+  "purpose": "Store scene descriptions for personal memory",
+  "grantedAt": "2026-02-24T10:00:00.000Z",
+  "revokedAt": null,
+  "dataCategory": "visual_descriptions"
+}
