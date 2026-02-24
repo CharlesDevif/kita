@@ -17,5 +17,9 @@ class KitaDatabase extends _$KitaDatabase {
   KitaDatabase(super.e);
 
   @override
+  DriftDatabaseOptions get options =>
+      const DriftDatabaseOptions(storeDateTimeAsText: true);
+
+  @override
   int get schemaVersion => 1;
 }

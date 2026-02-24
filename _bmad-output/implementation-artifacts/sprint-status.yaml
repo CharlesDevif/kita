@@ -49,48 +49,48 @@ development_status:
   epic-1-retrospective: done
 
   # === PHASE 2 : Features parallèles (5 agents) ===
-  epic-2: backlog
-  2-1-request-classifier-classification-requetes: backlog
-  2-2-fallback-chain-never-fail: backlog
-  2-3-ai-router-orchestration-providers: backlog
-  2-4-provider-claude-anthropic-api: backlog
-  2-5-provider-openai: backlog
-  2-6-providers-locaux-ml-kit-coreml: backlog
-  2-7-response-cache-cache-reponses-ia: backlog
+  epic-2: in-progress
+  2-1-request-classifier-classification-requetes: review
+  2-2-fallback-chain-never-fail: review
+  2-3-ai-router-orchestration-providers: review
+  2-4-provider-claude-anthropic-api: review
+  2-5-provider-openai: review
+  2-6-providers-locaux-ml-kit-coreml: review
+  2-7-response-cache-cache-reponses-ia: review
   2-8-integration-gate-phase-2: backlog
   epic-2-retrospective: optional
 
-  epic-3: backlog
-  3-1-camera-service-capture-photo-flux-video: backlog
-  3-2-stt-service-reconnaissance-vocale-locale: backlog
-  3-3-tts-service-synthese-vocale-file-priorite: backlog
-  3-4-haptic-service-retour-haptique-differencie: backlog
-  3-5-audio-multiplexer-multiplexage-microphone: backlog
-  3-6-location-service-motion-service: backlog
-  3-7-exif-stripper-commandes-vocales: backlog
+  epic-3: done
+  3-1-camera-service-capture-photo-flux-video: review
+  3-2-stt-service-reconnaissance-vocale-locale: review
+  3-3-tts-service-synthese-vocale-file-priorite: review
+  3-4-haptic-service-retour-haptique-differencie: review
+  3-5-audio-multiplexer-multiplexage-microphone: review
+  3-6-location-service-motion-service: review
+  3-7-exif-stripper-commandes-vocales: review
   epic-3-retrospective: optional
 
-  epic-4: backlog
-  4-1-tables-drift-daos-schema-memoire: backlog
-  4-2-memory-vault-stockage-consentement: backlog
-  4-3-droit-oubli-forget-transparence: backlog
-  4-4-profil-utilisateur-persistant-secure-storage: backlog
-  4-5-nettoyage-automatique-politique-donnees: backlog
+  epic-4: done
+  4-1-tables-drift-daos-schema-memoire: review
+  4-2-memory-vault-stockage-consentement: review
+  4-3-droit-oubli-forget-transparence: review
+  4-4-profil-utilisateur-persistant-secure-storage: review
+  4-5-nettoyage-automatique-politique-donnees: review
   epic-4-retrospective: optional
 
-  epic-5: backlog
-  5-1-plugin-manifest-parsing-validation-yaml: backlog
-  5-2-plugin-sandbox-isolation-enforcement-permissions: backlog
-  5-3-plugin-registry-enregistrement-lifecycle: backlog
+  epic-5: done
+  5-1-plugin-manifest-parsing-validation-yaml: done
+  5-2-plugin-sandbox-isolation-enforcement-permissions: done
+  5-3-plugin-registry-enregistrement-lifecycle: done
   epic-5-retrospective: optional
 
-  epic-8: backlog
-  8-1-kita-orb-widget-anime-signature: backlog
-  8-2-kita-shell-scaffold-principal-living-aura: backlog
-  8-3-kita-input-zone-input-unifiee-voix-texte: backlog
-  8-4-plugin-viewport-kita-feedback-bubble: backlog
-  8-5-kita-alert-kita-permission-card: backlog
-  8-6-profile-adapter-routage-multi-modal: backlog
+  epic-8: done
+  8-1-kita-orb-widget-anime-signature: review
+  8-2-kita-shell-scaffold-principal-living-aura: review
+  8-3-kita-input-zone-input-unifiee-voix-texte: review
+  8-4-plugin-viewport-kita-feedback-bubble: review
+  8-5-kita-alert-kita-permission-card: review
+  8-6-profile-adapter-routage-multi-modal: review
   epic-8-retrospective: optional
 
   # === PHASE 3 : Plugins (2 agents) ===

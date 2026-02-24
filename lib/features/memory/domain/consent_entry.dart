@@ -1,19 +1,19 @@
-import 'memory_domain.dart';
-
 class ConsentEntry {
   const ConsentEntry({
     required this.id,
-    required this.domain,
-    required this.purpose,
+    required this.consentType,
+    required this.scope,
+    required this.granted,
     required this.grantedAt,
     this.revokedAt,
-    required this.dataCategory,
+    this.details,
   });
 
-  final String id;
-  final MemoryDomain domain;
-  final String purpose;
+  final int id;
+  final String consentType;
+  final String scope;
+  final bool granted;
   final DateTime grantedAt;
   final DateTime? revokedAt;
-  final String dataCategory;
+  final String? details;
 }
