@@ -107,10 +107,10 @@ development_status:
 
   # === PHASE 3.5 : Orchestrateur Multi-Agents (1 agent) ===
   epic-12: backlog
-  12-1-kita-agent-interface-bus-clock-modeles: backlog
-  12-2-agent-supervisor-migration-plugins-agents: backlog
-  12-3-output-coordinator-arbitrage-multi-modal: backlog
-  12-4-input-router-orchestrator-facade-cablage-shell: backlog
+  12-1-kita-agent-interface-bus-clock-modeles: ready-for-dev
+  12-2-agent-supervisor-migration-plugins-agents: ready-for-dev
+  12-3-output-coordinator-arbitrage-multi-modal: ready-for-dev
+  12-4-input-router-orchestrator-facade-cablage-shell: ready-for-dev
   epic-12-retrospective: optional
 
   # === PHASE 4 : Intégration utilisateur (2 agents) ===
