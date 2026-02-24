@@ -64,9 +64,9 @@ class StubOutputHandle implements OutputHandle {
     // Map the rich TTS SpeechEvent to the simple enum used by OutputHandle.
     return _ttsService.speechEvents.map((ttsEvent) {
       return switch (ttsEvent.type) {
-        tts.SpeechEventType.started => SpeechEvent.started,
-        tts.SpeechEventType.completed => SpeechEvent.completed,
-        tts.SpeechEventType.interrupted => SpeechEvent.interrupted,
+        tts.TtsSpeechEventType.started => SpeechEvent.started,
+        tts.TtsSpeechEventType.completed => SpeechEvent.completed,
+        tts.TtsSpeechEventType.interrupted => SpeechEvent.interrupted,
       };
     });
   }

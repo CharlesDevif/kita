@@ -16,5 +16,5 @@ abstract interface class TTSService {
   /// Broadcast stream — multiple listeners are supported.
   /// Used by agents via [OutputHandle.speechEvents] to manage behavior
   /// (e.g., DescribeAgent starts silence timeout on [completed]).
-  Stream<SpeechEvent> get speechEvents;
+  Stream<TtsSpeechEvent> get speechEvents;
 }

@@ -24,14 +24,14 @@ import 'package:kita/features/plugins/domain/voice_command.dart';
 // === Mocks ===
 
 class MockTTSService implements TTSService {
-  final StreamController<SpeechEvent> _speechController =
-      StreamController<SpeechEvent>.broadcast();
+  final StreamController<TtsSpeechEvent> _speechController =
+      StreamController<TtsSpeechEvent>.broadcast();
 
   @override
   bool get isSpeaking => false;
 
   @override
-  Stream<SpeechEvent> get speechEvents => _speechController.stream;
+  Stream<TtsSpeechEvent> get speechEvents => _speechController.stream;
 
   @override
   Future<Result<void>> speak(String text,

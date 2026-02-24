@@ -10,10 +10,10 @@ class MockTTSService implements TTSService {
   bool _isSpeaking = false;
   String? lastSpokenText;
 
-  final _speechEventsController = StreamController<SpeechEvent>.broadcast();
+  final _speechEventsController = StreamController<TtsSpeechEvent>.broadcast();
 
   @override
-  Stream<SpeechEvent> get speechEvents => _speechEventsController.stream;
+  Stream<TtsSpeechEvent> get speechEvents => _speechEventsController.stream;
 
   @override
   bool get isSpeaking => _isSpeaking;

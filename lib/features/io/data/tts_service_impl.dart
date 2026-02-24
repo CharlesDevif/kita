@@ -51,14 +51,14 @@ class TTSServiceImpl implements TTSService {
   bool _speaking = false;
 
   /// Broadcast stream controller for speech lifecycle events.
-  final StreamController<SpeechEvent> _speechController =
-      StreamController<SpeechEvent>.broadcast();
+  final StreamController<TtsSpeechEvent> _speechController =
+      StreamController<TtsSpeechEvent>.broadcast();
 
   @override
   bool get isSpeaking => _speaking;
 
   @override
-  Stream<SpeechEvent> get speechEvents => _speechController.stream;
+  Stream<TtsSpeechEvent> get speechEvents => _speechController.stream;
 
   /// The priority of the currently speaking message, if any.
   TTSPriority? get currentPriority => _currentRequest?.priority;
@@ -79,14 +79,14 @@ class TTSServiceImpl implements TTSService {
       _tts.setStartHandler(() {
         if (!_speechController.isClosed) {
           _speechController
-              .add(SpeechEvent.started(text: _currentRequest?.text ?? ''));
+              .add(TtsSpeechEvent.started(text: _currentRequest?.text ?? ''));
         }
       });
 
       _tts.setCompletionHandler(() {
         if (!_speechController.isClosed) {
           _speechController
-              .add(SpeechEvent.completed(text: _currentRequest?.text ?? ''));
+              .add(TtsSpeechEvent.completed(text: _currentRequest?.text ?? ''));
         }
         _onSpeechComplete();
       });
@@ -94,7 +94,7 @@ class TTSServiceImpl implements TTSService {
       _tts.setCancelHandler(() {
         if (!_speechController.isClosed) {
           _speechController
-              .add(SpeechEvent.interrupted(text: _currentRequest?.text ?? ''));
+              .add(TtsSpeechEvent.interrupted(text: _currentRequest?.text ?? ''));
         }
         _onSpeechComplete();
       });

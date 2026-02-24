@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kita/core/errors/result.dart';
 import 'package:kita/features/io/domain/haptic_service.dart';
+import 'package:kita/features/io/domain/speech_event.dart';
 import 'package:kita/features/io/domain/tts_service.dart';
 import 'package:kita/features/orchestration/data/output_coordinator.dart';
 import 'package:kita/features/orchestration/data/output_handle_impl.dart';
@@ -25,9 +26,14 @@ class MockTTSService implements TTSService {
   int stopCallCount = 0;
   List<String> spokenTexts = [];
   bool _isSpeaking = false;
+  final StreamController<TtsSpeechEvent> _speechController =
+      StreamController<TtsSpeechEvent>.broadcast();
 
   @override
   bool get isSpeaking => _isSpeaking;
+
+  @override
+  Stream<TtsSpeechEvent> get speechEvents => _speechController.stream;
 
   @override
   Future<Result<void>> speak(
@@ -72,6 +78,9 @@ class MockHapticService implements HapticService {
 
   @override
   Future<Result<void>> danger() => trigger(HapticPattern.danger);
+
+  @override
+  Future<Result<void>> presence() => trigger(HapticPattern.presence);
 
   void reset() {
     triggeredPatterns.clear();
