@@ -4,14 +4,16 @@ import 'package:kita/features/onboarding/domain/profile_detection.dart';
 
 void main() {
   group('OnboardingStep', () {
-    test('has 6 steps in order', () {
-      expect(OnboardingStep.values, hasLength(6));
+    test('has 8 steps in order', () {
+      expect(OnboardingStep.values, hasLength(8));
       expect(OnboardingStep.values[0], OnboardingStep.detecting);
       expect(OnboardingStep.values[1], OnboardingStep.welcome);
-      expect(OnboardingStep.values[2], OnboardingStep.profile);
-      expect(OnboardingStep.values[3], OnboardingStep.permissions);
-      expect(OnboardingStep.values[4], OnboardingStep.magic);
-      expect(OnboardingStep.values[5], OnboardingStep.complete);
+      expect(OnboardingStep.values[2], OnboardingStep.modeChoice);
+      expect(OnboardingStep.values[3], OnboardingStep.profile);
+      expect(OnboardingStep.values[4], OnboardingStep.permissions);
+      expect(OnboardingStep.values[5], OnboardingStep.magic);
+      expect(OnboardingStep.values[6], OnboardingStep.caregiver);
+      expect(OnboardingStep.values[7], OnboardingStep.complete);
     });
   });
 

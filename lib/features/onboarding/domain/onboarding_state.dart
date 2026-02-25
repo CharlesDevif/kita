@@ -2,8 +2,9 @@ import 'profile_detection.dart';
 
 /// Steps of the onboarding flow.
 ///
-/// Progresses linearly: detecting -> welcome -> profile -> permissions
-/// -> magic -> complete.
+/// Standard flow: detecting -> welcome -> modeChoice -> profile ->
+///   permissions -> magic -> complete.
+/// Caregiver flow: detecting -> welcome -> modeChoice -> caregiver -> complete.
 enum OnboardingStep {
   /// Initial accessibility detection (transparent to user).
   detecting,
@@ -11,14 +12,20 @@ enum OnboardingStep {
   /// Welcome screen — Kita introduces herself.
   welcome,
 
-  /// Profile confirmation/selection screen.
+  /// Choose "Pour moi" or "Pour quelqu'un d'autre".
+  modeChoice,
+
+  /// Profile confirmation/selection screen (standard flow).
   profile,
 
-  /// Permission storytelling flow.
+  /// Permission storytelling flow (standard flow).
   permissions,
 
-  /// First "magic moment" — demonstrate core value.
+  /// First "magic moment" — demonstrate core value (standard flow).
   magic,
+
+  /// Caregiver flow — configure for a third party.
+  caregiver,
 
   /// Onboarding complete — transition to main app.
   complete,
@@ -27,7 +34,7 @@ enum OnboardingStep {
 /// State of the onboarding flow.
 ///
 /// Tracks the current step, detected profile, user name,
-/// permission grants, and completion flag.
+/// permission grants, caregiver mode, and completion flag.
 class OnboardingState {
   const OnboardingState({
     this.step = OnboardingStep.detecting,
@@ -35,6 +42,8 @@ class OnboardingState {
     this.userName,
     this.permissionsGranted = const {},
     this.onboardingComplete = false,
+    this.isCaregiverMode = false,
+    this.isConfiguredByCaregiver = false,
   });
 
   /// Current step in the onboarding flow.
@@ -44,6 +53,7 @@ class OnboardingState {
   final DetectedProfile? detectedProfile;
 
   /// User's name (collected during onboarding).
+  /// In caregiver mode, this is the target user's name (e.g. "Marie").
   final String? userName;
 
   /// Set of permissions granted during onboarding.
@@ -52,6 +62,13 @@ class OnboardingState {
   /// Whether the onboarding has been fully completed.
   final bool onboardingComplete;
 
+  /// Whether the current onboarding is in caregiver mode
+  /// ("Pour quelqu'un d'autre").
+  final bool isCaregiverMode;
+
+  /// Whether the onboarding was completed by a caregiver.
+  final bool isConfiguredByCaregiver;
+
   /// Create a copy with updated fields.
   OnboardingState copyWith({
     OnboardingStep? step,
@@ -59,6 +76,8 @@ class OnboardingState {
     String? userName,
     Set<String>? permissionsGranted,
     bool? onboardingComplete,
+    bool? isCaregiverMode,
+    bool? isConfiguredByCaregiver,
   }) {
     return OnboardingState(
       step: step ?? this.step,
@@ -66,6 +85,9 @@ class OnboardingState {
       userName: userName ?? this.userName,
       permissionsGranted: permissionsGranted ?? this.permissionsGranted,
       onboardingComplete: onboardingComplete ?? this.onboardingComplete,
+      isCaregiverMode: isCaregiverMode ?? this.isCaregiverMode,
+      isConfiguredByCaregiver:
+          isConfiguredByCaregiver ?? this.isConfiguredByCaregiver,
     );
   }
 
@@ -77,6 +99,8 @@ class OnboardingState {
           detectedProfile == other.detectedProfile &&
           userName == other.userName &&
           onboardingComplete == other.onboardingComplete &&
+          isCaregiverMode == other.isCaregiverMode &&
+          isConfiguredByCaregiver == other.isConfiguredByCaregiver &&
           permissionsGranted.length == other.permissionsGranted.length &&
           permissionsGranted.containsAll(other.permissionsGranted);
 
@@ -87,10 +111,12 @@ class OnboardingState {
         userName,
         Object.hashAll(permissionsGranted),
         onboardingComplete,
+        isCaregiverMode,
+        isConfiguredByCaregiver,
       );
 
   @override
   String toString() =>
       'OnboardingState(step: $step, profile: ${detectedProfile?.profile}, '
-      'complete: $onboardingComplete)';
+      'caregiver: $isCaregiverMode, complete: $onboardingComplete)';
 }

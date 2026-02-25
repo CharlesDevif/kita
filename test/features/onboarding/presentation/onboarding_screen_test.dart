@@ -51,15 +51,18 @@ void main() {
       expect(button, findsOneWidget);
     });
 
-    testWidgets('continue button navigates to profile step', (tester) async {
+    testWidgets('continue button navigates to mode choice step',
+        (tester) async {
       await tester.pumpWidget(_buildTestApp());
       await tester.pumpAndSettle();
 
       await tester.tap(find.byKey(const Key('continue_welcome')));
       await tester.pumpAndSettle();
 
-      // Should show profile selector
-      expect(find.text('Choisis ton profil'), findsOneWidget);
+      // Should show mode choice ("Pour moi" / "Pour quelqu'un d'autre")
+      expect(find.text('Pour qui ?'), findsOneWidget);
+      expect(find.byKey(const Key('mode_for_me')), findsOneWidget);
+      expect(find.byKey(const Key('mode_for_other')), findsOneWidget);
     });
 
     testWidgets('name can be entered before continuing', (tester) async {
@@ -70,7 +73,22 @@ void main() {
       await tester.tap(find.byKey(const Key('continue_welcome')));
       await tester.pumpAndSettle();
 
-      // Profile step should be visible
+      // Mode choice step should be visible
+      expect(find.text('Pour qui ?'), findsOneWidget);
+    });
+
+    testWidgets('pour moi navigates to profile step', (tester) async {
+      await tester.pumpWidget(_buildTestApp());
+      await tester.pumpAndSettle();
+
+      // Navigate to mode choice
+      await tester.tap(find.byKey(const Key('continue_welcome')));
+      await tester.pumpAndSettle();
+
+      // Choose "Pour moi"
+      await tester.tap(find.byKey(const Key('mode_for_me')));
+      await tester.pumpAndSettle();
+
       expect(find.text('Choisis ton profil'), findsOneWidget);
     });
 
@@ -78,8 +96,10 @@ void main() {
       await tester.pumpWidget(_buildTestApp());
       await tester.pumpAndSettle();
 
-      // Navigate to profile step
+      // Navigate to mode choice then profile
       await tester.tap(find.byKey(const Key('continue_welcome')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('mode_for_me')));
       await tester.pumpAndSettle();
 
       expect(find.text('Aveugle'), findsOneWidget);
@@ -136,8 +156,10 @@ void main() {
       await tester.pumpWidget(_buildTestApp());
       await tester.pumpAndSettle();
 
-      // Navigate to profile step
+      // Navigate to mode choice then profile step
       await tester.tap(find.byKey(const Key('continue_welcome')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('mode_for_me')));
       await tester.pumpAndSettle();
 
       // Each profile option should have an accessible label
@@ -261,7 +283,7 @@ void main() {
       expect(state.step, OnboardingStep.welcome);
     });
 
-    test('completeWelcome transitions to profile step', () async {
+    test('completeWelcome transitions to modeChoice step', () async {
       final container = ProviderContainer(
         overrides: [
           detectedProfileProvider.overrideWith(
@@ -278,7 +300,77 @@ void main() {
       notifier.completeWelcome();
 
       final state = container.read(onboardingNotifierProvider);
+      expect(state.step, OnboardingStep.modeChoice);
+    });
+
+    test('chooseStandardMode transitions to profile step', () async {
+      final container = ProviderContainer(
+        overrides: [
+          detectedProfileProvider.overrideWith(
+            (ref) => Stream.value(DetectedProfile.general),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      container.listen(detectedProfileProvider, (_, __) {});
+      await Future<void>.delayed(Duration.zero);
+
+      final notifier = container.read(onboardingNotifierProvider.notifier);
+      notifier.completeWelcome();
+      notifier.chooseStandardMode();
+
+      final state = container.read(onboardingNotifierProvider);
       expect(state.step, OnboardingStep.profile);
+      expect(state.isCaregiverMode, isFalse);
+    });
+
+    test('chooseCaregiverMode transitions to caregiver step', () async {
+      final container = ProviderContainer(
+        overrides: [
+          detectedProfileProvider.overrideWith(
+            (ref) => Stream.value(DetectedProfile.general),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      container.listen(detectedProfileProvider, (_, __) {});
+      await Future<void>.delayed(Duration.zero);
+
+      final notifier = container.read(onboardingNotifierProvider.notifier);
+      notifier.completeWelcome();
+      notifier.chooseCaregiverMode();
+
+      final state = container.read(onboardingNotifierProvider);
+      expect(state.step, OnboardingStep.caregiver);
+      expect(state.isCaregiverMode, isTrue);
+    });
+
+    test('completeCaregiverOnboarding marks as complete with caregiver flag',
+        () async {
+      final container = ProviderContainer(
+        overrides: [
+          detectedProfileProvider.overrideWith(
+            (ref) => Stream.value(DetectedProfile.general),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      container.listen(detectedProfileProvider, (_, __) {});
+      await Future<void>.delayed(Duration.zero);
+
+      final notifier = container.read(onboardingNotifierProvider.notifier);
+      notifier.completeCaregiverOnboarding();
+
+      final state = container.read(onboardingNotifierProvider);
+      expect(state.step, OnboardingStep.complete);
+      expect(state.onboardingComplete, isTrue);
+      expect(state.isConfiguredByCaregiver, isTrue);
+
+      final isComplete = container.read(onboardingCompleteProvider);
+      expect(isComplete, isTrue);
     });
 
     test('setUserName stores name in state', () async {

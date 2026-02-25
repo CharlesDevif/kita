@@ -12,6 +12,7 @@ import '../di/providers.dart';
 import '../domain/onboarding_state.dart';
 import '../domain/profile_detection.dart';
 import 'api_key_setup_step.dart';
+import 'caregiver_flow.dart';
 import 'magic_moment_step.dart';
 import 'permission_step.dart';
 import 'profile_selector.dart';
@@ -89,9 +90,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     return switch (state.step) {
       OnboardingStep.detecting => _buildDetecting(theme),
       OnboardingStep.welcome => _buildWelcome(context, state, theme),
+      OnboardingStep.modeChoice => _buildModeChoice(context, state, theme),
       OnboardingStep.profile => _buildProfile(context, state, theme),
       OnboardingStep.permissions => _buildPermissions(context, state, theme),
       OnboardingStep.magic => _buildMagicMoment(context, state, theme),
+      OnboardingStep.caregiver => _buildCaregiverFlow(context, state, theme),
       OnboardingStep.complete => _buildComplete(context, state, theme),
     };
   }
@@ -200,6 +203,93 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         priority: TTSPriority.standard,
       ));
     }
+  }
+
+  Widget _buildModeChoice(
+    BuildContext context,
+    OnboardingState state,
+    ThemeData theme,
+  ) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Spacer(),
+        Semantics(
+          header: true,
+          child: Text(
+            'Pour qui ?',
+            style: theme.textTheme.headlineMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Semantics(
+          child: Text(
+            'Tu configures Kita pour toi ou pour quelqu\'un d\'autre ?',
+            style: theme.textTheme.bodyLarge,
+            textAlign: TextAlign.center,
+          ),
+        ),
+        const SizedBox(height: 32),
+        SizedBox(
+          height: KitaAccessibility.touchTargetCritical,
+          child: Semantics(
+            button: true,
+            label: 'Pour moi. Configurer Kita pour moi-même.',
+            child: FilledButton(
+              key: const Key('mode_for_me'),
+              onPressed: () {
+                _log.info('Mode choice: standard (for self)');
+                ref.read(onboardingNotifierProvider.notifier).chooseStandardMode();
+              },
+              child: const Text('Pour moi'),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: KitaAccessibility.touchTargetMin,
+          child: Semantics(
+            button: true,
+            label: 'Pour quelqu\'un d\'autre. Configurer Kita en tant qu\'aidant.',
+            child: OutlinedButton(
+              key: const Key('mode_for_other'),
+              onPressed: () {
+                _log.info('Mode choice: caregiver (for someone else)');
+                ref
+                    .read(onboardingNotifierProvider.notifier)
+                    .chooseCaregiverMode();
+              },
+              child: const Text('Pour quelqu\'un d\'autre'),
+            ),
+          ),
+        ),
+        const Spacer(),
+      ],
+    );
+  }
+
+  Widget _buildCaregiverFlow(
+    BuildContext context,
+    OnboardingState state,
+    ThemeData theme,
+  ) {
+    final tts = ref.read(ttsServiceProvider);
+    return CaregiverFlow(
+      onComplete: (userName, profile) {
+        final notifier = ref.read(onboardingNotifierProvider.notifier);
+        notifier.setUserName(userName);
+        notifier.selectProfile(profile).then((_) {
+          notifier.completeCaregiverOnboarding();
+        });
+      },
+      onSpeak: (text) async {
+        unawaited(tts.speak(text, priority: TTSPriority.standard));
+      },
+    );
   }
 
   Widget _buildProfile(

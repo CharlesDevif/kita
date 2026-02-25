@@ -118,9 +118,25 @@ class OnboardingNotifier extends Notifier<OnboardingState> {
     return const OnboardingState(step: OnboardingStep.detecting);
   }
 
-  /// Move to the next step after welcome.
+  /// Move to mode choice step after welcome.
   void completeWelcome() {
-    state = state.copyWith(step: OnboardingStep.profile);
+    state = state.copyWith(step: OnboardingStep.modeChoice);
+  }
+
+  /// Choose standard mode ("Pour moi").
+  void chooseStandardMode() {
+    state = state.copyWith(
+      isCaregiverMode: false,
+      step: OnboardingStep.profile,
+    );
+  }
+
+  /// Choose caregiver mode ("Pour quelqu'un d'autre").
+  void chooseCaregiverMode() {
+    state = state.copyWith(
+      isCaregiverMode: true,
+      step: OnboardingStep.caregiver,
+    );
   }
 
   /// Set the user's name.
@@ -166,6 +182,16 @@ class OnboardingNotifier extends Notifier<OnboardingState> {
     state = state.copyWith(
       step: OnboardingStep.complete,
       onboardingComplete: true,
+    );
+    ref.read(onboardingCompleteProvider.notifier).markComplete();
+  }
+
+  /// Complete the onboarding flow as caregiver.
+  void completeCaregiverOnboarding() {
+    state = state.copyWith(
+      step: OnboardingStep.complete,
+      onboardingComplete: true,
+      isConfiguredByCaregiver: true,
     );
     ref.read(onboardingCompleteProvider.notifier).markComplete();
   }
