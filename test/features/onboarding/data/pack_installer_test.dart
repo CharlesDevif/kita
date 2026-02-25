@@ -59,7 +59,7 @@ void main() {
     test('installPack propagates save failure', () async {
       final installer = PackInstaller(
         onSavePack: (ids) async {
-          return Result.failure(
+          return const Result.failure(
             UnexpectedFailure(logMessage: 'save failed'),
           );
         },

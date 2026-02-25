@@ -3,7 +3,7 @@ story_id: "9.4"
 title: "Premier Moment Magique et configuration providers"
 epic: "E9 — Kita accueille — Onboarding Marie"
 phase: "4"
-status: ready-for-dev
+status: in-progress
 priority: high
 estimated_complexity: L
 depends_on: ["9.3"]

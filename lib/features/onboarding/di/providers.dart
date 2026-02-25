@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../io/data/providers/tts_providers.dart';
+import '../data/onboarding_completion.dart';
 import '../data/pack_installer.dart';
 import '../data/permission_storytelling_impl.dart';
 import '../data/platform_permission_requester.dart';
@@ -55,6 +56,11 @@ final permissionStorytellingProvider =
     requester: requester,
     tts: tts,
   );
+});
+
+/// Provides the [OnboardingCompletion] service for finalizing onboarding.
+final onboardingCompletionProvider = Provider<OnboardingCompletion>((ref) {
+  return OnboardingCompletion();
 });
 
 /// Whether onboarding has been completed.

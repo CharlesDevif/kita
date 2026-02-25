@@ -185,7 +185,7 @@ void main() {
     testWidgets('VoiceOver/TalkBack active selects blind profile',
         (tester) async {
       tester.platformDispatcher.accessibilityFeaturesTestValue =
-          _FakeAccessibilityFeatures(accessibleNavigation: true);
+          const _FakeAccessibilityFeatures(accessibleNavigation: true);
       addTearDown(
         tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
       );
@@ -210,7 +210,7 @@ void main() {
 
     testWidgets('reduce motion is detected', (tester) async {
       tester.platformDispatcher.accessibilityFeaturesTestValue =
-          _FakeAccessibilityFeatures(reduceMotion: true);
+          const _FakeAccessibilityFeatures(reduceMotion: true);
       addTearDown(
         tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
       );
@@ -225,7 +225,7 @@ void main() {
 
     testWidgets('bold text is detected', (tester) async {
       tester.platformDispatcher.accessibilityFeaturesTestValue =
-          _FakeAccessibilityFeatures(boldText: true);
+          const _FakeAccessibilityFeatures(boldText: true);
       addTearDown(
         tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
       );
@@ -239,7 +239,7 @@ void main() {
 
     testWidgets('high contrast is detected', (tester) async {
       tester.platformDispatcher.accessibilityFeaturesTestValue =
-          _FakeAccessibilityFeatures(highContrast: true);
+          const _FakeAccessibilityFeatures(highContrast: true);
       addTearDown(
         tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
       );
@@ -262,7 +262,7 @@ void main() {
 
       // Enable screen reader — triggers didChangeAccessibilityFeatures
       tester.platformDispatcher.accessibilityFeaturesTestValue =
-          _FakeAccessibilityFeatures(accessibleNavigation: true);
+          const _FakeAccessibilityFeatures(accessibleNavigation: true);
       addTearDown(
         tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
       );
@@ -279,10 +279,10 @@ class _FakeAccessibilityFeatures implements ui.AccessibilityFeatures {
   const _FakeAccessibilityFeatures({
     this.accessibleNavigation = false,
     this.boldText = false,
-    this.disableAnimations = false,
+    this.disableAnimations = false, // ignore: unused_element_parameter
     this.highContrast = false,
-    this.invertColors = false,
-    this.onOffSwitchLabels = false,
+    this.invertColors = false, // ignore: unused_element_parameter
+    this.onOffSwitchLabels = false, // ignore: unused_element_parameter
     this.reduceMotion = false,
   });
 
