@@ -126,7 +126,7 @@ development_status:
   10-1-background-service-android-foreground-service: review
   10-2-background-service-ios-background-audio-location: review
   10-3-mode-passif-intelligent-gestion-batterie: review
-  10-4-integration-gate-phase-4: ready-for-dev
+  10-4-integration-gate-phase-4: review
   epic-10-retrospective: optional
 
   # === PHASE 5 : Qualité & Déploiement (1 agent) ===
