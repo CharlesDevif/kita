@@ -3,7 +3,7 @@ story_id: "12.2"
 title: "AgentSupervisor + migration plugins vers agents"
 epic: "E12 — Orchestrateur Multi-Agents"
 phase: "3.5"
-status: review
+status: done
 priority: critical
 estimated_complexity: L
 depends_on: ["12.1"]

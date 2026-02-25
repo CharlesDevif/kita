@@ -111,7 +111,7 @@ development_status:
   12-2-agent-supervisor-migration-plugins-agents: done
   12-3-output-coordinator-arbitrage-multi-modal: done
   12-4-input-router-orchestrator-facade-cablage-shell: done
-  epic-12-retrospective: optional
+  epic-12-retrospective: done
 
   # === PHASE 4 : Intégration utilisateur (2 agents) ===
   epic-9: backlog

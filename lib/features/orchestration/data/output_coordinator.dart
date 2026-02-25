@@ -16,6 +16,12 @@ import '../domain/models/agent_message.dart';
 import '../domain/models/output_priority.dart';
 import '../domain/output_handle.dart';
 
+// MVP: Timings (cooldown 15s, dedup 2s, presence haptic 2s) and the
+// priority-to-haptic mapping are hard-coded constants. For N agents with
+// diverse needs, parameterize these per-agent via AgentManifest or a
+// coordinator config object. Output modalities (TTS, haptic, viewport)
+// are also fixed — extend OutputHandle for new modalities (audio, braille).
+
 /// Internal speech request queued by the [OutputCoordinator].
 ///
 /// Private to this file — no external code should depend on this class.

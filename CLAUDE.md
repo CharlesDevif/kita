@@ -203,15 +203,18 @@ Ce workflow est la **référence obligatoire** pour tout agent qui implémente u
 7. Respecter la propriété des fichiers (voir section "Propriété des fichiers")
 
 **APRÈS le développement :**
-8. Remplir le **Dev Agent Record** dans le story file (OBLIGATOIRE — ne JAMAIS laisser vide) :
+8. Remplir le **Dev Agent Record** dans le story file — **GATE BLOQUANT** :
    - `Agent Model` : modèle utilisé
+   - `Date` : date d'implémentation
    - `Completion Notes` : décisions prises, workarounds, problèmes rencontrés
    - `Files Modified` : liste complète des fichiers créés/modifiés/supprimés
+   - **NE PAS passer à l'étape suivante si le Dev Agent Record est vide ou incomplet**
+   - Si le story file n'a pas de section `## Dev Agent Record`, la créer
 9. Mettre à jour le **File List** et le **Change Log** dans le story file
-10. Lancer `dart analyze --fatal-infos` — doit être clean
-11. Lancer `flutter test` — tous les tests doivent passer
-12. Mettre à jour sprint-status.yaml : story → `review`
-13. Mettre à jour le Status dans le story file → `review`
+10. Mettre à jour le Status dans le story file → `review`
+11. Lancer `dart analyze --fatal-infos` — doit être clean
+12. Lancer `flutter test` — tous les tests doivent passer
+13. Mettre à jour sprint-status.yaml : story → `review`
 
 **Checklist de complétion (toutes les cases doivent être cochées) :**
 - [ ] Story file enrichi lu avant de coder
@@ -219,7 +222,8 @@ Ce workflow est la **référence obligatoire** pour tout agent qui implémente u
 - [ ] Code implémenté + tous les tests passent
 - [ ] Au moins 1 test d'intégration réel (pas juste des mocks)
 - [ ] Accessibility Tax vérifié (si story avec UI)
-- [ ] Dev Agent Record rempli (Completion Notes + Files Modified)
+- [ ] **GATE** Dev Agent Record rempli (Agent Model + Date + Completion Notes + Files Modified)
+- [ ] Story file status → `review`
 - [ ] `dart analyze --fatal-infos` clean
 - [ ] `flutter test` passe
 - [ ] sprint-status.yaml mis à jour → `review`
@@ -235,6 +239,8 @@ Ce workflow est la **référence obligatoire** pour tout agent qui implémente u
 4. Vérifier que les **tests passent** (`flutter test`)
 5. Vérifier que `dart analyze` est **clean**
 6. Vérifier la **propriété des fichiers** — pas de modifications hors périmètre
+7. **GATE** Vérifier que le **Dev Agent Record** est rempli — rejeter la review si vide
+8. Vérifier que le **status du story file** est `review` (pas `ready-for-dev`)
 
 ---
 

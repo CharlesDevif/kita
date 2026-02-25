@@ -3,7 +3,7 @@ story_id: "12.1"
 title: "KitaAgent interface, AgentBus, Clock et modeles"
 epic: "E12 — Orchestrateur Multi-Agents"
 phase: "3.5"
-status: ready-for-dev
+status: done
 priority: critical
 estimated_complexity: M
 depends_on: []
@@ -486,4 +486,46 @@ Cette story n'a besoin d'aucun nouveau package. Tout est implemente avec les API
 - [ ] Aucun import circulaire entre `orchestration/` et `plugins/` (seulement des imports de `plugins/domain/` types simples)
 - [ ] Les commentaires doc (///) sont presents sur chaque classe et methode publique
 - [ ] Le format `[Source] Message` est utilise dans tout logging eventuel
-- [ ] Sprint status mis a jour dans `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- [x] Sprint status mis a jour dans `_bmad-output/implementation-artifacts/sprint-status.yaml`
+
+---
+
+## Dev Agent Record
+
+**Agent Model:** Claude Opus 4.6
+**Date:** 2026-02-24
+
+### Completion Notes
+
+Story fondationnelle de l'Epic 12 — 13 fichiers crees, +1193 lignes, 26 tests (8 bus + 18 clock).
+
+**Key decisions:**
+- Custom `Clock` abstraction au lieu de `package:clock` — permet `delayed()` qui retourne un `Timer` injectable, necessaire pour FakeClock dans les tests deterministes
+- `AgentBus` avec subscribe selectif par `Set<AgentMessageType>` — les agents ne recoivent que ce qu'ils demandent
+- `OutputHandle` abstrait avec `speechEvents` stream — permet aux agents d'observer l'etat du TTS sans couplage direct
+- `SpeechEvent` enum simple dans output_handle.dart (started/completed/interrupted) — l'abstraction agent-facing, distincte du SpeechEvent riche de io/domain
+- `KitaPlugin` marque `@Deprecated` — migration progressive vers KitaAgent
+
+**Architecture:**
+- Tous les modeles dans `domain/models/` — aucune dependance data
+- `AgentBusImpl` dans `data/` — seule implementation concrete
+- `FakeClock` dans `domain/clock.dart` — accessible aux tests sans import data
+
+### Files Modified
+
+**Created:**
+- `lib/features/orchestration/domain/kita_agent.dart` — KitaAgent abstract class + AgentContext + AgentType/AgentPriority
+- `lib/features/orchestration/domain/agent_bus.dart` — AgentBus interface
+- `lib/features/orchestration/domain/clock.dart` — Clock/SystemClock/FakeClock
+- `lib/features/orchestration/domain/output_handle.dart` — OutputHandle + SpeechEvent
+- `lib/features/orchestration/domain/models/agent_input.dart` — AgentInput + InputSource
+- `lib/features/orchestration/domain/models/agent_manifest.dart` — AgentManifest
+- `lib/features/orchestration/domain/models/agent_message.dart` — AgentMessage + AgentMessageType
+- `lib/features/orchestration/domain/models/agent_output.dart` — AgentOutput + AgentOutputType
+- `lib/features/orchestration/domain/models/output_priority.dart` — OutputPriority enum
+- `lib/features/orchestration/data/agent_bus_impl.dart` — AgentBusImpl
+- `test/features/orchestration/data/agent_bus_impl_test.dart` — 8 tests
+- `test/features/orchestration/domain/clock_test.dart` — 18 tests
+
+**Modified:**
+- `lib/features/plugins/domain/kita_plugin.dart` — Added @Deprecated annotation

@@ -18,6 +18,10 @@ import 'output_coordinator.dart';
 /// 3. sensor data -> route to AlertAgent.handleInput()
 /// 4. "plus de details" / "repete" / "merci" -> route to focused agent
 /// 5. Unknown command -> route to fallback (RequestClassifier + AIRouter)
+///
+/// MVP: This router uses a monolithic switch/if routing strategy that works
+/// well for 2-3 agents. For 5+ agents, refactor to a strategy pattern or
+/// chain-of-responsibility where agents register their own routing rules.
 class InputRouter {
   InputRouter({
     required AgentSupervisor supervisor,
