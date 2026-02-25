@@ -2,7 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../features/onboarding/presentation/onboarding_placeholder.dart';
+import '../../features/onboarding/di/providers.dart';
+import '../../features/onboarding/presentation/onboarding_screen.dart';
 import '../../features/settings/presentation/forget_placeholder.dart';
 import '../../features/settings/presentation/memory_view_placeholder.dart';
 import '../../features/settings/presentation/plugin_manager_placeholder.dart';
@@ -17,7 +18,7 @@ final List<RouteBase> kitaRoutes = [
   ),
   GoRoute(
     path: '/onboarding',
-    builder: (context, state) => const OnboardingPlaceholder(),
+    builder: (context, state) => const OnboardingScreen(),
   ),
   GoRoute(
     path: '/settings',
@@ -39,19 +40,19 @@ final List<RouteBase> kitaRoutes = [
   ),
 ];
 
-/// Provider that controls whether onboarding redirect is active.
-///
-/// Override this in your onboarding feature to wire the actual logic.
-/// Default: onboarding is considered complete (no redirect).
-final onboardingCompleteProvider = Provider<bool>((ref) => true);
-
 /// Router provider — singleton GoRouter instance with onboarding redirect.
+///
+/// Watches [onboardingCompleteProvider] from the onboarding feature.
+/// Uses [onboardingRefreshListenableProvider] to trigger re-evaluation
+/// of the redirect guard when onboarding state changes.
 final routerProvider = Provider<GoRouter>((ref) {
   final isOnboardingComplete = ref.watch(onboardingCompleteProvider);
+  final refreshListenable = ref.watch(onboardingRefreshListenableProvider);
 
   return GoRouter(
     initialLocation: '/',
     debugLogDiagnostics: kDebugMode,
+    refreshListenable: refreshListenable,
     routes: kitaRoutes,
     redirect: (context, state) {
       final isOnboardingRoute =

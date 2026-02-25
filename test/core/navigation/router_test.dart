@@ -4,12 +4,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:kita/core/navigation/router.dart';
-import 'package:kita/features/onboarding/presentation/onboarding_placeholder.dart';
+import 'package:kita/features/io/data/providers/tts_providers.dart';
+import 'package:kita/features/onboarding/di/providers.dart';
+import 'package:kita/features/onboarding/domain/profile_detection.dart';
+import 'package:kita/features/onboarding/presentation/onboarding_screen.dart';
 import 'package:kita/features/settings/presentation/forget_placeholder.dart';
 import 'package:kita/features/settings/presentation/memory_view_placeholder.dart';
 import 'package:kita/features/settings/presentation/plugin_manager_placeholder.dart';
 import 'package:kita/features/settings/presentation/settings_placeholder.dart';
 import 'package:kita/features/shell/presentation/kita_shell_placeholder.dart';
+
+import '../../mocks/mock_tts_service.dart';
 
 GoRouter _createRouter(String initialLocation) {
   return GoRouter(
@@ -37,15 +42,25 @@ void main() {
       expect(find.text('Kita Shell — Placeholder'), findsOneWidget);
     });
 
-    testWidgets('/onboarding resolves to OnboardingPlaceholder', (tester) async {
+    testWidgets('/onboarding resolves to OnboardingScreen', (tester) async {
       final router = _createRouter('/onboarding');
       addTearDown(router.dispose);
+      final mockTts = MockTTSService();
 
-      await tester.pumpWidget(_createTestApp(router));
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            ttsServiceProvider.overrideWithValue(mockTts),
+            detectedProfileProvider.overrideWith(
+              (ref) => Stream.value(DetectedProfile.general),
+            ),
+          ],
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
       await tester.pumpAndSettle();
 
-      expect(find.byType(OnboardingPlaceholder), findsOneWidget);
-      expect(find.text('Onboarding — Placeholder'), findsOneWidget);
+      expect(find.byType(OnboardingScreen), findsOneWidget);
     });
 
     testWidgets('/settings resolves to SettingsPlaceholder', (tester) async {
