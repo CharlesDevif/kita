@@ -110,7 +110,7 @@ development_status:
   12-1-kita-agent-interface-bus-clock-modeles: done
   12-2-agent-supervisor-migration-plugins-agents: done
   12-3-output-coordinator-arbitrage-multi-modal: done
-  12-4-input-router-orchestrator-facade-cablage-shell: ready-for-dev
+  12-4-input-router-orchestrator-facade-cablage-shell: in-progress
   epic-12-retrospective: optional
 
   # === PHASE 4 : Intégration utilisateur (2 agents) ===

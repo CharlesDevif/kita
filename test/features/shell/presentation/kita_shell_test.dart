@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:kita/features/orchestration/di/providers.dart';
 import 'package:kita/features/shell/domain/orb_state.dart';
 import 'package:kita/features/shell/domain/shell_mode.dart';
 import 'package:kita/features/shell/presentation/kita_orb.dart';
@@ -16,18 +18,23 @@ void main() {
     Widget? inputChild,
     bool disableAnimations = false,
   }) {
-    return MaterialApp(
-      home: MediaQuery(
-        data: MediaQueryData(
-          size: const Size(400, 800),
-          disableAnimations: disableAnimations,
-        ),
-        child: KitaShell(
-          mode: mode,
-          orbState: orbState,
-          status: status,
-          viewportChild: viewportChild,
-          inputChild: inputChild,
+    return ProviderScope(
+      overrides: [
+        hasActiveOnDemandProvider.overrideWithValue(false),
+      ],
+      child: MaterialApp(
+        home: MediaQuery(
+          data: MediaQueryData(
+            size: const Size(400, 800),
+            disableAnimations: disableAnimations,
+          ),
+          child: KitaShell(
+            modeOverride: mode,
+            orbStateOverride: orbState,
+            status: status,
+            viewportChild: viewportChild,
+            inputChild: inputChild,
+          ),
         ),
       ),
     );

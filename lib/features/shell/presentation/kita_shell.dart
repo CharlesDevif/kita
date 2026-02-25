@@ -1,8 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/multi_modal_tokens.dart';
+import '../../../core/utils/logger.dart';
+import '../../io/data/providers/stt_providers.dart';
+import '../../orchestration/di/providers.dart';
+import '../../orchestration/domain/models/raw_input.dart';
+import '../di/orb_providers.dart';
+import '../di/shell_mode_providers.dart';
 import '../domain/orb_state.dart';
 import '../domain/shell_mode.dart';
+import 'kita_input.dart';
 import 'kita_orb.dart';
 import 'kita_status_indicator.dart';
 
@@ -11,19 +19,30 @@ import 'kita_status_indicator.dart';
 /// Three zones: header (status + orb), viewport (plugin content), input.
 /// Transitions between passive (orb centered) and active (orb header) modes.
 ///
+/// As of Story 12.4, this is a [ConsumerStatefulWidget] wired to the
+/// orchestration system:
+/// - `ref.watch(shellModeProvider)` drives passive/active mode
+/// - `ref.watch(orbStateProvider)` drives the orb visual state
+/// - `ref.listen(hasActiveOnDemandProvider)` syncs supervisor → shell mode
+/// - KitaInput callbacks route text/voice inputs to the orchestrator
+///
 /// Focus order (VoiceOver): Input (1) -> Viewport (2) -> Header (3)
-class KitaShell extends StatefulWidget {
+class KitaShell extends ConsumerStatefulWidget {
   const KitaShell({
-    this.mode = ShellMode.passive,
-    this.orbState = OrbState.passive,
+    this.modeOverride,
+    this.orbStateOverride,
     this.status = KitaStatus.online,
     this.viewportChild,
     this.inputChild,
     super.key,
   });
 
-  final ShellMode mode;
-  final OrbState orbState;
+  /// Optional mode override (used in tests). If null, reads from provider.
+  final ShellMode? modeOverride;
+
+  /// Optional orb state override (used in tests). If null, reads from provider.
+  final OrbState? orbStateOverride;
+
   final KitaStatus status;
 
   /// Plugin content displayed in the viewport zone.
@@ -33,34 +52,31 @@ class KitaShell extends StatefulWidget {
   final Widget? inputChild;
 
   @override
-  State<KitaShell> createState() => _KitaShellState();
+  ConsumerState<KitaShell> createState() => _KitaShellState();
 }
 
-class _KitaShellState extends State<KitaShell>
+class _KitaShellState extends ConsumerState<KitaShell>
     with SingleTickerProviderStateMixin {
+  static final _log = KitaLogger('Shell');
+
   late final AnimationController _modeController;
   late Animation<double> _modeAnimation;
+
+  ShellMode _currentMode = ShellMode.passive;
 
   @override
   void initState() {
     super.initState();
+    _currentMode = widget.modeOverride ?? ShellMode.passive;
     _modeController = AnimationController(
       vsync: this,
       duration: KitaAnimationDurations.transition,
-      value: widget.mode == ShellMode.active ? 1.0 : 0.0,
+      value: _currentMode == ShellMode.active ? 1.0 : 0.0,
     );
     _modeAnimation = CurvedAnimation(
       parent: _modeController,
       curve: Curves.easeInOut,
     );
-  }
-
-  @override
-  void didUpdateWidget(KitaShell oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.mode != widget.mode) {
-      _animateToMode(widget.mode);
-    }
   }
 
   @override
@@ -70,13 +86,16 @@ class _KitaShellState extends State<KitaShell>
     if (reduceMotion) {
       _modeController.duration = KitaAnimationDurations.zero;
     } else {
-      _modeController.duration = widget.mode == ShellMode.active
+      _modeController.duration = _currentMode == ShellMode.active
           ? KitaAnimationDurations.transition
           : KitaAnimationDurations.state;
     }
   }
 
   void _animateToMode(ShellMode mode) {
+    if (mode == _currentMode) return;
+    _currentMode = mode;
+
     final reduceMotion = MediaQuery.of(context).disableAnimations;
     if (reduceMotion) {
       _modeController.value = mode == ShellMode.active ? 1.0 : 0.0;
@@ -97,8 +116,61 @@ class _KitaShellState extends State<KitaShell>
     super.dispose();
   }
 
+  // ---------------------------------------------------------------------------
+  // Input callbacks → Orchestrator
+  // ---------------------------------------------------------------------------
+
+  void _onTextSubmit(String text) {
+    _log.info('Text submitted, routing to orchestrator');
+    final orchestrator = ref.read(kitaOrchestratorProvider);
+    final clock = ref.read(clockProvider);
+    orchestrator.handleInput(RawInput.text(text, clock: clock));
+  }
+
+  void _onMicPressed() {
+    _log.info('Mic pressed, toggling STT');
+    final stt = ref.read(sttServiceProvider);
+    if (stt.isListening) {
+      stt.stopRecognition();
+    } else {
+      stt.startRecognition(onResult: (transcript, isFinal) {
+        if (isFinal && transcript.isNotEmpty) {
+          _log.info('STT final result, routing to orchestrator');
+          final orchestrator = ref.read(kitaOrchestratorProvider);
+          final clock = ref.read(clockProvider);
+          orchestrator.handleInput(RawInput.voice(transcript, clock: clock));
+        }
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Build
+  // ---------------------------------------------------------------------------
+
   @override
   Widget build(BuildContext context) {
+    // Read state from providers (or overrides for tests)
+    final ShellMode mode =
+        widget.modeOverride ?? ref.watch(shellModeProvider);
+    final OrbState orbState =
+        widget.orbStateOverride ?? ref.watch(orbStateProvider);
+
+    // Side effect: sync supervisor hasActiveOnDemand → ShellModeNotifier
+    // This is a listener, not a watcher — it triggers notifier updates
+    // instead of rebuilding this widget.
+    ref.listen(hasActiveOnDemandProvider, (prev, next) {
+      final notifier = ref.read(shellModeProvider.notifier);
+      if (next) {
+        notifier.activate();
+      } else {
+        notifier.deactivate();
+      }
+    });
+
+    // Animate to current mode
+    _animateToMode(mode);
+
     return Semantics(
       container: true,
       label: 'Ecran principal Kita',
@@ -110,7 +182,7 @@ class _KitaShellState extends State<KitaShell>
             child: AnimatedBuilder(
               animation: _modeAnimation,
               builder: (context, _) {
-                return _buildLayout(context, _modeAnimation.value);
+                return _buildLayout(context, _modeAnimation.value, orbState);
               },
             ),
           ),
@@ -119,7 +191,7 @@ class _KitaShellState extends State<KitaShell>
     );
   }
 
-  Widget _buildLayout(BuildContext context, double t) {
+  Widget _buildLayout(BuildContext context, double t, OrbState orbState) {
     // t = 0.0: passive, t = 1.0: active
     // Focus order: Input (1) -> Viewport (2) -> Header (3)
     return Column(
@@ -127,7 +199,7 @@ class _KitaShellState extends State<KitaShell>
         // --- Header zone (focus order 3) ---
         FocusTraversalOrder(
           order: const NumericFocusOrder(3),
-          child: _buildHeader(context, t),
+          child: _buildHeader(context, t, orbState),
         ),
 
         // --- Viewport zone (focus order 2) ---
@@ -147,7 +219,7 @@ class _KitaShellState extends State<KitaShell>
     );
   }
 
-  Widget _buildHeader(BuildContext context, double t) {
+  Widget _buildHeader(BuildContext context, double t, OrbState orbState) {
     // In passive mode, orb occupies center space. In active, it's in the header row.
     if (t < 0.5) {
       // Passive-ish: orb is centered and large
@@ -165,7 +237,7 @@ class _KitaShellState extends State<KitaShell>
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 24),
             child: KitaOrb(
-              state: widget.orbState,
+              state: orbState,
               size: OrbSize.large,
             ),
           ),
@@ -179,7 +251,7 @@ class _KitaShellState extends State<KitaShell>
       child: Row(
         children: [
           KitaOrb(
-            state: widget.orbState,
+            state: orbState,
             size: OrbSize.small,
           ),
           const Spacer(),
@@ -219,23 +291,9 @@ class _KitaShellState extends State<KitaShell>
     return Padding(
       padding: const EdgeInsets.all(16),
       child: widget.inputChild ??
-          Semantics(
-            label: 'Parle ou ecris a Kita',
-            child: Container(
-              height: 56,
-              decoration: BoxDecoration(
-                color: const Color(0xFF16213E),
-                borderRadius: BorderRadius.circular(28),
-              ),
-              alignment: Alignment.center,
-              child: const Text(
-                'Parle ou ecris a Kita',
-                style: TextStyle(
-                  color: Color(0xFF94A3B8),
-                  fontSize: 16,
-                ),
-              ),
-            ),
+          KitaInput(
+            onTextSubmit: _onTextSubmit,
+            onMicPressed: _onMicPressed,
           ),
     );
   }
