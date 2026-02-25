@@ -1,6 +1,7 @@
 export 'mock_ai_provider.dart';
 export 'mock_ai_router.dart';
 export 'mock_audio_service.dart';
+export 'mock_background_service.dart';
 export 'mock_camera_service.dart';
 export 'mock_haptic_service.dart';
 export 'mock_location_service.dart';

@@ -114,18 +114,18 @@ development_status:
   epic-12-retrospective: done
 
   # === PHASE 4 : Intégration utilisateur (2 agents) ===
-  epic-9: backlog
-  9-1-detection-accessibilite-adaptation-automatique: ready-for-dev
-  9-2-onboarding-vocal-first-flow-principal: ready-for-dev
+  epic-9: in-progress
+  9-1-detection-accessibilite-adaptation-automatique: review
+  9-2-onboarding-vocal-first-flow-principal: in-progress
   9-3-permission-storytelling: ready-for-dev
   9-4-premier-moment-magique-configuration-providers: ready-for-dev
   9-5-mode-aidant-sophie-configure-pour-marie: ready-for-dev
   epic-9-retrospective: optional
 
-  epic-10: backlog
-  10-1-background-service-android-foreground-service: ready-for-dev
-  10-2-background-service-ios-background-audio-location: ready-for-dev
-  10-3-mode-passif-intelligent-gestion-batterie: ready-for-dev
+  epic-10: in-progress
+  10-1-background-service-android-foreground-service: review
+  10-2-background-service-ios-background-audio-location: review
+  10-3-mode-passif-intelligent-gestion-batterie: in-progress
   10-4-integration-gate-phase-4: ready-for-dev
   epic-10-retrospective: optional
 

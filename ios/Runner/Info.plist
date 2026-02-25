@@ -59,6 +59,25 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- Background modes for accessibility companion service -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>location</string>
+		<string>fetch</string>
+		<string>processing</string>
+	</array>
+	<!-- Permission descriptions (French) -->
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Kita utilise votre position pour detecter votre environnement et vous alerter des obstacles.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Kita utilise votre position pour adapter les alertes a votre environnement.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Kita utilise le micro pour ecouter vos commandes vocales.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Kita utilise la camera pour decrire votre environnement et detecter les obstacles.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Kita utilise le mouvement pour adapter l assistance selon votre activite.</string>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
