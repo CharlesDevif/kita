@@ -5,10 +5,22 @@ import 'package:kita/features/io/data/providers/tts_providers.dart';
 import 'package:kita/features/io/domain/tts_service.dart';
 import 'package:kita/features/onboarding/di/providers.dart';
 import 'package:kita/features/onboarding/domain/onboarding_state.dart';
+import 'package:kita/features/onboarding/domain/permission_storytelling.dart';
 import 'package:kita/features/onboarding/domain/profile_detection.dart';
 import 'package:kita/features/onboarding/presentation/onboarding_screen.dart';
 
 import '../mocks/mock_tts_service.dart';
+
+/// Fake permission requester that always grants.
+class _FakePermissionRequester implements PermissionRequester {
+  @override
+  Future<PermissionRequestStatus> request(KitaPermission permission) async {
+    return PermissionRequestStatus.granted;
+  }
+
+  @override
+  Future<void> openSettings() async {}
+}
 
 /// Phase 4 Integration Gate — AC1: Onboarding E2E
 ///
@@ -36,6 +48,8 @@ void main() {
           (ref) => Stream.value(detectedProfile),
         ),
         ttsServiceProvider.overrideWithValue(mockTts),
+        permissionRequesterProvider
+            .overrideWithValue(_FakePermissionRequester()),
       ],
       child: const MaterialApp(
         home: OnboardingScreen(),

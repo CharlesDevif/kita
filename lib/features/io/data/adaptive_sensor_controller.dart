@@ -141,12 +141,14 @@ class AdaptiveSensorController {
     if (_processing) return;
     _processing = true;
 
-    _frameHandler?.call(image);
-
-    // The frame handler is responsible for clearing the _processing flag
-    // when done. For simple cases, we clear it here.
-    // In production, the handler should call markProcessingComplete().
-    _processing = false;
+    final handler = _frameHandler;
+    if (handler != null) {
+      // The handler MUST call markProcessingComplete() when done.
+      handler(image);
+    } else {
+      // No handler registered — release the guard immediately.
+      _processing = false;
+    }
   }
 
   /// Mark the current frame processing as complete.

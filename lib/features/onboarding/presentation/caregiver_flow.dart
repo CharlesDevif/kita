@@ -67,6 +67,7 @@ class _CaregiverFlowState extends State<CaregiverFlow> {
   AccessibilityProfile _selectedProfile = AccessibilityProfile.general;
   String _targetName = '';
   bool _permissionsRequested = false;
+  bool _hasSpokenConfirmation = false;
 
   @override
   void dispose() {
@@ -311,7 +312,8 @@ class _CaregiverFlowState extends State<CaregiverFlow> {
   }
 
   Widget _buildConfirmationStep(ThemeData theme) {
-    if (widget.onSpeak != null) {
+    if (!_hasSpokenConfirmation && widget.onSpeak != null) {
+      _hasSpokenConfirmation = true;
       unawaited(widget.onSpeak!(
         'Tout est prêt pour $_targetName !',
       ));

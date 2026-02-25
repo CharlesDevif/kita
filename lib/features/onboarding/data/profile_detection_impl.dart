@@ -20,11 +20,11 @@ AccessibilityProfile resolveProfile({
 
 /// Whether the effective text scale exceeds the 1.3x threshold.
 ///
-/// Uses [TextScaler.scale] on a base size of 16.0 to avoid the
-/// deprecated `textScaleFactor` API.
+/// Note: `PlatformDispatcher.textScaleFactor` is deprecated but
+/// `PlatformDispatcher` does not yet expose a `TextScaler` replacement.
+/// This will be updated when the engine-level API is available.
 bool isLargeTextScale(ui.FlutterView view) {
-  // PlatformDispatcher gives us the view's devicePixelRatio-independent
-  // text scale through the implicit view.
+  // ignore: deprecated_member_use
   final double scaledSize = view.platformDispatcher.textScaleFactor * 16.0;
   return scaledSize > 16.0 * 1.3;
 }

@@ -102,7 +102,8 @@ class PassiveModeManagerImpl implements PassiveModeManager {
       _log.warning('Motion monitoring start failed, continuing without motion');
     }
 
-    // Subscribe to battery changes
+    // Subscribe to battery changes (cancel any stale subscription first)
+    await _batterySubscription?.cancel();
     _batterySubscription = _batteryStream().listen(
       _handleBatteryLevel,
       onError: (Object error) {
@@ -159,18 +160,31 @@ class PassiveModeManagerImpl implements PassiveModeManager {
 
     if (_isLowBattery) {
       // In low battery mode: camera always OFF, only accelerometer
-      _sensor.adaptToMotion(MotionState.immobile);
+      unawaited(
+        _sensor.adaptToMotion(MotionState.immobile).catchError((Object e) {
+          _log.warning('Sensor adaptation failed in low battery mode');
+        }),
+      );
       return;
     }
 
     // Adapt camera FPS to motion
-    _sensor.adaptToMotion(motion);
+    unawaited(
+      _sensor.adaptToMotion(motion).catchError((Object e) {
+        _log.warning('Sensor adaptation failed for motion: ${motion.name}');
+      }),
+    );
 
     // Start inactivity timer if immobile
     if (motion == MotionState.immobile) {
       _inactivityTimer = Timer(_inactivityTimeout, () {
+        if (!_sensor.isCameraActive) return; // HIGH fix #3: skip if already OFF
         _log.info('Inactivity timeout reached, camera OFF');
-        _sensor.adaptToMotion(MotionState.immobile);
+        unawaited(
+          _sensor.adaptToMotion(MotionState.immobile).catchError((Object e) {
+            _log.warning('Sensor adaptation failed on inactivity timeout');
+          }),
+        );
       });
     }
   }
@@ -182,7 +196,11 @@ class PassiveModeManagerImpl implements PassiveModeManager {
     if (_isLowBattery && !wasLow) {
       _log.info('Low battery mode activated');
       _sensor.updateConfig(FpsConfig.lowBattery);
-      _sensor.adaptToMotion(MotionState.immobile);
+      unawaited(
+        _sensor.adaptToMotion(MotionState.immobile).catchError((Object e) {
+          _log.warning('Sensor adaptation failed entering low battery mode');
+        }),
+      );
       _setState(PassiveModeState.lowBattery);
 
       // Trigger vocal alert (once per session)
@@ -195,7 +213,11 @@ class PassiveModeManagerImpl implements PassiveModeManager {
       _sensor.updateConfig(FpsConfig.standard);
       _setState(PassiveModeState.monitoring);
       // Re-adapt to current motion
-      _sensor.adaptToMotion(_motion.currentState);
+      unawaited(
+        _sensor.adaptToMotion(_motion.currentState).catchError((Object e) {
+          _log.warning('Sensor adaptation failed restoring from low battery');
+        }),
+      );
     }
   }
 

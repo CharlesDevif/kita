@@ -36,6 +36,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final _nameFocusNode = FocusNode();
   bool _hasSpoken = false;
   bool _showApiKeySetup = false;
+  bool _navigatedToHome = false;
 
   @override
   void dispose() {
@@ -336,10 +337,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     final profile =
         state.detectedProfile?.profile ?? AccessibilityProfile.general;
     final storytelling = ref.read(permissionStorytellingProvider);
+    final requester = ref.read(permissionRequesterProvider);
 
     return PermissionStep(
       profile: profile,
       storytelling: storytelling,
+      permissionRequester: requester,
       onComplete: (results) {
         final notifier = ref.read(onboardingNotifierProvider.notifier);
         // Record granted permissions in state
@@ -385,12 +388,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     OnboardingState state,
     ThemeData theme,
   ) {
-    // Navigate to main app
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        context.go('/');
-      }
-    });
+    // Navigate to main app (guarded to prevent accumulating callbacks)
+    if (!_navigatedToHome) {
+      _navigatedToHome = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          context.go('/');
+        }
+      });
+    }
 
     return Semantics(
       liveRegion: true,

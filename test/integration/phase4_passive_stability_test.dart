@@ -98,10 +98,10 @@ void main() {
           ];
 
           for (final motion in motionSequence) {
+            // Simulate motion through the manager (not directly on sensor controller)
             mockMotion.simulateState(motion);
-            await sensorController.adaptToMotion(motion);
 
-            // Let microtasks settle
+            // Let microtasks settle (manager uses unawaited futures)
             await Future<void>.delayed(Duration.zero);
           }
 
@@ -147,14 +147,12 @@ void main() {
       final initialLogCount = logEntries.length;
       final initialStateCount = stateHistory.length;
 
-      // Run 20 rapid motion cycles
+      // Run 20 rapid motion cycles through the manager
       for (var i = 0; i < 20; i++) {
         mockMotion.simulateState(MotionState.walking);
-        await sensorController.adaptToMotion(MotionState.walking);
         await Future<void>.delayed(Duration.zero);
 
         mockMotion.simulateState(MotionState.immobile);
-        await sensorController.adaptToMotion(MotionState.immobile);
         await Future<void>.delayed(Duration.zero);
       }
 
@@ -255,7 +253,8 @@ void main() {
     test('rapid motion transitions do not cause race conditions', () async {
       await manager.activate();
 
-      // Rapid fire motion transitions (simulates jitter in accelerometer)
+      // Rapid fire motion transitions through the manager
+      // (simulates jitter in accelerometer)
       for (var i = 0; i < 50; i++) {
         final motions = [
           MotionState.immobile,
@@ -263,7 +262,8 @@ void main() {
           MotionState.running,
         ];
         final motion = motions[i % 3];
-        await sensorController.adaptToMotion(motion);
+        mockMotion.simulateState(motion);
+        await Future<void>.delayed(Duration.zero);
       }
 
       // Manager should still be in a valid state
@@ -288,8 +288,10 @@ void main() {
       batteryStreamController.add(50);
       await Future<void>.delayed(const Duration(milliseconds: 50));
 
-      await sensorController.adaptToMotion(MotionState.walking);
-      await sensorController.adaptToMotion(MotionState.immobile);
+      mockMotion.simulateState(MotionState.walking);
+      await Future<void>.delayed(Duration.zero);
+      mockMotion.simulateState(MotionState.immobile);
+      await Future<void>.delayed(Duration.zero);
 
       await manager.deactivate();
 

@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import '../../../core/utils/logger.dart';
 import '../../io/domain/tts_service.dart';
 import '../domain/permission_storytelling.dart';
@@ -83,11 +81,11 @@ class PermissionStorytellingImpl implements PermissionStorytelling {
     KitaPermission permission,
     PermissionStory story,
   ) async {
-    // First attempt with explanation
-    unawaited(tts.speak(
+    // First attempt: speak explanation, then show OS dialog
+    await tts.speak(
       story.firstExplanation,
       priority: TTSPriority.standard,
-    ));
+    );
     _log.info('Requesting permission: ${permission.name} (attempt 1)');
 
     var status = await requester.request(permission);
@@ -102,10 +100,10 @@ class PermissionStorytellingImpl implements PermissionStorytelling {
 
     // Second attempt with complementary explanation
     if (status == PermissionRequestStatus.denied) {
-      unawaited(tts.speak(
+      await tts.speak(
         story.secondExplanation,
         priority: TTSPriority.standard,
-      ));
+      );
       _log.info('Requesting permission: ${permission.name} (attempt 2)');
 
       status = await requester.request(permission);
@@ -121,7 +119,7 @@ class PermissionStorytellingImpl implements PermissionStorytelling {
     return PermissionResult(
       permission: permission,
       status: status,
-      attempts: status == PermissionRequestStatus.granted ? 2 : 2,
+      attempts: 2,
     );
   }
 

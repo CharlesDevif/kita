@@ -1,6 +1,7 @@
 import Flutter
 import AVFoundation
 import CoreLocation
+import os.log
 
 /// Platform channel for background service management on iOS.
 ///
@@ -9,6 +10,7 @@ import CoreLocation
 class BackgroundChannel: NSObject, FlutterStreamHandler, CLLocationManagerDelegate {
     static let channelName = "com.kita/background"
     static let eventChannelName = "com.kita/service_state"
+    private static let log = OSLog(subsystem: "com.kita", category: "BackgroundService")
 
     private let channel: FlutterMethodChannel
     private let eventChannel: FlutterEventChannel
@@ -84,7 +86,7 @@ class BackgroundChannel: NSObject, FlutterStreamHandler, CLLocationManagerDelega
             try session.setActive(true)
         } catch {
             // Log without PII
-            print("[BackgroundService] AVAudioSession configuration failed")
+            os_log("AVAudioSession configuration failed", log: Self.log, type: .error)
         }
     }
 
@@ -93,7 +95,7 @@ class BackgroundChannel: NSObject, FlutterStreamHandler, CLLocationManagerDelega
         do {
             try session.setActive(false, options: [.notifyOthersOnDeactivation])
         } catch {
-            print("[BackgroundService] AVAudioSession deactivation failed")
+            os_log("AVAudioSession deactivation failed", log: Self.log, type: .error)
         }
     }
 
@@ -104,7 +106,6 @@ class BackgroundChannel: NSObject, FlutterStreamHandler, CLLocationManagerDelega
         locationManager?.delegate = self
         locationManager?.desiredAccuracy = kCLLocationAccuracyHundredMeters
         locationManager?.distanceFilter = 10 // meters — reduce battery drain
-        locationManager?.allowsBackgroundLocationUpdates = true
         locationManager?.pausesLocationUpdatesAutomatically = false
 
         // Request always authorization if not already granted
@@ -115,7 +116,9 @@ class BackgroundChannel: NSObject, FlutterStreamHandler, CLLocationManagerDelega
             locationManager?.requestAlwaysAuthorization()
         }
 
-        if status == .authorizedAlways || status == .authorizedWhenInUse {
+        // Only enable background location and start updates with Always authorization
+        if status == .authorizedAlways {
+            locationManager?.allowsBackgroundLocationUpdates = true
             locationManager?.startUpdatingLocation()
         }
     }
@@ -129,13 +132,17 @@ class BackgroundChannel: NSObject, FlutterStreamHandler, CLLocationManagerDelega
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         // Log without PII (no coordinates)
-        print("[BackgroundService] Location update failed")
+        os_log("Location update failed", log: Self.log, type: .error)
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         let status = manager.authorizationStatus
-        if status == .authorizedAlways || status == .authorizedWhenInUse {
+        if status == .authorizedAlways {
+            manager.allowsBackgroundLocationUpdates = true
             manager.startUpdatingLocation()
+        } else if status == .authorizedWhenInUse {
+            // Upgrade to Always for background operation
+            manager.requestAlwaysAuthorization()
         }
     }
 

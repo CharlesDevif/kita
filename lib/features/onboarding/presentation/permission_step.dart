@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/accessibility_tokens.dart';
+import '../../../core/utils/logger.dart';
 import '../../../shared/widgets/kita_permission_card.dart';
 import '../data/permission_storytelling_impl.dart';
 import '../domain/permission_storytelling.dart';
 import '../domain/profile_detection.dart';
+
+final _log = KitaLogger('Onboarding');
 
 /// Onboarding step that requests permissions with storytelling.
 ///
@@ -15,6 +18,7 @@ class PermissionStep extends StatefulWidget {
     required this.profile,
     required this.onComplete,
     required this.storytelling,
+    this.permissionRequester,
     super.key,
   });
 
@@ -26,6 +30,10 @@ class PermissionStep extends StatefulWidget {
 
   /// The storytelling service to use.
   final PermissionStorytelling storytelling;
+
+  /// Optional permission requester for calling the real OS permission API.
+  /// If null, accept records granted without calling the OS (test mode).
+  final PermissionRequester? permissionRequester;
 
   @override
   State<PermissionStep> createState() => _PermissionStepState();
@@ -169,17 +177,40 @@ class _PermissionStepState extends State<PermissionStep> {
   Future<void> _requestCurrentPermission() async {
     setState(() => _isRequesting = true);
 
-    // In the step-based UI, we delegate actual OS permission request
-    // to the storytelling service for individual permissions.
-    // But since the UI drives the flow, we simulate the result here.
-    // The actual PermissionStorytelling.requestAll() handles the full
-    // flow programmatically. For the UI-driven flow, the accept button
-    // signals intent and the parent can wire the actual request.
-    _addResultAndAdvance(PermissionResult(
-      permission: _currentPermission,
-      status: PermissionRequestStatus.granted,
-      attempts: _cardState == PermissionCardState.reAsking ? 2 : 1,
-    ));
+    final attempts = _cardState == PermissionCardState.reAsking ? 2 : 1;
+
+    if (widget.permissionRequester != null) {
+      // Call the real OS permission request
+      try {
+        final status =
+            await widget.permissionRequester!.request(_currentPermission);
+        if (!mounted) return;
+        _log.info(
+          'Permission ${_currentPermission.name} result: ${status.name}',
+        );
+        _addResultAndAdvance(PermissionResult(
+          permission: _currentPermission,
+          status: status,
+          attempts: attempts,
+        ));
+      } catch (e) {
+        _log.error('Permission request failed', error: e);
+        if (!mounted) return;
+        // Treat errors as denied so the user can retry or skip
+        _addResultAndAdvance(PermissionResult(
+          permission: _currentPermission,
+          status: PermissionRequestStatus.denied,
+          attempts: attempts,
+        ));
+      }
+    } else {
+      // No requester provided (test mode) — record as granted.
+      _addResultAndAdvance(PermissionResult(
+        permission: _currentPermission,
+        status: PermissionRequestStatus.granted,
+        attempts: attempts,
+      ));
+    }
   }
 
   void _addResultAndAdvance(PermissionResult result) {

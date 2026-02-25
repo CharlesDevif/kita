@@ -279,7 +279,8 @@ class _ApiKeySetupStepState extends State<ApiKeySetupStep> {
         });
       }
     } catch (e) {
-      _log.error('API key validation failed', error: e);
+      // Log without the exception details to avoid leaking the API key
+      _log.error('API key validation failed');
       if (mounted) {
         setState(() {
           _keyError = 'Erreur de validation. Réessaie.';
