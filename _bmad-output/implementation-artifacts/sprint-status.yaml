@@ -106,11 +106,11 @@ development_status:
   epic-7-retrospective: optional
 
   # === PHASE 3.5 : Orchestrateur Multi-Agents (1 agent) ===
-  epic-12: in-progress
+  epic-12: done
   12-1-kita-agent-interface-bus-clock-modeles: done
   12-2-agent-supervisor-migration-plugins-agents: done
   12-3-output-coordinator-arbitrage-multi-modal: done
-  12-4-input-router-orchestrator-facade-cablage-shell: in-progress
+  12-4-input-router-orchestrator-facade-cablage-shell: done
   epic-12-retrospective: optional
 
   # === PHASE 4 : Intégration utilisateur (2 agents) ===
