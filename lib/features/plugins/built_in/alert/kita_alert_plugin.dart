@@ -59,6 +59,7 @@ class KitaAlertPlugin implements KitaAgent {
         priority: AgentPriority.critical,
         permissions: ['camera', 'haptic', 'tts'],
         capabilities: ['obstacle_detection', 'real_time_alert'],
+        compatibleProfiles: ['blind', 'low_vision', 'standard'],
         subscriptions: {
           AgentMessageType.cancelAll,
           AgentMessageType.userCommand,
@@ -226,8 +227,8 @@ class KitaAlertPlugin implements KitaAgent {
     // Trigger multi-modal alert via OutputHandle
     await _triggerAlert(message, severity, outputPriority, urgency);
 
-    // Start auto-dismiss timer
-    _alertTimer = Timer(_autoDismissDelay, _dismissAlert);
+    // Start auto-dismiss timer via injectable clock
+    _alertTimer = _context!.clock.delayed(_autoDismissDelay, _dismissAlert);
 
     _log.info('Alert triggered: ${urgency.name} - ${detection.type}');
 

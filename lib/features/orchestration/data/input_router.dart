@@ -3,10 +3,9 @@ import '../../../core/utils/logger.dart';
 import '../../ai/domain/request_classifier.dart';
 import '../../io/data/voice_command_handler.dart';
 import '../../plugins/built_in/describe/describe_plugin.dart';
-import '../domain/agent_bus.dart';
 import '../domain/clock.dart';
 import '../domain/models/agent_input.dart';
-import '../domain/models/agent_message.dart';
+import '../domain/models/agent_ids.dart';
 import '../domain/models/raw_input.dart';
 import 'agent_supervisor.dart';
 import 'output_coordinator.dart';
@@ -22,12 +21,10 @@ import 'output_coordinator.dart';
 class InputRouter {
   InputRouter({
     required AgentSupervisor supervisor,
-    required AgentBus bus,
     required OutputCoordinator outputCoordinator,
     required Clock clock,
     RequestClassifier? classifier,
   })  : _supervisor = supervisor,
-        _bus = bus,
         _outputCoordinator = outputCoordinator,
         _clock = clock,
         _classifier = classifier;
@@ -35,7 +32,6 @@ class InputRouter {
   static final _log = KitaLogger('Orchestration.Router');
 
   final AgentSupervisor _supervisor;
-  final AgentBus _bus;
   final OutputCoordinator _outputCoordinator;
   final Clock _clock;
   final RequestClassifier? _classifier;
@@ -98,25 +94,15 @@ class InputRouter {
     }
   }
 
-  /// Handles "stop" / "annule": broadcast cancelAll then coordinator.cancelAll.
+  /// Handles "stop" / "annule": coordinator.cancelAll then terminate agents.
   ///
-  /// **Sequence is critical** (see Pitfalls #2 in story file):
-  /// 1. bus.publish(cancelAll) — agents receive and start cleanup
-  /// 2. outputCoordinator.cancelAll() — stops TTS, clears queue
-  /// 3. feedback "OK" is handled by the coordinator's cancelAll
+  /// The coordinator's cancelAll() already publishes a cancelAll message
+  /// on the bus, so we do NOT publish one here to avoid double-publication.
   Future<void> _handleCancel() async {
-    // Step 1: Broadcast cancelAll on the bus FIRST
-    _bus.publish(AgentMessage(
-      fromAgent: 'system',
-      type: AgentMessageType.cancelAll,
-      payload: const {},
-      timestamp: _clock.now(),
-    ));
-
-    // Step 2: Coordinator stops TTS + clears queue + feedback "OK"
+    // Step 1: Coordinator stops TTS + clears queue + publishes cancelAll + feedback "OK"
     await _outputCoordinator.cancelAll();
 
-    // Step 3: Terminate onDemand agents
+    // Step 2: Terminate onDemand agents
     await _supervisor.returnToPassive();
 
     _log.info('Cancel all completed');
@@ -127,7 +113,7 @@ class InputRouter {
   /// **Pitfall #1**: If Marie says "decris" while DescribeAgent is already
   /// active, we re-route to the existing agent instead of double-spawning.
   Future<void> _handleDescribe() async {
-    const describeId = 'com.kita.describe';
+    const describeId = AgentIds.describe;
 
     if (_supervisor.agents.containsKey(describeId)) {
       // Re-route to existing active agent
@@ -165,7 +151,7 @@ class InputRouter {
   ///
   /// AlertAgent is always active (persistent), so no spawn needed.
   Future<void> _routeToAlertAgent(RawInput input) async {
-    const alertId = 'com.kita.alert';
+    const alertId = AgentIds.alert;
     final entry = _supervisor.agents[alertId];
     if (entry != null) {
       await entry.agent.handleInput(AgentInput(

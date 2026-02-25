@@ -17,7 +17,7 @@ import 'output_handle.dart';
 ///
 /// Contains all the tools an agent needs: sensor access, AI access,
 /// optional memory, the inter-agent bus, output handle, and clock.
-/// Built by the [PluginSandbox] based on the agent's manifest permissions.
+/// Built by the [AgentSupervisor] based on the agent's manifest permissions.
 class AgentContext {
   /// Creates an [AgentContext].
   const AgentContext({

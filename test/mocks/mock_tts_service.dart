@@ -38,4 +38,9 @@ class MockTTSService implements TTSService {
     _isSpeaking = false;
     return const Result.success(null);
   }
+
+  /// Releases the internal stream controller.
+  void dispose() {
+    _speechEventsController.close();
+  }
 }

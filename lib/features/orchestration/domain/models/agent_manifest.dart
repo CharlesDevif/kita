@@ -44,6 +44,12 @@ enum AgentPriority implements Comparable<AgentPriority> {
   /// Returns true if this priority is lower than [other].
   bool operator <(AgentPriority other) => level > other.level;
 
+  /// Returns true if this priority is higher than or equal to [other].
+  bool operator >=(AgentPriority other) => level <= other.level;
+
+  /// Returns true if this priority is lower than or equal to [other].
+  bool operator <=(AgentPriority other) => level >= other.level;
+
   @override
   int compareTo(AgentPriority other) => level.compareTo(other.level);
 }

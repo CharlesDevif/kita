@@ -9,7 +9,9 @@ import 'dart:typed_data';
 // ignore: depend_on_referenced_packages
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kita/features/orchestration/di/providers.dart';
 import 'package:image/image.dart' as img;
 
 import 'package:kita/core/errors/kita_failure.dart';
@@ -165,7 +167,9 @@ class _MockOutputHandle implements OutputHandle {
 
   @override
   Future<void> speak(String text,
-      {OutputPriority priority = OutputPriority.standard}) async {
+      {OutputPriority priority = OutputPriority.standard,
+      double? distance,
+      String? cooldownKey}) async {
     speakCalls.add((text: text, priority: priority));
   }
 
@@ -1095,13 +1099,18 @@ void main() {
     testWidgets('KitaShell renders without crash with both agents active',
         (tester) async {
       await tester.pumpWidget(
-        const MediaQuery(
-          data: MediaQueryData(disableAnimations: true),
-          child: MaterialApp(
-            home: KitaShell(
-              orbState: OrbState.passive,
-              viewportChild: PluginViewport(
-                fallbackText: 'Deux agents actifs',
+        ProviderScope(
+          overrides: [
+            hasActiveOnDemandProvider.overrideWithValue(false),
+          ],
+          child: const MediaQuery(
+            data: MediaQueryData(disableAnimations: true),
+            child: MaterialApp(
+              home: KitaShell(
+                orbStateOverride: OrbState.passive,
+                viewportChild: PluginViewport(
+                  fallbackText: 'Deux agents actifs',
+                ),
               ),
             ),
           ),
@@ -1135,14 +1144,19 @@ void main() {
       expect(alertWidget, isNotNull);
 
       await tester.pumpWidget(
-        MediaQuery(
-          data: const MediaQueryData(disableAnimations: true),
-          child: MaterialApp(
-            home: KitaShell(
-              orbState: OrbState.passive,
-              viewportChild: SizedBox(
-                height: 400,
-                child: alertWidget,
+        ProviderScope(
+          overrides: [
+            hasActiveOnDemandProvider.overrideWithValue(false),
+          ],
+          child: MediaQuery(
+            data: const MediaQueryData(disableAnimations: true),
+            child: MaterialApp(
+              home: KitaShell(
+                orbStateOverride: OrbState.passive,
+                viewportChild: SizedBox(
+                  height: 400,
+                  child: alertWidget,
+                ),
               ),
             ),
           ),
@@ -1483,40 +1497,27 @@ void main() {
       expect(mockOutput.speakCalls, isEmpty);
     });
 
-    test('auto-dismiss alert after 5 seconds', () {
-      FakeAsync().run((async) {
-        alertPlugin.onSpawn(AgentContext(
-          sensors: _MockSensorAccess(),
-          ai: _MockAIAccess(),
-          bus: _MockAgentBus(),
-          output: mockOutput,
-          clock: fakeClock,
-        ));
-        async.flushMicrotasks();
+    test('auto-dismiss alert after 5 seconds', () async {
+      await alertPlugin.handleInput(
+        _agentInput(
+          command: 'obstacle_detected',
+          params: {
+            'type': 'voiture',
+            'distance': 2.0,
+            'confidence': 0.95,
+          },
+          source: InputSource.sensor,
+        ),
+      );
 
-        alertPlugin.handleInput(
-          _agentInput(
-            command: 'obstacle_detected',
-            params: {
-              'type': 'voiture',
-              'distance': 2.0,
-              'confidence': 0.95,
-            },
-            source: InputSource.sensor,
-          ),
-        );
-        async.flushMicrotasks();
+      // Alert is visible
+      expect(alertPlugin.buildViewport(_FakeBuildContext()), isNotNull);
 
-        // Alert is visible
-        expect(alertPlugin.buildViewport(_FakeBuildContext()), isNotNull);
+      // Advance past 5s via FakeClock (auto-dismiss timer uses clock.delayed)
+      fakeClock.advance(const Duration(seconds: 5));
 
-        // Advance past 5s
-        async.elapse(const Duration(seconds: 5));
-        async.flushMicrotasks();
-
-        // Alert is dismissed
-        expect(alertPlugin.buildViewport(_FakeBuildContext()), isNull);
-      });
+      // Alert is dismissed
+      expect(alertPlugin.buildViewport(_FakeBuildContext()), isNull);
     });
 
     test('"ok" command dismisses alert', () async {

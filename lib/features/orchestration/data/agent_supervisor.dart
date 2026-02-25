@@ -10,8 +10,11 @@ import '../../plugins/data/plugin_sandbox_impl.dart';
 import '../domain/agent_bus.dart';
 import '../domain/clock.dart';
 import '../domain/kita_agent.dart';
+import '../domain/models/agent_ids.dart';
 import '../domain/models/agent_manifest.dart';
 import '../domain/models/agent_message.dart';
+import 'output_coordinator.dart';
+import 'output_handle_impl.dart';
 import 'output_handle_stub.dart';
 
 /// State of an agent managed by the [AgentSupervisor].
@@ -68,11 +71,13 @@ class AgentSupervisor {
     required Clock clock,
     required TTSService ttsService,
     required HapticService hapticService,
+    OutputCoordinator? outputCoordinator,
   })  : _bus = bus,
         _sandbox = sandbox,
         _clock = clock,
         _ttsService = ttsService,
-        _hapticService = hapticService;
+        _hapticService = hapticService,
+        _outputCoordinator = outputCoordinator;
 
   static final _log = KitaLogger('Orchestration.Supervisor');
 
@@ -81,6 +86,7 @@ class AgentSupervisor {
   final Clock _clock;
   final TTSService _ttsService;
   final HapticService _hapticService;
+  final OutputCoordinator? _outputCoordinator;
 
   final Map<String, AgentEntry> _agents = {};
   final Map<String, StreamSubscription<AgentMessage>> _busSubscriptions = {};
@@ -121,14 +127,20 @@ class AgentSupervisor {
       ));
     }
 
-    // Build OutputHandle stub for this agent
-    // TODO(12.3): Replace StubOutputHandle with OutputCoordinator-backed handle
-    final outputHandle = StubOutputHandle(
-      agentId: agentId,
-      ttsService: _ttsService,
-      hapticService: _hapticService,
-      onComplete: _onAgentComplete,
-    );
+    // Build OutputHandle: use real OutputHandleImpl when coordinator is
+    // available (normal runtime), fall back to StubOutputHandle (legacy/tests).
+    final outputHandle = _outputCoordinator != null
+        ? OutputHandleImpl(
+            agentId: agentId,
+            coordinator: _outputCoordinator,
+            agentType: agent.manifest.agentType,
+          )
+        : StubOutputHandle(
+            agentId: agentId,
+            ttsService: _ttsService,
+            hapticService: _hapticService,
+            onComplete: _onAgentComplete,
+          );
 
     // Build sandboxed AgentContext
     final context = _sandbox.buildAgentContext(
@@ -170,7 +182,7 @@ class AgentSupervisor {
 
     // Publish spawned event
     _bus.publish(AgentMessage(
-      fromAgent: 'system',
+      fromAgent: AgentIds.system,
       type: AgentMessageType.agentSpawned,
       payload: {'agentId': agentId},
       timestamp: _clock.now(),
@@ -270,7 +282,7 @@ class AgentSupervisor {
 
     // Publish terminated event
     _bus.publish(AgentMessage(
-      fromAgent: 'system',
+      fromAgent: AgentIds.system,
       type: AgentMessageType.agentTerminated,
       payload: {'agentId': agentId},
       timestamp: _clock.now(),
@@ -302,7 +314,10 @@ class AgentSupervisor {
   void _onAgentComplete(String agentId) {
     _log.info('Agent $agentId signaled complete');
     // Schedule termination asynchronously to avoid re-entrant issues
-    unawaited(terminate(agentId));
+    unawaited(terminate(agentId).catchError((Object e) {
+      _log.error('Failed to terminate agent on complete', error: e);
+      return const Result<void>.success(null);
+    }));
   }
 
   /// Terminates all agents and cleans up resources.

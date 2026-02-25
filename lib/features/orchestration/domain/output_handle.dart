@@ -34,9 +34,14 @@ abstract class OutputHandle {
   ///
   /// The [OutputCoordinator] decides when (or if) the text is actually
   /// spoken, based on priority arbitration rules.
+  ///
+  /// Optional [distance] enables the approaching exception for alert cooldowns.
+  /// Optional [cooldownKey] identifies the alert for cooldown tracking.
   Future<void> speak(
     String text, {
     OutputPriority priority = OutputPriority.standard,
+    double? distance,
+    String? cooldownKey,
   });
 
   /// Requests haptic feedback with the given [priority].

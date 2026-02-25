@@ -220,7 +220,6 @@ void main() {
     );
     router = InputRouter(
       supervisor: supervisor,
-      bus: bus,
       outputCoordinator: coordinator,
       clock: clock,
     );

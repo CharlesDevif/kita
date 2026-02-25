@@ -1,6 +1,9 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/errors/result.dart';
 import '../../../core/theme/multi_modal_tokens.dart';
 import '../../../core/utils/logger.dart';
 import '../../io/data/providers/stt_providers.dart';
@@ -131,16 +134,22 @@ class _KitaShellState extends ConsumerState<KitaShell>
     _log.info('Mic pressed, toggling STT');
     final stt = ref.read(sttServiceProvider);
     if (stt.isListening) {
-      stt.stopRecognition();
+      unawaited(stt.stopRecognition().catchError((Object e) {
+        _log.error('STT stop failed', error: e);
+        return const Result<void>.success(null);
+      }));
     } else {
-      stt.startRecognition(onResult: (transcript, isFinal) {
+      unawaited(stt.startRecognition(onResult: (transcript, isFinal) {
         if (isFinal && transcript.isNotEmpty) {
           _log.info('STT final result, routing to orchestrator');
           final orchestrator = ref.read(kitaOrchestratorProvider);
           final clock = ref.read(clockProvider);
           orchestrator.handleInput(RawInput.voice(transcript, clock: clock));
         }
-      });
+      }).catchError((Object e) {
+        _log.error('STT start failed', error: e);
+        return const Result<void>.success(null);
+      }));
     }
   }
 
@@ -156,9 +165,11 @@ class _KitaShellState extends ConsumerState<KitaShell>
     final OrbState orbState =
         widget.orbStateOverride ?? ref.watch(orbStateProvider);
 
-    // Side effect: sync supervisor hasActiveOnDemand → ShellModeNotifier
-    // This is a listener, not a watcher — it triggers notifier updates
-    // instead of rebuilding this widget.
+    // Side effect: sync supervisor hasActiveOnDemand -> ShellModeNotifier.
+    // Using ref.listen inside ConsumerState.build() is the standard Riverpod
+    // pattern for side effects. Riverpod automatically handles re-registration
+    // on rebuild and cleanup on dispose. This is NOT the same as calling
+    // ref.listen in a StatelessWidget (which would leak listeners).
     ref.listen(hasActiveOnDemandProvider, (prev, next) {
       final notifier = ref.read(shellModeProvider.notifier);
       if (next) {

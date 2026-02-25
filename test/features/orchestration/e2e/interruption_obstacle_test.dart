@@ -217,7 +217,6 @@ void main() {
     );
     inputRouter = InputRouter(
       supervisor: supervisor,
-      bus: bus,
       outputCoordinator: coordinator,
       clock: clock,
     );

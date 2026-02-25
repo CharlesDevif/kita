@@ -39,7 +39,9 @@ class MockOutputHandle implements OutputHandle {
 
   @override
   Future<void> speak(String text,
-      {OutputPriority priority = OutputPriority.standard}) async {
+      {OutputPriority priority = OutputPriority.standard,
+      double? distance,
+      String? cooldownKey}) async {
     speakCalls.add((text: text, priority: priority));
   }
 

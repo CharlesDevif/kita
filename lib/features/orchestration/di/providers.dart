@@ -66,12 +66,14 @@ final agentSupervisorProvider = Provider<AgentSupervisor>((ref) {
   final clock = ref.watch(clockProvider);
   final tts = ref.watch(ttsServiceProvider);
   final haptic = ref.watch(hapticServiceProvider);
+  final coordinator = ref.watch(outputCoordinatorProvider);
   final supervisor = AgentSupervisor(
     bus: bus,
     sandbox: sandbox,
     clock: clock,
     ttsService: tts,
     hapticService: haptic,
+    outputCoordinator: coordinator,
   );
   ref.onDispose(() async {
     await supervisor.dispose();
@@ -121,13 +123,11 @@ final requestClassifierProvider = Provider<RequestClassifier>((ref) {
 /// keepAlive — persists for the entire app lifecycle.
 final inputRouterProvider = Provider<InputRouter>((ref) {
   final supervisor = ref.watch(agentSupervisorProvider);
-  final bus = ref.watch(agentBusProvider);
   final coordinator = ref.watch(outputCoordinatorProvider);
   final clock = ref.watch(clockProvider);
   final classifier = ref.watch(requestClassifierProvider);
   return InputRouter(
     supervisor: supervisor,
-    bus: bus,
     outputCoordinator: coordinator,
     clock: clock,
     classifier: classifier,

@@ -86,7 +86,6 @@ class FakeClock implements Clock {
     _pendingTimers.add(_PendingTimer(
       fireAt: _currentTime.add(duration),
       timer: timer,
-      delayedCallback: callback,
     ));
     return timer;
   }
@@ -114,7 +113,9 @@ class FakeClock implements Clock {
   void _firePendingTimers() {
     // Process timers that are due. We iterate with an index because
     // periodic timers re-add themselves during iteration.
+    // Sort before each scan to guarantee chronological execution order.
     var i = 0;
+    _pendingTimers.sort((a, b) => a.fireAt.compareTo(b.fireAt));
     while (i < _pendingTimers.length) {
       final pending = _pendingTimers[i];
       if (pending.timer.isCancelled) {
@@ -134,10 +135,12 @@ class FakeClock implements Clock {
               timer: periodicTimer,
             ));
           }
-        } else if (pending.delayedCallback != null) {
-          pending.delayedCallback!();
+        } else if (pending.timer is _FakeDelayedTimer) {
+          pending.timer.markFired();
+          (pending.timer as _FakeDelayedTimer).callback();
         }
-        // Restart from beginning since list may have been modified.
+        // Re-sort and restart from beginning since list may have been modified.
+        _pendingTimers.sort((a, b) => a.fireAt.compareTo(b.fireAt));
         i = 0;
       } else {
         i++;
@@ -161,12 +164,10 @@ class _PendingTimer {
   _PendingTimer({
     required this.fireAt,
     required this.timer,
-    this.delayedCallback,
   });
 
   final DateTime fireAt;
   final _FakeTimerBase timer;
-  final void Function()? delayedCallback;
 }
 
 /// Internal: a pending wait entry in [FakeClock].
@@ -183,6 +184,7 @@ class _PendingWait {
 /// Base class for fake timers that support cancellation.
 abstract class _FakeTimerBase implements Timer {
   bool _isCancelled = false;
+  bool _hasFired = false;
   int _tick = 0;
 
   bool get isCancelled => _isCancelled;
@@ -196,7 +198,12 @@ abstract class _FakeTimerBase implements Timer {
   }
 
   @override
-  bool get isActive => !_isCancelled;
+  bool get isActive => !_isCancelled && !_hasFired;
+
+  /// Marks the timer as having fired (for one-shot timers).
+  void markFired() {
+    _hasFired = true;
+  }
 
   /// Increments the tick count.
   void incrementTick() {

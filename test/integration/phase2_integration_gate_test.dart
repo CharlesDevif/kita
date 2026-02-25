@@ -2,7 +2,9 @@ import 'dart:typed_data';
 
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kita/features/orchestration/di/providers.dart';
 import 'package:sqlite3/sqlite3.dart' as sql;
 
 import 'package:kita/core/data/database.dart' hide UserProfile;
@@ -241,9 +243,14 @@ void main() {
   group('Smoke test: Shell renders and AIRouter processes text', () {
     testWidgets('KitaShell renders with KitaOrb', (tester) async {
       await tester.pumpWidget(
-        const MaterialApp(
-          home: KitaShell(
-            orbState: OrbState.passive,
+        ProviderScope(
+          overrides: [
+            hasActiveOnDemandProvider.overrideWithValue(false),
+          ],
+          child: const MaterialApp(
+            home: KitaShell(
+              orbStateOverride: OrbState.passive,
+            ),
           ),
         ),
       );

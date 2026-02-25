@@ -62,6 +62,17 @@ void main() {
         clock.advance(const Duration(seconds: 5));
         expect(executed, isFalse);
       });
+
+      test('timer.isActive is false after firing', () {
+        final timer = clock.delayed(
+          const Duration(seconds: 3),
+          () {},
+        );
+
+        expect(timer.isActive, isTrue);
+        clock.advance(const Duration(seconds: 3));
+        expect(timer.isActive, isFalse);
+      });
     });
 
     group('periodic()', () {
@@ -170,8 +181,7 @@ void main() {
 
       clock.advance(const Duration(seconds: 3));
 
-      expect(order, containsAll(['1s', '2s', '3s']));
-      expect(order.length, 3);
+      expect(order, equals(['1s', '2s', '3s']));
     });
   });
 

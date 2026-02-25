@@ -36,6 +36,8 @@ class StubOutputHandle implements OutputHandle {
   Future<void> speak(
     String text, {
     OutputPriority priority = OutputPriority.standard,
+    double? distance,
+    String? cooldownKey,
   }) async {
     // Map OutputPriority to TTSPriority for direct delegation.
     final ttsPriority = switch (priority) {

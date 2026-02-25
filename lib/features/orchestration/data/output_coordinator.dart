@@ -1,6 +1,7 @@
 import 'dart:async' show Completer, StreamController, Timer, unawaited;
 import 'dart:collection';
 
+import '../../../core/errors/result.dart';
 import '../../../core/utils/logger.dart';
 import '../../io/domain/haptic_service.dart';
 import '../../io/domain/tts_service.dart';
@@ -9,14 +10,17 @@ import '../../shell/domain/shell_mode.dart';
 import '../../../shared/multi_modal/profile_adapter.dart';
 import '../domain/agent_bus.dart';
 import '../domain/clock.dart';
+import '../domain/models/agent_ids.dart';
 import '../domain/models/agent_manifest.dart';
 import '../domain/models/agent_message.dart';
 import '../domain/models/output_priority.dart';
 import '../domain/output_handle.dart';
 
 /// Internal speech request queued by the [OutputCoordinator].
-class OutputRequest implements Comparable<OutputRequest> {
-  OutputRequest({
+///
+/// Private to this file — no external code should depend on this class.
+class _OutputRequest implements Comparable<_OutputRequest> {
+  _OutputRequest({
     required this.agentId,
     required this.text,
     required this.priority,
@@ -41,7 +45,7 @@ class OutputRequest implements Comparable<OutputRequest> {
   final AgentType? agentType;
 
   @override
-  int compareTo(OutputRequest other) {
+  int compareTo(_OutputRequest other) {
     // Lower level = higher priority.
     final cmp = priority.level.compareTo(other.priority.level);
     if (cmp != 0) return cmp;
@@ -101,7 +105,7 @@ class OutputCoordinator {
   final void Function(ShellMode) _onShellModeChanged;
 
   // -- Queue --
-  final SplayTreeSet<OutputRequest> _queue = SplayTreeSet<OutputRequest>();
+  final SplayTreeSet<_OutputRequest> _queue = SplayTreeSet<_OutputRequest>();
 
   // -- State --
   bool _isSpeaking = false;
@@ -135,6 +139,9 @@ class OutputCoordinator {
       {};
 
   // -- Completion tracking --
+  /// Invariant: only ONE speech can be active at a time. [_speechCompleter]
+  /// tracks the currently active speech. It MUST be completed (via
+  /// [_completeSpeechCompleter]) before starting a new speech.
   Completer<void>? _speechCompleter;
 
   /// Returns a [Stream<SpeechEvent>] for a given agent.
@@ -216,7 +223,7 @@ class OutputCoordinator {
       );
     }
 
-    final request = OutputRequest(
+    final request = _OutputRequest(
       agentId: agentId,
       text: text,
       priority: priority,
@@ -288,7 +295,7 @@ class OutputCoordinator {
 
     // Publish cancelAll on the bus.
     _bus.publish(AgentMessage(
-      fromAgent: 'system',
+      fromAgent: AgentIds.system,
       type: AgentMessageType.cancelAll,
       payload: const {},
       timestamp: _clock.now(),
@@ -302,7 +309,10 @@ class OutputCoordinator {
     // Feedback "OK" via ProfileAdapter.
     _profileAdapter.feedback(
       vocal: () {
-        _tts.speak('OK');
+        unawaited(_tts.speak('OK').catchError((Object e) {
+          _log.error('TTS speak failed in cancelAll', error: e);
+          return const Result<void>.success(null);
+        }));
       },
       haptic: () {
         _haptic.trigger(HapticPattern.info);
@@ -343,7 +353,7 @@ class OutputCoordinator {
 
   // ---------- PRIVATE: CRITICAL ----------
 
-  Future<void> _handleCritical(OutputRequest request) async {
+  Future<void> _handleCritical(_OutputRequest request) async {
     // Track who was interrupted.
     final interruptedAgentId = _currentSpeakingAgentId;
     final interruptedAgentType = _currentSpeakingAgentType;
@@ -381,13 +391,17 @@ class OutputCoordinator {
     _focusedAgentId = request.agentId;
     _isSpeaking = true;
 
+    _onOrbStateChanged(OrbState.processing);
     _onOrbStateChanged(OrbState.responding);
 
     _emitSpeechEvent(request.agentId, SpeechEvent.started);
 
     _profileAdapter.feedback(
       vocal: () {
-        _tts.speak(request.text);
+        unawaited(_tts.speak(request.text).catchError((Object e) {
+          _log.error('TTS speak failed in critical handler', error: e);
+          return const Result<void>.success(null);
+        }));
       },
       haptic: () {
         _haptic.trigger(HapticPattern.danger);
@@ -414,7 +428,7 @@ class OutputCoordinator {
 
   // ---------- PRIVATE: HIGH ----------
 
-  Future<void> _handleHigh(OutputRequest request) async {
+  Future<void> _handleHigh(_OutputRequest request) async {
     if (_isSpeaking) {
       // Wait for current phrase to end, max 2s.
       final waitCompleter = Completer<void>();
@@ -462,13 +476,17 @@ class OutputCoordinator {
     _focusedAgentId = request.agentId;
     _isSpeaking = true;
 
+    _onOrbStateChanged(OrbState.processing);
     _onOrbStateChanged(OrbState.responding);
 
     _emitSpeechEvent(request.agentId, SpeechEvent.started);
 
     _profileAdapter.feedback(
       vocal: () {
-        _tts.speak(request.text);
+        unawaited(_tts.speak(request.text).catchError((Object e) {
+          _log.error('TTS speak failed in high handler', error: e);
+          return const Result<void>.success(null);
+        }));
       },
       haptic: () {
         _haptic.trigger(HapticPattern.warning);
@@ -493,11 +511,28 @@ class OutputCoordinator {
     }
   }
 
+  // ---------- PRIVATE: CLEANUP EXPIRED ENTRIES ----------
+
+  /// Removes expired entries from [_deduplication] and [_cooldowns] maps
+  /// to prevent unbounded memory growth over time.
+  void _cleanupExpiredEntries() {
+    final now = _clock.now();
+    _deduplication.removeWhere(
+      (_, timestamp) => now.difference(timestamp) > _deduplicationWindow,
+    );
+    _cooldowns.removeWhere(
+      (_, entry) => now.difference(entry.lastAlertedAt) > _cooldownDuration,
+    );
+  }
+
   // ---------- PRIVATE: PROCESS QUEUE (STANDARD + LOW) ----------
 
   Future<void> _processQueue() async {
     if (_isProcessing || _disposed) return;
     _isProcessing = true;
+
+    // Periodically clean up expired dedup and cooldown entries.
+    _cleanupExpiredEntries();
 
     try {
       while (_queue.isNotEmpty && !_disposed) {
@@ -528,7 +563,10 @@ class OutputCoordinator {
 
         _profileAdapter.feedback(
           vocal: () {
-            _tts.speak(request.text);
+            unawaited(_tts.speak(request.text).catchError((Object e) {
+              _log.error('TTS speak failed in queue processing', error: e);
+              return const Result<void>.success(null);
+            }));
           },
           haptic: () {
             _haptic.trigger(HapticPattern.info);
