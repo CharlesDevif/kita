@@ -116,9 +116,9 @@ development_status:
   # === PHASE 4 : Intégration utilisateur (2 agents) ===
   epic-9: in-progress
   9-1-detection-accessibilite-adaptation-automatique: review
-  9-2-onboarding-vocal-first-flow-principal: in-progress
-  9-3-permission-storytelling: ready-for-dev
-  9-4-premier-moment-magique-configuration-providers: ready-for-dev
+  9-2-onboarding-vocal-first-flow-principal: review
+  9-3-permission-storytelling: review
+  9-4-premier-moment-magique-configuration-providers: in-progress
   9-5-mode-aidant-sophie-configure-pour-marie: ready-for-dev
   epic-9-retrospective: optional
 

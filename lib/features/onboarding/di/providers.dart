@@ -1,9 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../io/data/providers/tts_providers.dart';
 import '../data/pack_installer.dart';
+import '../data/permission_storytelling_impl.dart';
+import '../data/platform_permission_requester.dart';
 import '../data/profile_detection_impl.dart';
 import '../domain/onboarding_state.dart';
+import '../domain/permission_storytelling.dart';
 import '../domain/profile_detection.dart';
 
 /// Provides the [ProfileDetection] implementation.
@@ -35,6 +39,22 @@ final detectedProfileProvider = StreamProvider<DetectedProfile>((ref) {
 /// Provides the [PackInstaller] for auto-installing plugin packs.
 final packInstallerProvider = Provider<PackInstaller>((ref) {
   return PackInstaller();
+});
+
+/// Provides the [PermissionRequester] for platform permission requests.
+final permissionRequesterProvider = Provider<PermissionRequester>((ref) {
+  return PlatformPermissionRequester();
+});
+
+/// Provides the [PermissionStorytelling] service.
+final permissionStorytellingProvider =
+    Provider<PermissionStorytelling>((ref) {
+  final requester = ref.watch(permissionRequesterProvider);
+  final tts = ref.watch(ttsServiceProvider);
+  return PermissionStorytellingImpl(
+    requester: requester,
+    tts: tts,
+  );
 });
 
 /// Whether onboarding has been completed.
