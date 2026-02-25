@@ -281,6 +281,13 @@ Ces pièges s'appliquent à l'ensemble du projet. Les intégrer dans les story f
 - Package actif mais communauté limitée — avoir un plan B (`ThemeExtension` custom) si maintenance s'arrête
 - Vérifier la compatibilité avec la version Flutter utilisée
 
+### testWidgets + StreamProvider = hang systématique
+- `testWidgets` avec des `StreamProvider` actifs (ou `StreamController`) provoque un hang du test framework ("Bad state: Cannot close sink while adding stream") et des timeouts de 10 minutes
+- **Solution :** Utiliser `test()` plain avec `ProviderContainer` + `try/finally { container.dispose(); }` au lieu de `testWidgets`
+- `testWidgets` uniquement pour les tests qui ont besoin de `tester.pumpWidget()` / `tester.tap()` / `tester.platformDispatcher`
+- Pour les tests de state/notifier/stream sans UI, toujours utiliser `test()` + `ProviderContainer`
+- Après `container.listen(streamProvider, ...)`, ajouter `await Future<void>.delayed(Duration.zero)` pour flush les microtasks
+
 ---
 
 ## Règles de qualité (leçons Phase 2)
