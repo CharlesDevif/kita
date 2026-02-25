@@ -1,0 +1,14 @@
+https://kita.app/privacy-policy
+
+# NOTE : Cette URL est un placeholder.
+# Avant la publication sur les stores, héberger docs/privacy-policy.md
+# à cette adresse (GitHub Pages, Netlify, ou serveur dédié).
+#
+# Options recommandées :
+# - GitHub Pages : https://[org].github.io/kita/privacy-policy
+# - Domaine dédié : https://kita.app/privacy
+#
+# L'URL doit être renseignée dans :
+# - Google Play Console → Politique de confidentialité
+# - App Store Connect → Informations de l'app → URL de confidentialité
+# - fastlane/Appfile (décommenter privacy_url quand disponible)

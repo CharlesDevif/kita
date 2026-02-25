@@ -1,0 +1,7 @@
+package_name("com.kita.kita")       # Android — Play Store
+app_identifier("com.kita.kita")     # iOS — App Store / TestFlight
+
+# À remplir par Charles avant le premier déploiement :
+# apple_id("YOUR_APPLE_ID@email.com")
+# itc_team_id("YOUR_ITC_TEAM_ID")
+# team_id("YOUR_TEAM_ID")

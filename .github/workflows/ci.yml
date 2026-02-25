@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main, develop]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -39,7 +42,6 @@ jobs:
         run: flutter test --coverage
 
       - name: Run accessibility tests
-        continue-on-error: true
         run: flutter test --tags accessibility
 
       - name: Install lcov
@@ -54,9 +56,15 @@ jobs:
             -o coverage/lcov_filtered.info
 
       - name: Check coverage threshold
-        run: |
-          if [ -f coverage/lcov_filtered.info ]; then
-            echo "Coverage report generated successfully"
-            lcov --summary coverage/lcov_filtered.info || true
-            # Threshold enforcement will be added in Story 11.1
-          fi
+        uses: VeryGoodOpenSource/very_good_coverage@v2
+        with:
+          path: '${{ github.workspace }}/coverage/lcov_filtered.info'
+          min_coverage: 80
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/lcov_filtered.info
+          retention-days: 14

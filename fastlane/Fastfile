@@ -1,0 +1,118 @@
+# Kita — Fastfile
+#
+# Lanes disponibles :
+#   fastlane android beta_android   — Build AAB + upload Play Store internal
+#   fastlane ios beta_ios           — Build IPA + upload TestFlight
+#   fastlane bump_version           — Incrémente la version dans pubspec.yaml
+#
+# Pattern de versioning git : v{major}.{minor}.{patch}
+#   Exemple : git tag v1.0.0-beta.1 && git push origin v1.0.0-beta.1
+#   La lane bump_version automatise la mise à jour de pubspec.yaml.
+#   En CI, le build number peut être défini via GITHUB_RUN_NUMBER.
+
+default_platform(:ios)
+
+# =============================================================================
+# Android
+# =============================================================================
+
+platform :android do
+  desc "Build le AAB Flutter en release et upload vers Play Store internal testing"
+  lane :beta_android do
+    # Construire l'AAB Flutter en release
+    sh("flutter build appbundle --release --dart-define=ENV=prod")
+
+    # Uploader vers Play Store — internal testing track
+    upload_to_play_store(
+      track: 'internal',
+      aab: '../build/app/outputs/bundle/release/app-release.aab',
+      json_key: ENV['PLAY_STORE_JSON_KEY_PATH'] || 'fastlane/google-play-service-account.json',
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_changelogs: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+    )
+
+    UI.success("Upload Android beta terminé !")
+  end
+end
+
+# =============================================================================
+# iOS
+# =============================================================================
+
+platform :ios do
+  desc "Build l'IPA Flutter en release et upload vers TestFlight"
+  lane :beta_ios do
+    # Construire l'IPA Flutter en release (sans codesign pour CI, configurer les certs avant)
+    sh("flutter build ipa --release --dart-define=ENV=prod")
+
+    # Trouver le fichier IPA généré dynamiquement
+    ipa_path = Dir["../build/ios/ipa/*.ipa"].first
+    UI.user_error!("No IPA found in build/ios/ipa/") unless ipa_path
+
+    # Uploader vers TestFlight
+    upload_to_testflight(
+      ipa: ipa_path,
+      skip_waiting_for_build_processing: true,
+      api_key_path: ENV['APP_STORE_CONNECT_API_KEY_PATH'] || 'fastlane/app-store-connect-api-key.json',
+    )
+
+    UI.success("Upload iOS beta terminé !")
+  end
+end
+
+# =============================================================================
+# Versioning — indépendant de la plateforme
+# =============================================================================
+
+desc "Incrémente la version dans pubspec.yaml (type: major|minor|patch)"
+lane :bump_version do |options|
+  # Options : type: "major" | "minor" | "patch" (défaut: "patch")
+  bump_type = options[:type] || "patch"
+
+  pubspec_path = "../pubspec.yaml"
+  content = File.read(pubspec_path)
+
+  # Extraire version actuelle (format: major.minor.patch[-pre]+build)
+  unless content =~ /^version:\s+(\d+)\.(\d+)\.(\d+)(?:-[^+\s]+)?\+(\d+)/
+    UI.user_error!("Impossible de parser la version dans pubspec.yaml. Format attendu: X.Y.Z+N")
+  end
+
+  # Avertir si un suffixe pre-release est détecté (il sera perdu après le bump)
+  current_version = content.match(/^version:\s+(.+)$/)[1] rescue nil
+  pre_release = current_version&.match(/-([^+\s]+)\+/)&.[](1)
+  UI.important("⚠️ Pre-release suffix '-#{pre_release}' will be dropped") if pre_release
+
+  major = Regexp.last_match(1).to_i
+  minor = Regexp.last_match(2).to_i
+  patch = Regexp.last_match(3).to_i
+  build = Regexp.last_match(4).to_i
+
+  case bump_type
+  when "major"
+    major += 1
+    minor = 0
+    patch = 0
+  when "minor"
+    minor += 1
+    patch = 0
+  when "patch"
+    patch += 1
+  else
+    UI.user_error!("Type invalide: #{bump_type}. Utiliser major, minor ou patch.")
+  end
+
+  build += 1
+  new_version = "#{major}.#{minor}.#{patch}"
+
+  new_content = content.gsub(
+    /^version:\s+.+$/,
+    "version: #{new_version}+#{build}"
+  )
+
+  File.write(pubspec_path, new_content)
+  UI.success("Version mise à jour : #{new_version}+#{build}")
+  UI.message("N'oubliez pas de créer le tag git : git tag v#{new_version} && git push origin v#{new_version}")
+end

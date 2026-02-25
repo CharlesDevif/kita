@@ -69,15 +69,15 @@
 	</array>
 	<!-- Permission descriptions (French) -->
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Kita utilise votre position pour detecter votre environnement et vous alerter des obstacles.</string>
+	<string>Kita utilise votre position pour détecter votre environnement et vous alerter des obstacles à proximité. Cette fonctionnalité est essentielle pour l'assistance aux personnes malvoyantes.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Kita utilise votre position pour adapter les alertes a votre environnement.</string>
+	<string>Kita utilise votre position pour adapter les alertes à votre environnement immédiat et vous guider en sécurité.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Kita utilise le micro pour ecouter vos commandes vocales.</string>
+	<string>Kita utilise le microphone pour écouter vos commandes vocales et vous assister en temps réel, sans que vous ayez besoin de regarder l'écran.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Kita utilise la camera pour decrire votre environnement et detecter les obstacles.</string>
+	<string>Kita utilise la caméra pour décrire votre environnement et détecter les obstacles. Cette fonctionnalité est conçue pour les personnes malvoyantes ou aveugles.</string>
 	<key>NSMotionUsageDescription</key>
-	<string>Kita utilise le mouvement pour adapter l assistance selon votre activite.</string>
+	<string>Kita utilise le mouvement pour adapter l'assistance selon votre activité (marche, course, immobile) et optimiser les alertes d'obstacles.</string>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
