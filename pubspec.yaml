@@ -42,6 +42,12 @@ dependencies:
   # I/O - Motion
   sensors_plus: ^7.0.0
 
+  # I/O - Background service
+  flutter_foreground_task: ^9.2.0
+
+  # I/O - Battery
+  battery_plus: ^7.0.0
+
   # Network
   http: ^1.4.0
 
