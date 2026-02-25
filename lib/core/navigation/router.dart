@@ -39,12 +39,32 @@ final List<RouteBase> kitaRoutes = [
   ),
 ];
 
-/// Router provider — singleton GoRouter instance.
+/// Provider that controls whether onboarding redirect is active.
+///
+/// Override this in your onboarding feature to wire the actual logic.
+/// Default: onboarding is considered complete (no redirect).
+final onboardingCompleteProvider = Provider<bool>((ref) => true);
+
+/// Router provider — singleton GoRouter instance with onboarding redirect.
 final routerProvider = Provider<GoRouter>((ref) {
+  final isOnboardingComplete = ref.watch(onboardingCompleteProvider);
+
   return GoRouter(
     initialLocation: '/',
     debugLogDiagnostics: kDebugMode,
     routes: kitaRoutes,
+    redirect: (context, state) {
+      final isOnboardingRoute =
+          state.matchedLocation.startsWith('/onboarding');
+
+      if (!isOnboardingComplete && !isOnboardingRoute) {
+        return '/onboarding';
+      }
+      if (isOnboardingComplete && isOnboardingRoute) {
+        return '/';
+      }
+      return null;
+    },
     onException: (context, state, router) {
       router.go('/');
     },
