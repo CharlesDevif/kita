@@ -80,6 +80,17 @@ class _KitaShellState extends ConsumerState<KitaShell>
       parent: _modeController,
       curve: Curves.easeInOut,
     );
+
+    // Initialize the orchestrator (spawns persistent agents like AlertAgent).
+    // This is idempotent — safe to call on every Shell mount.
+    unawaited(
+      ref
+          .read(kitaOrchestratorProvider)
+          .initialize()
+          .catchError((Object e) {
+        _log.error('Orchestrator initialization failed', error: e);
+      }),
+    );
   }
 
   @override

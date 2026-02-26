@@ -3,7 +3,7 @@ story_id: "11.2"
 title: "Tests d'intégration journeys"
 epic: "E11 — Prêt pour le monde — Qualité & Déploiement"
 phase: "5"
-status: review
+status: done
 priority: high
 estimated_complexity: L
 depends_on: ["11.1"]
@@ -13,7 +13,7 @@ story_key: "11-2-tests-integration-journeys"
 
 # Story 11.2 : Tests d'intégration journeys
 
-Status: review
+Status: done
 
 ## Story
 
@@ -77,14 +77,14 @@ afin que **les parcours utilisateurs clés sont validés de bout en bout**.
 
 ### Task 1 : Ajouter `integration_test` à pubspec.yaml (AC6)
 
-- [ ] 1.1 — Ajouter `integration_test: sdk: flutter` dans `dev_dependencies` de `pubspec.yaml`
+- [x] 1.1 — Ajouter `integration_test: sdk: flutter` dans `dev_dependencies` de `pubspec.yaml`
   - Ne pas toucher aux autres dépendances
   - Vérifier que `flutter pub get` passe sans conflit
   - Note : `integration_test` est inclus dans le SDK Flutter — pas de version à spécifier
 
 ### Task 2 : Créer `integration_test/helpers/test_app.dart` (AC5, AC6)
 
-- [ ] 2.1 — Créer le helper partagé `integration_test/helpers/test_app.dart`
+- [x] 2.1 — Créer le helper partagé `integration_test/helpers/test_app.dart`
   - Classe `TestApp` avec `buildTestApp({List<Override> overrides = const []})`
   - Mock IA via `ProviderScope.overrides` : `aiRouterProvider` overridé avec `_MockAIRouter`
   - `_MockAIRouter` : retourne succès par défaut, configurable pour simuler offline
@@ -117,8 +117,8 @@ class TestApp extends StatelessWidget {
 
 ### Task 3 : `integration_test/onboarding_flow_test.dart` — Journey onboarding (AC1)
 
-- [ ] 3.1 — Créer le fichier avec `IntegrationTestWidgetsFlutterBinding.ensureInitialized()`
-- [ ] 3.2 — Implémenter test "onboarding complet pour utilisateur aveugle (VoiceOver actif)"
+- [x] 3.1 — Créer le fichier avec `IntegrationTestWidgetsFlutterBinding.ensureInitialized()`
+- [x] 3.2 — Implémenter test "onboarding complet pour utilisateur aveugle (VoiceOver actif)"
   - Construire avec `OnboardingScreen()` wrappé dans `ProviderScope`
   - Override `detectedProfileProvider` → profil blind, screenReader: true
   - Override `ttsServiceProvider` → `MockTTSService` (pour vérifier les appels speak)
@@ -130,14 +130,14 @@ class TestApp extends StatelessWidget {
   - Vérifier profil aveugle pré-sélectionné
   - Valider permissions (step auto-granted)
   - Vérifier état final `OnboardingNotifier.isCompleted == true`
-- [ ] 3.3 — Implémenter test "fallback hors-ligne pendant onboarding"
+- [x] 3.3 — Implémenter test "fallback hors-ligne pendant onboarding"
   - Override `aiRouterProvider` → version offline
   - Vérifier que le Magic Moment se dégrade gracieusement (pas de crash)
 
 ### Task 4 : `integration_test/describe_journey_test.dart` — Journey "décris" (AC2)
 
-- [ ] 4.1 — Créer le fichier avec binding
-- [ ] 4.2 — Implémenter test "décris → description vocale < 5s"
+- [x] 4.1 — Créer le fichier avec binding
+- [x] 4.2 — Implémenter test "décris → description vocale < 5s"
   - Construire avec DB Drift réelle in-memory (pattern depuis `phase2_integration_gate_test.dart`)
   - Override `aiRouterProvider` avec mock retournant "Un salon avec un canapé rouge"
   - Simuler consentement accordé dans la DB
@@ -145,14 +145,14 @@ class TestApp extends StatelessWidget {
   - Vérifier que `mockTts.lastSpokenText` contient la description
   - Vérifier que l'épisode est sauvegardé via `vault.whatDoYouKnow()`
   - Mesure temporelle : utiliser `FakeClock` ou `Stopwatch` — vérifier que le flow complet < 5s wall-clock
-- [ ] 4.3 — Implémenter test "décris → fallback hors-ligne"
+- [x] 4.3 — Implémenter test "décris → fallback hors-ligne"
   - Provider cloud → failure, provider local → description dégradée
   - Vérifier que le TTS parle quand même (dégradé mais fonctionnel)
 
 ### Task 5 : `integration_test/alert_journey_test.dart` — Journey alerte (AC3)
 
-- [ ] 5.1 — Créer le fichier avec binding
-- [ ] 5.2 — Implémenter test "obstacle détecté → alerte < 50ms"
+- [x] 5.1 — Créer le fichier avec binding
+- [x] 5.2 — Implémenter test "obstacle détecté → alerte < 50ms"
   - Utiliser `FakeClock` pour contrôle temporel précis
   - Initialiser `KitaOrchestrator` avec mocks (pattern depuis `marie_decrit_test.dart`)
   - `orchestrator.initialize()` → AlertAgent démarré (persistent)
@@ -161,33 +161,33 @@ class TestApp extends StatelessWidget {
   - Vérifier que `mockTts.spokenTexts` contient un message d'alerte
   - Vérifier la transition d'OrbState vers `OrbState.alert`
   - Contrainte timing : l'alerte doit être déclenchée en < 50ms simulées
-- [ ] 5.3 — Implémenter test "retour à l'état passif après alerte"
+- [x] 5.3 — Implémenter test "retour à l'état passif après alerte"
   - Vérifier que après l'alerte, le mode passif reprend
 
 ### Task 6 : `integration_test/forget_journey_test.dart` — Journey forget (AC4)
 
-- [ ] 6.1 — Créer le fichier avec binding
-- [ ] 6.2 — Setup DB réelle Drift in-memory avec données pré-peuplées
+- [x] 6.1 — Créer le fichier avec binding
+- [x] 6.2 — Setup DB réelle Drift in-memory avec données pré-peuplées
   - Pattern depuis `phase2_integration_gate_test.dart` (Test 4)
   - Accorder consentement `data_storage`, scope `episodic`
   - Sauvegarder : 3 épisodes, 2 préférences, 1 personne, 1 plugin data
   - Vérifier que `vault.whatDoYouKnow()` retourne les données
-- [ ] 6.3 — Implémenter test "forget everything → 0 donnée résiduelle"
+- [x] 6.3 — Implémenter test "forget everything → 0 donnée résiduelle"
   - Appeler `vault.forget(ForgetRequest.everything(confirmation: true))`
   - Vérifier résultat `isSuccess == true`
   - Appeler `vault.auditForget(ForgetRequest.everything(confirmation: true))`
   - Vérifier que `auditResult.getOrElse((_) => false) == true`
   - Vérifier chaque domaine mémoire : `whatDoYouKnow()` retourne maps vides
-- [ ] 6.4 — Implémenter test "forget domain episodic uniquement"
+- [x] 6.4 — Implémenter test "forget domain episodic uniquement"
   - `ForgetRequest.domain(MemoryDomain.episodic, confirmation: true)`
   - Vérifier que les préférences et personnes sont intactes
 
 ### Task 7 : Vérification finale (AC6)
 
-- [ ] 7.1 — `flutter test integration_test/` — les 4 tests passent
-- [ ] 7.2 — `flutter test` complet — tous les tests existants toujours verts
-- [ ] 7.3 — `dart analyze --fatal-infos` — clean
-- [ ] 7.4 — Mettre à jour `sprint-status.yaml` → `11-2-tests-integration-journeys: review`
+- [x] 7.1 — `flutter test integration_test/` — les 4 tests passent
+- [x] 7.2 — `flutter test` complet — tous les tests existants toujours verts
+- [x] 7.3 — `dart analyze --fatal-infos` — clean
+- [x] 7.4 — Mettre à jour `sprint-status.yaml` → `11-2-tests-integration-journeys: review`
 
 ## Dev Notes
 

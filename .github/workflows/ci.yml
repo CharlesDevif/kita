@@ -49,6 +49,10 @@ jobs:
 
       - name: Filter coverage (exclude generated files)
         run: |
+          if [ ! -f coverage/lcov.info ]; then
+            echo "::error::coverage/lcov.info not found"
+            exit 1
+          fi
           lcov --remove coverage/lcov.info \
             '**/*.g.dart' \
             '**/*.freezed.dart' \
@@ -60,6 +64,11 @@ jobs:
         with:
           path: '${{ github.workspace }}/coverage/lcov_filtered.info'
           min_coverage: 80
+          exclude: |
+            **/*.g.dart
+            **/*.freezed.dart
+            **/*.drift.dart
+            **/generated/**
 
       - name: Upload coverage report
         if: always()

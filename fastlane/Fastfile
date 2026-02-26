@@ -10,7 +10,10 @@
 #   La lane bump_version automatise la mise à jour de pubspec.yaml.
 #   En CI, le build number peut être défini via GITHUB_RUN_NUMBER.
 
-default_platform(:ios)
+# Pas de default_platform — les lanes sont explicitement préfixées :
+#   fastlane android beta_android
+#   fastlane ios beta_ios
+#   fastlane bump_version (cross-platform)
 
 # =============================================================================
 # Android
@@ -19,6 +22,10 @@ default_platform(:ios)
 platform :android do
   desc "Build le AAB Flutter en release et upload vers Play Store internal testing"
   lane :beta_android do
+    # Vérifier que la clé de service Play Store est présente
+    json_key_path = ENV['PLAY_STORE_JSON_KEY_PATH'] || 'fastlane/google-play-service-account.json'
+    UI.user_error!("Play Store key not found: set PLAY_STORE_JSON_KEY_PATH or place file at #{json_key_path}") unless File.exist?(json_key_path)
+
     # Construire l'AAB Flutter en release
     sh("flutter build appbundle --release --dart-define=ENV=prod")
 
@@ -26,7 +33,7 @@ platform :android do
     upload_to_play_store(
       track: 'internal',
       aab: '../build/app/outputs/bundle/release/app-release.aab',
-      json_key: ENV['PLAY_STORE_JSON_KEY_PATH'] || 'fastlane/google-play-service-account.json',
+      json_key: json_key_path,
       skip_upload_apk: true,
       skip_upload_metadata: true,
       skip_upload_changelogs: true,
@@ -45,6 +52,10 @@ end
 platform :ios do
   desc "Build l'IPA Flutter en release et upload vers TestFlight"
   lane :beta_ios do
+    # Vérifier que la clé API App Store Connect est présente
+    api_key_path = ENV['APP_STORE_CONNECT_API_KEY_PATH'] || 'fastlane/app-store-connect-api-key.json'
+    UI.user_error!("App Store Connect key not found: set APP_STORE_CONNECT_API_KEY_PATH or place file at #{api_key_path}") unless File.exist?(api_key_path)
+
     # Construire l'IPA Flutter en release (sans codesign pour CI, configurer les certs avant)
     sh("flutter build ipa --release --dart-define=ENV=prod")
 
@@ -56,7 +67,7 @@ platform :ios do
     upload_to_testflight(
       ipa: ipa_path,
       skip_waiting_for_build_processing: true,
-      api_key_path: ENV['APP_STORE_CONNECT_API_KEY_PATH'] || 'fastlane/app-store-connect-api-key.json',
+      api_key_path: api_key_path,
     )
 
     UI.success("Upload iOS beta terminé !")
@@ -76,19 +87,19 @@ lane :bump_version do |options|
   content = File.read(pubspec_path)
 
   # Extraire version actuelle (format: major.minor.patch[-pre]+build)
-  unless content =~ /^version:\s+(\d+)\.(\d+)\.(\d+)(?:-[^+\s]+)?\+(\d+)/
+  match = content.match(/^version:\s+(\d+)\.(\d+)\.(\d+)(?:-[^+\s]+)?\+(\d+)/)
+  unless match
     UI.user_error!("Impossible de parser la version dans pubspec.yaml. Format attendu: X.Y.Z+N")
   end
 
-  # Avertir si un suffixe pre-release est détecté (il sera perdu après le bump)
-  current_version = content.match(/^version:\s+(.+)$/)[1] rescue nil
-  pre_release = current_version&.match(/-([^+\s]+)\+/)&.[](1)
-  UI.important("⚠️ Pre-release suffix '-#{pre_release}' will be dropped") if pre_release
+  major = match[1].to_i
+  minor = match[2].to_i
+  patch = match[3].to_i
+  build = match[4].to_i
 
-  major = Regexp.last_match(1).to_i
-  minor = Regexp.last_match(2).to_i
-  patch = Regexp.last_match(3).to_i
-  build = Regexp.last_match(4).to_i
+  # Avertir si un suffixe pre-release est détecté (il sera perdu après le bump)
+  pre_release = content.match(/^version:\s+\S+-([^+\s]+)\+/)&.[](1)
+  UI.important("Pre-release suffix '-#{pre_release}' will be dropped") if pre_release
 
   case bump_type
   when "major"

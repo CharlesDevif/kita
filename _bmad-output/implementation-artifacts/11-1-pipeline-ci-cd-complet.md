@@ -1,6 +1,6 @@
 # Story 11.1 : Pipeline CI/CD complet
 
-Status: review
+Status: done
 
 ## Story
 
@@ -51,51 +51,51 @@ afin que **chaque PR est validée automatiquement et les releases sont fiables**
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 : Finaliser `.github/workflows/ci.yml` (AC1, AC2, AC3)
-  - [ ] 1.1 : Supprimer `continue-on-error: true` sur l'étape tests accessibilité — les rendre BLOQUANTS
-  - [ ] 1.2 : Remplacer le check de couverture manuel par `VeryGoodOpenSource/very_good_coverage@v2` avec `min-coverage: 80`
-  - [ ] 1.3 : S'assurer que le path lcov passé à very_good_coverage est **absolu** : `${{ github.workspace }}/coverage/lcov.info`
-  - [ ] 1.4 : Ajouter l'exclusion des fichiers générés dans very_good_coverage via le paramètre `exclude`
-  - [ ] 1.5 : Vérifier que le job `analyze-and-test` a `flutter test --tags accessibility` SANS `continue-on-error`
-  - [ ] 1.6 : Ajouter un step `Upload coverage report` via `actions/upload-artifact` (optionnel, non bloquant)
+- [x] Task 1 : Finaliser `.github/workflows/ci.yml` (AC1, AC2, AC3)
+  - [x] 1.1 : Supprimer `continue-on-error: true` sur l'étape tests accessibilité — les rendre BLOQUANTS
+  - [x] 1.2 : Remplacer le check de couverture manuel par `VeryGoodOpenSource/very_good_coverage@v2` avec `min-coverage: 80`
+  - [x] 1.3 : S'assurer que le path lcov passé à very_good_coverage est **absolu** : `${{ github.workspace }}/coverage/lcov.info`
+  - [x] 1.4 : Ajouter l'exclusion des fichiers générés dans very_good_coverage via le paramètre `exclude`
+  - [x] 1.5 : Vérifier que le job `analyze-and-test` a `flutter test --tags accessibility` SANS `continue-on-error`
+  - [x] 1.6 : Ajouter un step `Upload coverage report` via `actions/upload-artifact` (optionnel, non bloquant)
 
-- [ ] Task 2 : Créer `.github/workflows/build-android.yml` (AC4, AC6)
-  - [ ] 2.1 : Créer le fichier workflow avec `on: workflow_dispatch` + `push: tags: ['v*']`
-  - [ ] 2.2 : Runner `ubuntu-24.04`, setup Flutter 3.41.2, `flutter pub get`
-  - [ ] 2.3 : Step `Generate code` : `dart run build_runner build --delete-conflicting-outputs`
-  - [ ] 2.4 : Step `Build APK` : `flutter build apk --release --dart-define=ENV=prod`
-  - [ ] 2.5 : Step `Build AAB` : `flutter build appbundle --release --dart-define=ENV=prod`
-  - [ ] 2.6 : Step `Upload artifacts` : uploader `build/app/outputs/flutter-apk/app-release.apk` et `build/app/outputs/bundle/release/app-release.aab`
-  - [ ] 2.7 : Ajouter support flavors via input `env` avec `workflow_dispatch.inputs.env` (dev/staging/prod, défaut: prod)
+- [x] Task 2 : Créer `.github/workflows/build-android.yml` (AC4, AC6)
+  - [x] 2.1 : Créer le fichier workflow avec `on: workflow_dispatch` + `push: tags: ['v*']`
+  - [x] 2.2 : Runner `ubuntu-24.04`, setup Flutter 3.41.2, `flutter pub get`
+  - [x] 2.3 : Step `Generate code` : `dart run build_runner build --delete-conflicting-outputs`
+  - [x] 2.4 : Step `Build APK` : `flutter build apk --release --dart-define=ENV=prod`
+  - [x] 2.5 : Step `Build AAB` : `flutter build appbundle --release --dart-define=ENV=prod`
+  - [x] 2.6 : Step `Upload artifacts` : uploader `build/app/outputs/flutter-apk/app-release.apk` et `build/app/outputs/bundle/release/app-release.aab`
+  - [x] 2.7 : Ajouter support flavors via input `env` avec `workflow_dispatch.inputs.env` (dev/staging/prod, défaut: prod)
 
-- [ ] Task 3 : Créer `.github/workflows/build-ios.yml` (AC5, AC6)
-  - [ ] 3.1 : Créer le fichier workflow avec `on: workflow_dispatch` + `push: tags: ['v*']`
-  - [ ] 3.2 : Runner `macos-latest` (requis pour build iOS)
-  - [ ] 3.3 : Setup Flutter 3.41.2 avec cache
-  - [ ] 3.4 : Step `Install CocoaPods dependencies` : `cd ios && pod install`
-  - [ ] 3.5 : Step `Build iOS` : `flutter build ipa --release --no-codesign --dart-define=ENV=prod`
-  - [ ] 3.6 : Step `Upload artifacts` : uploader le dossier `build/ios/archive/`
-  - [ ] 3.7 : Ajouter support flavors via `workflow_dispatch.inputs.env` (dev/staging/prod, défaut: prod)
+- [x] Task 3 : Créer `.github/workflows/build-ios.yml` (AC5, AC6)
+  - [x] 3.1 : Créer le fichier workflow avec `on: workflow_dispatch` + `push: tags: ['v*']`
+  - [x] 3.2 : Runner `macos-latest` (requis pour build iOS)
+  - [x] 3.3 : Setup Flutter 3.41.2 avec cache
+  - [x] 3.4 : Step `Install CocoaPods dependencies` : `cd ios && pod install`
+  - [x] 3.5 : Step `Build iOS` : `flutter build ipa --release --no-codesign --dart-define=ENV=prod`
+  - [x] 3.6 : Step `Upload artifacts` : uploader le dossier `build/ios/archive/`
+  - [x] 3.7 : Ajouter support flavors via `workflow_dispatch.inputs.env` (dev/staging/prod, défaut: prod)
 
-- [ ] Task 4 : Créer les tests de validation pipeline (AC7)
-  - [ ] 4.1 : Créer le répertoire `test/ci/`
-  - [ ] 4.2 : Créer `test/ci/pipeline_validation_test.dart`
-  - [ ] 4.3 : Test : vérifier que `.github/workflows/ci.yml` existe
-  - [ ] 4.4 : Test : vérifier que `.github/workflows/build-android.yml` existe
-  - [ ] 4.5 : Test : vérifier que `.github/workflows/build-ios.yml` existe
-  - [ ] 4.6 : Test : vérifier que `ci.yml` contient `dart analyze --fatal-infos`
-  - [ ] 4.7 : Test : vérifier que `ci.yml` contient `flutter test --coverage`
-  - [ ] 4.8 : Test : vérifier que `ci.yml` contient `very_good_coverage` (couverture bloquante)
-  - [ ] 4.9 : Test : vérifier que `ci.yml` NE contient PAS `continue-on-error: true` pour les tests accessibilité
-  - [ ] 4.10 : Test : vérifier que `build-android.yml` contient `flutter build appbundle`
-  - [ ] 4.11 : Test : vérifier que `build-ios.yml` contient `flutter build ipa --no-codesign`
-  - [ ] 4.12 : Test : vérifier que les flavors `ENV=prod` sont présents dans les build workflows
+- [x] Task 4 : Créer les tests de validation pipeline (AC7)
+  - [x] 4.1 : Créer le répertoire `test/ci/`
+  - [x] 4.2 : Créer `test/ci/pipeline_validation_test.dart`
+  - [x] 4.3 : Test : vérifier que `.github/workflows/ci.yml` existe
+  - [x] 4.4 : Test : vérifier que `.github/workflows/build-android.yml` existe
+  - [x] 4.5 : Test : vérifier que `.github/workflows/build-ios.yml` existe
+  - [x] 4.6 : Test : vérifier que `ci.yml` contient `dart analyze --fatal-infos`
+  - [x] 4.7 : Test : vérifier que `ci.yml` contient `flutter test --coverage`
+  - [x] 4.8 : Test : vérifier que `ci.yml` contient `very_good_coverage` (couverture bloquante)
+  - [x] 4.9 : Test : vérifier que `ci.yml` NE contient PAS `continue-on-error: true` pour les tests accessibilité
+  - [x] 4.10 : Test : vérifier que `build-android.yml` contient `flutter build appbundle`
+  - [x] 4.11 : Test : vérifier que `build-ios.yml` contient `flutter build ipa --no-codesign`
+  - [x] 4.12 : Test : vérifier que les flavors `ENV=prod` sont présents dans les build workflows
 
-- [ ] Task 5 : Vérification et nettoyage final
-  - [ ] 5.1 : Lancer `dart analyze --fatal-infos` — doit être clean
-  - [ ] 5.2 : Lancer `flutter test` — tous les tests passent (incluant les nouveaux tests pipeline)
-  - [ ] 5.3 : Vérifier manuellement la syntaxe YAML des 3 workflows (pas d'erreur d'indentation)
-  - [ ] 5.4 : Mettre à jour `sprint-status.yaml` → story `11-1-pipeline-ci-cd-complet` et epic `epic-11` en `in-progress`
+- [x] Task 5 : Vérification et nettoyage final
+  - [x] 5.1 : Lancer `dart analyze --fatal-infos` — doit être clean
+  - [x] 5.2 : Lancer `flutter test` — tous les tests passent (incluant les nouveaux tests pipeline)
+  - [x] 5.3 : Vérifier manuellement la syntaxe YAML des 3 workflows (pas d'erreur d'indentation)
+  - [x] 5.4 : Mettre à jour `sprint-status.yaml` → story `11-1-pipeline-ci-cd-complet` et epic `epic-11` en `in-progress`
 
 ## Dev Notes
 
@@ -356,11 +356,12 @@ claude-sonnet-4-6
 - `_bmad-output/implementation-artifacts/11-1-pipeline-ci-cd-complet.md` — Dev Agent Record rempli + statut review
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` — statut `11-1-pipeline-ci-cd-complet` → `review`
 
-**Existants (conformes, non modifiés) :**
-- `.github/workflows/ci.yml` — pipeline principal avec a11y bloquant + very_good_coverage + filtrage lcov
-- `.github/workflows/build-android.yml` — build APK + AAB avec flavors et artifacts
-- `.github/workflows/build-ios.yml` — build IPA no-codesign sur macos-latest avec flavors et artifacts
+**Créés dans un commit précédent (Story 1.8 ou concurrent), confirmés conformes :**
+- `.github/workflows/ci.yml` — pipeline principal avec a11y bloquant + very_good_coverage + filtrage lcov (modifié dans code review: ajout exclude param + lcov guard)
+- `.github/workflows/build-android.yml` — build APK + AAB avec flavors et artifacts (créé par un autre agent dans le même commit Epic 11)
+- `.github/workflows/build-ios.yml` — build IPA no-codesign sur macos-latest avec flavors et artifacts (créé par un autre agent dans le même commit Epic 11)
 
 ### Change Log
 
 - 2026-02-25 : Correction des tests de validation pipeline (ENV=prod literal → pattern correct) + Dev Agent Record
+- 2026-02-25 : Code review fixes — tasks cochées, ci.yml exclude param + lcov guard, test APK build + trigger tests, File List clarified

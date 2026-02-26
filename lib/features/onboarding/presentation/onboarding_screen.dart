@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/accessibility_tokens.dart';
 import '../../../core/utils/logger.dart';
+import '../../../shared/multi_modal/profile_adapter_impl.dart';
+import '../../../shared/multi_modal/profile_adapter_provider.dart';
 import '../../io/data/providers/tts_providers.dart';
 import '../../io/domain/tts_service.dart';
 import '../di/providers.dart';
@@ -23,7 +25,7 @@ final _log = KitaLogger('Onboarding');
 ///
 /// Steps: welcome -> name -> profile -> installing
 /// Each step is accessible with Semantics wrappers.
-/// Kita speaks first if a screen reader is active.
+/// Kita speaks unconditionally (voice-first, regardless of screen reader).
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
 
@@ -45,32 +47,29 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     super.dispose();
   }
 
-  /// Speak a greeting when screen reader is active.
-  void _speakGreeting(TTSService tts, bool screenReaderActive) {
+  /// Speak a greeting unconditionally — Kita is voice-first.
+  void _speakGreeting(TTSService tts) {
     if (_hasSpoken) return;
     _hasSpoken = true;
 
-    if (screenReaderActive) {
-      _log.info('Screen reader active, speaking greeting');
-      unawaited(tts.speak(
-        'Bonjour, je suis Kita. Je suis là pour t\'aider.',
-        priority: TTSPriority.urgent,
-      ));
-    }
+    _log.info('Speaking greeting (voice-first)');
+    unawaited(tts.speak(
+      'Bonjour, je suis Kita. Je suis là pour t\'aider.',
+      priority: TTSPriority.urgent,
+    ));
   }
 
   @override
   Widget build(BuildContext context) {
     final onboardingState = ref.watch(onboardingNotifierProvider);
-    final detectedProfile = ref.watch(detectedProfileProvider);
+    // Watch to keep the stream subscription alive (triggers detecting -> welcome)
+    ref.watch(detectedProfileProvider);
     final theme = Theme.of(context);
 
-    // Speak greeting on welcome step when screen reader is active
+    // Speak greeting on welcome step — voice-first, unconditional
     if (onboardingState.step == OnboardingStep.welcome) {
-      final screenReaderActive =
-          detectedProfile.asData?.value.screenReader ?? false;
       final tts = ref.read(ttsServiceProvider);
-      _speakGreeting(tts, screenReaderActive);
+      _speakGreeting(tts);
     }
 
     return Scaffold(
@@ -192,18 +191,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     }
     notifier.completeWelcome();
 
-    // Speak transition if screen reader is active
-    final screenReaderActive =
-        ref.read(detectedProfileProvider).asData?.value.screenReader ?? false;
-    if (screenReaderActive) {
-      final tts = ref.read(ttsServiceProvider);
-      final greeting =
-          name.isNotEmpty ? 'Enchanté $name.' : '';
-      unawaited(tts.speak(
-        '$greeting Choisis ton profil d\'accessibilité.',
-        priority: TTSPriority.standard,
-      ));
-    }
+    // Speak transition unconditionally — voice-first
+    final tts = ref.read(ttsServiceProvider);
+    final greeting = name.isNotEmpty ? 'Enchanté $name.' : '';
+    unawaited(tts.speak(
+      '$greeting Choisis ton profil d\'accessibilité.',
+      priority: TTSPriority.standard,
+    ));
   }
 
   Widget _buildModeChoice(
@@ -273,6 +267,16 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     );
   }
 
+  /// Maps an onboarding [AccessibilityProfile] to a [UserProfile]
+  /// for the ProfileAdapter output routing.
+  static UserProfile _mapToUserProfile(AccessibilityProfile profile) {
+    return switch (profile) {
+      AccessibilityProfile.blind => UserProfile.aveugle,
+      AccessibilityProfile.lowVision => UserProfile.standard,
+      AccessibilityProfile.general => UserProfile.standard,
+    };
+  }
+
   Widget _buildCaregiverFlow(
     BuildContext context,
     OnboardingState state,
@@ -284,6 +288,18 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         final notifier = ref.read(onboardingNotifierProvider.notifier);
         notifier.setUserName(userName);
         notifier.selectProfile(profile).then((_) {
+          // Propagate to ProfileAdapter so output routing matches
+          ref
+              .read(userProfileProvider.notifier)
+              .setProfile(_mapToUserProfile(profile));
+          notifier.completeCaregiverOnboarding();
+        }).catchError((Object e) {
+          _log.error('Profile selection failed in caregiver flow', error: e);
+          // Still propagate profile and continue — pack install may fail
+          // but Kita remains usable with fallback defaults.
+          ref
+              .read(userProfileProvider.notifier)
+              .setProfile(_mapToUserProfile(profile));
           notifier.completeCaregiverOnboarding();
         });
       },
@@ -310,18 +326,24 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           selectedProfile: detectedProfile,
           onProfileSelected: (profile) async {
             final notifier = ref.read(onboardingNotifierProvider.notifier);
-            await notifier.selectProfile(profile);
-
-            // Speak confirmation
-            final screenReaderActive =
-                state.detectedProfile?.screenReader ?? false;
-            if (screenReaderActive) {
-              final tts = ref.read(ttsServiceProvider);
-              unawaited(tts.speak(
-                'Profil ${profile.name} sélectionné. Configuration en cours.',
-                priority: TTSPriority.standard,
-              ));
+            try {
+              await notifier.selectProfile(profile);
+            } catch (e) {
+              _log.error('Profile selection failed', error: e);
+              // Continue — pack install may fail but Kita remains usable.
             }
+
+            // Propagate to ProfileAdapter so output routing matches
+            ref
+                .read(userProfileProvider.notifier)
+                .setProfile(_mapToUserProfile(profile));
+
+            // Speak confirmation unconditionally — voice-first
+            final tts = ref.read(ttsServiceProvider);
+            unawaited(tts.speak(
+              'Profil ${profile.name} sélectionné. Configuration en cours.',
+              priority: TTSPriority.standard,
+            ));
           },
         ),
         const Spacer(),

@@ -1,8 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../ai/data/ai_router_impl.dart';
+import '../../ai/data/providers/local_provider.dart';
 import '../../ai/data/request_classifier_impl.dart';
+import '../../ai/domain/ai_router.dart';
 import '../../ai/domain/request_classifier.dart';
+import '../../io/data/providers/camera_providers.dart';
 import '../../io/data/providers/haptic_providers.dart';
+import '../../io/data/providers/location_providers.dart';
+import '../../io/data/providers/motion_providers.dart';
 import '../../io/data/providers/tts_providers.dart';
 import '../../plugins/data/plugin_sandbox_impl.dart';
 import '../../shell/di/orb_providers.dart';
@@ -15,7 +21,7 @@ import '../data/agent_supervisor.dart';
 import '../data/input_router.dart';
 import '../data/kita_orchestrator.dart';
 import '../data/output_coordinator.dart';
-import '../data/stub_access.dart';
+import '../data/real_access.dart';
 import '../domain/agent_bus.dart';
 import '../domain/clock.dart';
 import '../domain/models/agent_manifest.dart';
@@ -43,17 +49,35 @@ final agentBusProvider = Provider<AgentBus>((ref) {
   return bus;
 });
 
+/// The [AIRouter] for routing AI requests through the fallback chain.
+///
+/// Starts with [LocalProvider] (always available, works offline).
+/// Cloud providers (Claude, OpenAI) are added when API keys are configured.
+final aiRouterProvider = Provider<AIRouter>((ref) {
+  final classifier = ref.watch(requestClassifierProvider);
+  return AIRouterImpl(
+    classifier: classifier,
+    providers: [LocalProvider()],
+  );
+});
+
 /// The [PluginSandboxImpl] for building sandboxed [AgentContext]s.
 ///
-/// Uses stub sensor/AI access for now. Real implementations are
-/// injected via their respective providers.
+/// Wired to real sensor services (camera, location, motion) and
+/// the AI router for full plugin functionality.
 final pluginSandboxProvider = Provider<PluginSandboxImpl>((ref) {
-  // Build sandbox with real sensor and AI access.
-  // For agents that don't need sensor/AI (unlikely), these are still present
-  // but the sandbox enforces permissions via the manifest.
+  final camera = ref.watch(cameraServiceProvider);
+  final location = ref.watch(locationServiceProvider);
+  final motion = ref.watch(motionServiceProvider);
+  final aiRouter = ref.watch(aiRouterProvider);
+
   return PluginSandboxImpl(
-    sensorAccess: StubSensorAccess(),
-    aiAccess: StubAIAccess(),
+    sensorAccess: RealSensorAccess(
+      cameraService: camera,
+      locationService: location,
+      motionService: motion,
+    ),
+    aiAccess: RealAIAccess(aiRouter: aiRouter),
   );
 });
 

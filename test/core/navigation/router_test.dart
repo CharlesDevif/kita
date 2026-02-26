@@ -8,11 +8,12 @@ import 'package:kita/features/io/data/providers/tts_providers.dart';
 import 'package:kita/features/onboarding/di/providers.dart';
 import 'package:kita/features/onboarding/domain/profile_detection.dart';
 import 'package:kita/features/onboarding/presentation/onboarding_screen.dart';
+import 'package:kita/features/orchestration/di/providers.dart';
 import 'package:kita/features/settings/presentation/forget_placeholder.dart';
 import 'package:kita/features/settings/presentation/memory_view_placeholder.dart';
 import 'package:kita/features/settings/presentation/plugin_manager_placeholder.dart';
 import 'package:kita/features/settings/presentation/settings_placeholder.dart';
-import 'package:kita/features/shell/presentation/kita_shell_placeholder.dart';
+import 'package:kita/features/shell/presentation/kita_shell.dart';
 
 import '../../mocks/mock_tts_service.dart';
 
@@ -25,21 +26,24 @@ GoRouter _createRouter(String initialLocation) {
 
 Widget _createTestApp(GoRouter router) {
   return ProviderScope(
+    overrides: [
+      hasActiveOnDemandProvider.overrideWithValue(false),
+    ],
     child: MaterialApp.router(routerConfig: router),
   );
 }
 
 void main() {
   group('Route resolution', () {
-    testWidgets('/ resolves to KitaShellPlaceholder', (tester) async {
+    testWidgets('/ resolves to KitaShell', (tester) async {
       final router = _createRouter('/');
       addTearDown(router.dispose);
 
       await tester.pumpWidget(_createTestApp(router));
-      await tester.pumpAndSettle();
+      // KitaShell has repeating orb animation, cannot use pumpAndSettle
+      await tester.pump();
 
-      expect(find.byType(KitaShellPlaceholder), findsOneWidget);
-      expect(find.text('Kita Shell — Placeholder'), findsOneWidget);
+      expect(find.byType(KitaShell), findsOneWidget);
     });
 
     testWidgets('/onboarding resolves to OnboardingScreen', (tester) async {
@@ -109,14 +113,14 @@ void main() {
   });
 
   group('Navigation', () {
-    testWidgets('navigate from / to /settings', (tester) async {
+    testWidgets('navigate from / to /settings via router.go', (tester) async {
       final router = _createRouter('/');
       addTearDown(router.dispose);
 
       await tester.pumpWidget(_createTestApp(router));
-      await tester.pumpAndSettle();
+      await tester.pump();
 
-      await tester.tap(find.text('Parametres'));
+      router.go('/settings');
       await tester.pumpAndSettle();
 
       expect(find.byType(SettingsPlaceholder), findsOneWidget);
@@ -137,13 +141,14 @@ void main() {
   });
 
   group('Semantics', () {
-    testWidgets('KitaShellPlaceholder has semantics label', tags: ['accessibility'], (tester) async {
+    testWidgets('KitaShell has semantics label', tags: ['accessibility'], (tester) async {
       final handle = tester.ensureSemantics();
       final router = _createRouter('/');
       addTearDown(router.dispose);
 
       await tester.pumpWidget(_createTestApp(router));
-      await tester.pumpAndSettle();
+      // KitaShell has repeating orb animation, cannot use pumpAndSettle
+      await tester.pump();
 
       expect(
         find.byWidgetPredicate(

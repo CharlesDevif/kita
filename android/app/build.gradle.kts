@@ -39,6 +39,11 @@ android {
     }
 }
 
+dependencies {
+    // Fix camera_android_camerax build error: CallbackToFutureAdapter not found
+    implementation("androidx.concurrent:concurrent-futures:1.2.0")
+}
+
 flutter {
     source = "../.."
 }

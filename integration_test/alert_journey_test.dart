@@ -10,23 +10,17 @@ library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:kita/features/orchestration/data/agent_bus_impl.dart';
-import 'package:kita/features/orchestration/data/agent_supervisor.dart';
-import 'package:kita/features/orchestration/data/input_router.dart';
-import 'package:kita/features/orchestration/data/kita_orchestrator.dart';
-import 'package:kita/features/orchestration/data/output_coordinator.dart';
 import 'package:kita/features/orchestration/data/stub_access.dart';
-import 'package:kita/features/orchestration/domain/clock.dart';
 import 'package:kita/features/orchestration/domain/models/raw_input.dart';
 import 'package:kita/features/plugins/data/plugin_sandbox_impl.dart';
-import 'package:kita/features/shell/domain/orb_state.dart';
-import 'package:kita/features/shell/domain/shell_mode.dart';
 
 import 'helpers/test_app.dart';
 
 // =============================================================================
 // Tests journey alerte
 // =============================================================================
+// TODO(MEDIUM-1): Refactor to use OrchestratorTestHarness from test_app.dart
+// to eliminate setup duplication with describe_journey_test.dart.
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -135,14 +129,34 @@ void main() {
           reason: 'Alerte doit être déclenchée en < 50ms (FakeClock)',
         );
 
-        // Vérifier que l'alerte a bien été déclenchée — haptic et/ou TTS activés
-        // (au moins l'un des deux canaux doit avoir reçu un signal)
-        final alertTriggered =
-            haptic.triggered.isNotEmpty || tts.spokenTexts.isNotEmpty;
+        // Vérifier que l'alerte a bien été déclenchée — haptic ET TTS
         expect(
-          alertTriggered,
+          haptic.triggered,
+          isNotEmpty,
+          reason: 'L\'alerte doit déclencher un haptic',
+        );
+        expect(
+          tts.spokenTexts,
+          isNotEmpty,
+          reason: 'L\'alerte doit déclencher un feedback vocal',
+        );
+
+        // Vérifier la transition OrbState (AC3)
+        // L'OutputCoordinator passe par processing → responding pour les sorties.
+        // OrbState.alert n'existe pas dans l'enum — le comportement d'alerte
+        // est signalé par la transition vers processing/responding.
+        expect(
+          orbStates,
+          isNotEmpty,
+          reason: 'L\'OrbState doit transitionner pendant une alerte',
+        );
+        expect(
+          orbStates.contains(OrbState.processing) ||
+              orbStates.contains(OrbState.responding),
           isTrue,
-          reason: 'L\'alerte doit déclencher haptic et/ou TTS',
+          reason: 'L\'OrbState doit transitionner vers processing ou '
+              'responding lors d\'une alerte (OrbState.alert non défini '
+              'dans l\'enum — processing/responding signale l\'activité)',
         );
       },
     );

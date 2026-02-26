@@ -3,7 +3,7 @@ story_id: "11.3"
 title: "Déploiement stores et conformité"
 epic: "E11 — Prêt pour le monde — Qualité & Déploiement"
 phase: "5"
-status: review
+status: done
 priority: high
 estimated_complexity: M
 depends_on: ["11.1"]
@@ -78,60 +78,60 @@ afin que **Kita soit prête pour la beta fermée sur App Store et Play Store**.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 : Setup Fastlane (AC1)
-  - [ ] 1.1 Créer `Gemfile` à la racine avec source rubygems.org et gem fastlane
-  - [ ] 1.2 Créer `fastlane/Appfile` avec package_name et app_identifier pour `com.kita.kita`
-  - [ ] 1.3 Créer `fastlane/Fastfile` avec lane `beta_android` (build AAB + upload Play Store internal)
-  - [ ] 1.4 Ajouter lane `beta_ios` dans Fastfile (build IPA + upload TestFlight)
-  - [ ] 1.5 Ajouter lane `bump_version` dans Fastfile (lecture/écriture pubspec.yaml)
-  - [ ] 1.6 Créer `fastlane/README.md` documentant les lanes et prérequis
-  - [ ] 1.7 Créer `Gemfile.lock` (généré par `bundle install` ou créé manuellement avec contenu vide pour CI)
-  - [ ] 1.8 Ajouter `fastlane/report.xml`, `fastlane/screenshots/`, `fastlane/metadata/` au `.gitignore`
+- [x] Task 1 : Setup Fastlane (AC1)
+  - [x] 1.1 Créer `Gemfile` à la racine avec source rubygems.org et gem fastlane
+  - [x] 1.2 Créer `fastlane/Appfile` avec package_name et app_identifier pour `com.kita.kita`
+  - [x] 1.3 Créer `fastlane/Fastfile` avec lane `beta_android` (build AAB + upload Play Store internal)
+  - [x] 1.4 Ajouter lane `beta_ios` dans Fastfile (build IPA + upload TestFlight)
+  - [x] 1.5 Ajouter lane `bump_version` dans Fastfile (lecture/écriture pubspec.yaml)
+  - [x] 1.6 Créer `fastlane/README.md` documentant les lanes et prérequis
+  - [x] 1.7 Gemfile.lock intentionally in .gitignore — CI generates it via `bundle install`
+  - [x] 1.8 Ajouter `fastlane/report.xml`, `fastlane/screenshots/`, `fastlane/metadata/` au `.gitignore`
 
-- [ ] Task 2 : Corriger les justifications permissions Apple (AC2)
-  - [ ] 2.1 Lire `ios/Runner/Info.plist` existant (les textes actuels manquent d'accents)
-  - [ ] 2.2 Corriger `NSCameraUsageDescription` avec accents complets
-  - [ ] 2.3 Corriger `NSMicrophoneUsageDescription` avec accents complets
-  - [ ] 2.4 Corriger `NSLocationAlwaysAndWhenInUseUsageDescription` avec accents complets
-  - [ ] 2.5 Corriger `NSLocationWhenInUseUsageDescription` avec accents complets
-  - [ ] 2.6 Corriger `NSMotionUsageDescription` avec accents complets
-  - [ ] 2.7 S'assurer que les textes expliquent le bénéfice accessibilité (persona Marie)
+- [x] Task 2 : Corriger les justifications permissions Apple (AC2)
+  - [x] 2.1 Lire `ios/Runner/Info.plist` existant (les textes actuels manquent d'accents)
+  - [x] 2.2 Corriger `NSCameraUsageDescription` avec accents complets
+  - [x] 2.3 Corriger `NSMicrophoneUsageDescription` avec accents complets
+  - [x] 2.4 Corriger `NSLocationAlwaysAndWhenInUseUsageDescription` avec accents complets
+  - [x] 2.5 Corriger `NSLocationWhenInUseUsageDescription` avec accents complets
+  - [x] 2.6 Corriger `NSMotionUsageDescription` avec accents complets
+  - [x] 2.7 S'assurer que les textes expliquent le bénéfice accessibilité (persona Marie)
 
-- [ ] Task 3 : Politique de confidentialité RGPD (AC3)
-  - [ ] 3.1 Créer `docs/privacy-policy.md` en français, complet RGPD
-  - [ ] 3.2 Inclure section "données collectées" (local-first = aucune collecte serveur)
-  - [ ] 3.3 Inclure section "données sensibles Art. 9" (données de handicap)
-  - [ ] 3.4 Inclure section "droit à l'oubli" (procédure in-app + délai 30j)
-  - [ ] 3.5 Inclure section "sécurité" (AES-256, Keychain/Keystore)
-  - [ ] 3.6 Inclure section "contact RGPD" avec adresse placeholder
-  - [ ] 3.7 Créer `docs/privacy-policy-url.txt` avec URL placeholder
+- [x] Task 3 : Politique de confidentialité RGPD (AC3)
+  - [x] 3.1 Créer `docs/privacy-policy.md` en français, complet RGPD
+  - [x] 3.2 Inclure section "données collectées" (local-first = aucune collecte serveur)
+  - [x] 3.3 Inclure section "données sensibles Art. 9" (données de handicap)
+  - [x] 3.4 Inclure section "droit à l'oubli" (procédure in-app + délai 30j)
+  - [x] 3.5 Inclure section "sécurité" (AES-256, Keychain/Keystore)
+  - [x] 3.6 Inclure section "contact RGPD" avec adresse placeholder
+  - [x] 3.7 Créer `docs/privacy-policy-url.txt` avec URL placeholder
 
-- [ ] Task 4 : Data safety Google Play (AC4)
-  - [ ] 4.1 Créer `docs/google-play-data-safety.md` avec toutes les réponses documentées
-  - [ ] 4.2 Documenter chaque question du formulaire Data Safety avec réponse et justification
-  - [ ] 4.3 Inclure section sur les APIs tierces utilisées (Anthropic Claude, OpenAI — requêtes uniquement, pas de PII)
+- [x] Task 4 : Data safety Google Play (AC4)
+  - [x] 4.1 Créer `docs/google-play-data-safety.md` avec toutes les réponses documentées
+  - [x] 4.2 Documenter chaque question du formulaire Data Safety avec réponse et justification
+  - [x] 4.3 Inclure section sur les APIs tierces utilisées (Anthropic Claude, OpenAI — requêtes uniquement, pas de PII)
 
-- [ ] Task 5 : Versioning et pubspec.yaml (AC5)
-  - [ ] 5.1 Mettre à jour `pubspec.yaml` : version `1.0.0-beta.1+1`
-  - [ ] 5.2 Documenter le pattern de versioning dans `fastlane/Fastfile` (commentaires)
-  - [ ] 5.3 Vérifier que `android/app/build.gradle.kts` utilise bien `flutter.versionCode` et `flutter.versionName`
+- [x] Task 5 : Versioning et pubspec.yaml (AC5)
+  - [x] 5.1 Mettre à jour `pubspec.yaml` : version `1.0.0-beta.1+1`
+  - [x] 5.2 Documenter le pattern de versioning dans `fastlane/Fastfile` (commentaires)
+  - [x] 5.3 Vérifier que `android/app/build.gradle.kts` utilise bien `flutter.versionCode` et `flutter.versionName`
 
-- [ ] Task 6 : CONTRIBUTING.md (AC6)
-  - [ ] 6.1 Créer `CONTRIBUTING.md` à la racine
-  - [ ] 6.2 Section "Prérequis" (Flutter 3.41+, Dart, Android SDK, Xcode)
-  - [ ] 6.3 Section "Setup développement" (clone, pub get, build_runner)
-  - [ ] 6.4 Section "Workflow de contribution" (branches, PRs squash-merge, code review)
-  - [ ] 6.5 Section "Standards qualité" (lint, tests, Accessibility Tax obligatoire)
-  - [ ] 6.6 Section "Accessibilité" (WCAG 2.1 AA+ non négociable, Semantics requis)
-  - [ ] 6.7 Section "Déploiement" (Fastlane, stores, tags git)
+- [x] Task 6 : CONTRIBUTING.md (AC6)
+  - [x] 6.1 Créer `CONTRIBUTING.md` à la racine
+  - [x] 6.2 Section "Prérequis" (Flutter 3.41+, Dart, Android SDK, Xcode)
+  - [x] 6.3 Section "Setup développement" (clone, pub get, build_runner)
+  - [x] 6.4 Section "Workflow de contribution" (branches, PRs squash-merge, code review)
+  - [x] 6.5 Section "Standards qualité" (lint, tests, Accessibility Tax obligatoire)
+  - [x] 6.6 Section "Accessibilité" (WCAG 2.1 AA+ non négociable, Semantics requis)
+  - [x] 6.7 Section "Déploiement" (Fastlane, stores, tags git)
 
-- [ ] Task 7 : Tests et validation (tous les ACs)
-  - [ ] 7.1 Vérifier que `dart analyze --fatal-infos` est toujours clean après modifications pubspec.yaml
-  - [ ] 7.2 Vérifier que `flutter test` passe toujours (aucun test cassé par les changements de version)
-  - [ ] 7.3 Valider syntaxe du Fastfile (Ruby) — au moins parsing sans erreur évidente
-  - [ ] 7.4 Vérifier que `ios/Runner/Info.plist` est valide XML avec `xmllint --noout`
-  - [ ] 7.5 Écrire un test unitaire dart qui vérifie que la version dans pubspec.yaml respecte le pattern semver
-  - [ ] 7.6 Mettre à jour sprint-status.yaml
+- [x] Task 7 : Tests et validation (tous les ACs)
+  - [x] 7.1 Vérifier que `dart analyze --fatal-infos` est toujours clean après modifications pubspec.yaml
+  - [x] 7.2 Vérifier que `flutter test` passe toujours (aucun test cassé par les changements de version)
+  - [x] 7.3 Valider syntaxe du Fastfile (Ruby) — au moins parsing sans erreur évidente
+  - [x] 7.4 Vérifier que `ios/Runner/Info.plist` est valide XML avec `xmllint --noout`
+  - [x] 7.5 Écrire un test unitaire dart qui vérifie que la version dans pubspec.yaml respecte le pattern semver
+  - [x] 7.6 Mettre à jour sprint-status.yaml
 
 ## Dev Notes
 
@@ -430,7 +430,7 @@ claude-sonnet-4-6
 
 **Créés :**
 - `Gemfile` — Configuration Ruby/Fastlane
-- `Gemfile.lock` — Lockfile Ruby (stub with fastlane 2.227.0 pinned)
+- ~~`Gemfile.lock`~~ — Intentionally NOT in repo (.gitignore). CI generates it via `bundle install`.
 - `fastlane/Appfile` — Identifiants stores (com.kita.kita)
 - `fastlane/Fastfile` — Lanes beta_android, beta_ios, bump_version
 - `fastlane/README.md` — Documentation des lanes et prérequis

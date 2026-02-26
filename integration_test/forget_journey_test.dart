@@ -15,6 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kita/core/data/database.dart' hide UserProfile;
 import 'package:kita/features/memory/domain/episode.dart';
+import 'package:kita/features/memory/domain/person.dart';
 import 'package:kita/features/memory/data/daos/consent_dao.dart';
 import 'package:kita/features/memory/data/daos/episode_dao.dart';
 import 'package:kita/features/memory/data/daos/person_dao.dart';
@@ -32,18 +33,20 @@ void main() {
   late KitaDatabase db;
   late MemoryVaultImpl vault;
   late ConsentDao consentDao;
+  late PluginDataDao pluginDataDao;
 
   setUp(() {
     final rawDb = sql.sqlite3.openInMemory();
     db = KitaDatabase(NativeDatabase.opened(rawDb));
 
     consentDao = ConsentDao(db);
+    pluginDataDao = PluginDataDao(db);
     vault = MemoryVaultImpl(
       episodeDao: EpisodeDao(db),
       preferenceDao: PreferenceDao(db),
       personDao: PersonDao(db),
       profileDao: ProfileDao(db),
-      pluginDataDao: PluginDataDao(db),
+      pluginDataDao: pluginDataDao,
       consentDao: consentDao,
     );
   });
@@ -54,10 +57,20 @@ void main() {
 
   /// Helper : pré-peupler la DB avec des données dans tous les domaines.
   Future<void> populateDatabase() async {
-    // Accorder les consentements nécessaires
+    // Accorder les consentements nécessaires pour chaque domaine
     await consentDao.insert(
       consentType: 'data_storage',
       scope: 'episodic',
+      granted: true,
+    );
+    await consentDao.insert(
+      consentType: 'data_storage',
+      scope: 'semantic',
+      granted: true,
+    );
+    await consentDao.insert(
+      consentType: 'data_storage',
+      scope: 'relational',
       granted: true,
     );
 
@@ -73,6 +86,37 @@ void main() {
         createdAt: DateTime.now(),
       ));
     }
+
+    // Sauvegarder 2 préférences
+    await vault.setPreference(
+      key: 'theme',
+      value: 'dark',
+      category: 'ui',
+      source: 'integration_test',
+    );
+    await vault.setPreference(
+      key: 'language',
+      value: 'fr',
+      category: 'ui',
+      source: 'integration_test',
+    );
+
+    // Sauvegarder 1 personne
+    await vault.savePerson(KitaPerson(
+      id: 0,
+      name: 'Sophie',
+      relationship: 'amie',
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    ));
+
+    // Sauvegarder 1 plugin data (via DAO directement — pas de méthode vault)
+    await pluginDataDao.insert(
+      pluginId: 'com.kita.test',
+      namespace: 'settings',
+      key: 'volume',
+      value: '80',
+    );
   }
 
   group('Journey "forget everything" — 0 donnée résiduelle (AC4)', () {
@@ -95,8 +139,38 @@ void main() {
               greaterThanOrEqualTo(3),
               reason: '3 épisodes doivent être présents',
             );
+            expect(
+              data.containsKey(MemoryDomain.semantic),
+              isTrue,
+              reason: 'Les préférences doivent être stockées',
+            );
+            expect(
+              data[MemoryDomain.semantic]!.length,
+              greaterThanOrEqualTo(2),
+              reason: '2 préférences doivent être présentes',
+            );
+            expect(
+              data.containsKey(MemoryDomain.relational),
+              isTrue,
+              reason: 'Les personnes doivent être stockées',
+            );
+            expect(
+              data[MemoryDomain.relational]!.length,
+              greaterThanOrEqualTo(1),
+              reason: '1 personne doit être présente',
+            );
           },
           failure: (f) => fail('whatDoYouKnow failed: ${f.logMessage}'),
+        );
+
+        // Plugin data : vérifier via le DAO directement
+        final pluginResult = await pluginDataDao.getByPlugin('com.kita.test');
+        expect(pluginResult.isSuccess, isTrue);
+        final pluginEntries = pluginResult.getOrElse((_) => []);
+        expect(
+          pluginEntries.length,
+          greaterThanOrEqualTo(1),
+          reason: '1 plugin data doit être présent',
         );
       },
     );
@@ -139,7 +213,7 @@ void main() {
     );
 
     test(
-      'whatDoYouKnow après forget — domaines épisodiques vides',
+      'whatDoYouKnow après forget — tous les domaines vides',
       () async {
         await populateDatabase();
 
@@ -149,15 +223,78 @@ void main() {
         expect(after.isSuccess, isTrue);
         after.when(
           success: (data) {
-            // Les domaines peuvent être absents ou vides
+            // Tous les domaines doivent être absents ou vides
             final episodes = data[MemoryDomain.episodic] ?? [];
             expect(
               episodes,
               isEmpty,
               reason: 'Aucun épisode résiduel après forget(everything)',
             );
+            final prefs = data[MemoryDomain.semantic] ?? [];
+            expect(
+              prefs,
+              isEmpty,
+              reason: 'Aucune préférence résiduelle après forget(everything)',
+            );
+            final persons = data[MemoryDomain.relational] ?? [];
+            expect(
+              persons,
+              isEmpty,
+              reason: 'Aucune personne résiduelle après forget(everything)',
+            );
           },
           failure: (f) => fail('whatDoYouKnow après forget failed: ${f.logMessage}'),
+        );
+
+        // Plugin data : vérifier via le DAO directement
+        final pluginResult = await pluginDataDao.getAll();
+        expect(pluginResult.isSuccess, isTrue);
+        final pluginEntries = pluginResult.getOrElse((_) => []);
+        expect(
+          pluginEntries,
+          isEmpty,
+          reason: 'Aucun plugin data résiduel après forget(everything)',
+        );
+      },
+    );
+
+    test(
+      'consentements révoqués après forget(everything)',
+      () async {
+        await populateDatabase();
+
+        // Vérifier que des consentements actifs existent avant le forget
+        final beforeResult = await consentDao.getActiveConsents();
+        expect(beforeResult.isSuccess, isTrue);
+        final activeBefore = beforeResult.getOrElse((_) => []);
+        expect(
+          activeBefore,
+          isNotEmpty,
+          reason: 'Des consentements actifs doivent exister avant le forget',
+        );
+
+        // Supprimer tout
+        await vault.forget(ForgetRequest.everything(confirmation: true));
+
+        // forget(everything) supprime toutes les entrées de consent_log
+        // (consentDao.deleteAll() est appelé dans l'implémentation).
+        // Vérifier qu'aucun consentement actif ne subsiste.
+        final afterResult = await consentDao.getActiveConsents();
+        expect(afterResult.isSuccess, isTrue);
+        final activeAfter = afterResult.getOrElse((_) => []);
+        expect(
+          activeAfter,
+          isEmpty,
+          reason: 'Aucun consentement actif ne doit subsister après forget(everything)',
+        );
+
+        // Le count total doit aussi être 0
+        final countResult = await consentDao.count();
+        expect(countResult.isSuccess, isTrue);
+        expect(
+          countResult.getOrElse((_) => -1),
+          equals(0),
+          reason: 'Aucune entrée de consentement ne doit subsister',
         );
       },
     );

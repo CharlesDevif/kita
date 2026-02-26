@@ -21,11 +21,18 @@ Il documente les réponses exactes à fournir et les justifications associées.
 
 ### Q: Votre application collecte-t-elle ou partage-t-elle des données utilisateur ?
 
-**Réponse : Oui (partage limité uniquement)**
+**Réponse : Oui**
+
+> **Note sur le flux de questions Play Console :** La Play Console pose d'abord une question binaire
+> "collecte-t-elle ou partage-t-elle des données ?". Si la réponse est "Oui", elle demande ensuite
+> de distinguer entre "collecte" (stockage serveur) et "partage" (envoi à des tiers). Kita ne
+> **collecte** pas de données sur ses propres serveurs, mais **partage** le contenu des requêtes IA
+> avec des tiers (Anthropic, OpenAI). La réponse initiale doit donc être "Oui", puis dans le détail :
+> collecte = Non, partage = Oui.
 
 **Justification :**
-- Kita est **local-first** : aucune donnée personnelle n'est collectée sur des serveurs.
-- Cependant, lorsque l'utilisateur utilise les fonctionnalités IA, le **contenu de la requête** (texte ou description de scène) est transmis aux providers IA (Anthropic Claude, OpenAI). Ce contenu ne contient aucune donnée d'identification personnelle (PII).
+- Kita est **local-first** : aucune donnée personnelle n'est **collectée** (stockée sur des serveurs Kita).
+- Cependant, lorsque l'utilisateur utilise les fonctionnalités IA, le **contenu de la requête** (texte ou description de scène) est **partagé** avec les providers IA (Anthropic Claude, OpenAI). Ce contenu ne contient aucune donnée d'identification personnelle (PII).
 
 ---
 
@@ -97,8 +104,9 @@ Kita intègre une fonctionnalité native **"Tout oublier"** (Paramètres → Con
 
 | Question Play Console | Réponse | Notes |
 |----------------------|---------|-------|
-| Cette app collecte-t-elle des données ? | **Non** (collecte serveur) | Données uniquement locales |
-| Cette app partage-t-elle des données ? | **Oui** (contenu requêtes IA) | Limité au contenu des requêtes |
+| Cette app collecte-t-elle ou partage-t-elle des données ? | **Oui** | Voir Section 1 pour le détail du flux |
+| Collecte de données (stockage serveur) ? | **Non** | Données uniquement locales, aucun serveur Kita |
+| Partage de données avec des tiers ? | **Oui** (contenu requêtes IA) | Limité au contenu des requêtes envoyées aux providers IA |
 | Quels types de données sont partagés ? | **Contenu utilisateur** (requêtes) | Pas de PII |
 | Les données partagées sont-elles chiffrées en transit ? | **Oui** | HTTPS/TLS |
 | Les données au repos sont-elles chiffrées ? | **Oui** | SQLCipher AES-256 |

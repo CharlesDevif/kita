@@ -141,6 +141,11 @@ void main() {
 
         // Configuration IA — dernier step avant complétion
         expect(find.text('Configuration IA'), findsOneWidget);
+
+        // NOTE: isCompleted n'est pas directement vérifiable dans le widget tree
+        // car il est exposé via un provider Riverpod interne. La vérification
+        // complète de isCompleted == true est couverte par le test state machine
+        // ci-dessous ('state machine : toutes les transitions jusqu'à isCompleted').
       },
     );
 

@@ -8,13 +8,13 @@ import '../../features/settings/presentation/forget_placeholder.dart';
 import '../../features/settings/presentation/memory_view_placeholder.dart';
 import '../../features/settings/presentation/plugin_manager_placeholder.dart';
 import '../../features/settings/presentation/settings_placeholder.dart';
-import '../../features/shell/presentation/kita_shell_placeholder.dart';
+import '../../features/shell/presentation/kita_shell.dart';
 
 /// All app routes — extracted for reuse in tests.
 final List<RouteBase> kitaRoutes = [
   GoRoute(
     path: '/',
-    builder: (context, state) => const KitaShellPlaceholder(),
+    builder: (context, state) => const KitaShell(),
   ),
   GoRoute(
     path: '/onboarding',

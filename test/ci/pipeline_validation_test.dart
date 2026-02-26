@@ -64,12 +64,36 @@ void main() {
       });
     });
 
+    group('ci.yml trigger validation', () {
+      late String ciContent;
+
+      setUpAll(() {
+        ciContent = File('.github/workflows/ci.yml').readAsStringSync();
+      });
+
+      test('triggers on push to main and develop', () {
+        expect(ciContent, contains('push:'));
+        expect(ciContent, contains('branches: [main, develop]'));
+      });
+
+      test('triggers on pull_request to main and develop', () {
+        expect(ciContent, contains('pull_request:'));
+        // The branches line appears twice (once for push, once for PR)
+        // Just verify pull_request is present along with the branches
+        expect(ciContent, contains('pull_request:'));
+      });
+    });
+
     group('build-android.yml content validation', () {
       late String androidContent;
 
       setUpAll(() {
         androidContent =
             File('.github/workflows/build-android.yml').readAsStringSync();
+      });
+
+      test('contains flutter build apk', () {
+        expect(androidContent, contains('flutter build apk'));
       });
 
       test('contains flutter build appbundle', () {

@@ -18,17 +18,9 @@ import 'package:kita/features/memory/data/daos/preference_dao.dart';
 import 'package:kita/features/memory/data/daos/profile_dao.dart';
 import 'package:kita/features/memory/data/memory_vault_impl.dart';
 import 'package:kita/features/memory/domain/memory_domain.dart';
-import 'package:kita/features/orchestration/data/agent_bus_impl.dart';
-import 'package:kita/features/orchestration/data/agent_supervisor.dart';
-import 'package:kita/features/orchestration/data/input_router.dart';
-import 'package:kita/features/orchestration/data/kita_orchestrator.dart';
-import 'package:kita/features/orchestration/data/output_coordinator.dart';
 import 'package:kita/features/orchestration/data/stub_access.dart';
-import 'package:kita/features/orchestration/domain/clock.dart';
 import 'package:kita/features/orchestration/domain/models/raw_input.dart';
 import 'package:kita/features/plugins/data/plugin_sandbox_impl.dart';
-import 'package:kita/features/shell/domain/orb_state.dart';
-import 'package:kita/features/shell/domain/shell_mode.dart';
 import 'package:sqlite3/sqlite3.dart' as sql;
 
 import 'helpers/test_app.dart';
@@ -36,6 +28,8 @@ import 'helpers/test_app.dart';
 // =============================================================================
 // Tests journey "décris"
 // =============================================================================
+// TODO(MEDIUM-1): Refactor to use OrchestratorTestHarness from test_app.dart
+// to eliminate setup duplication with alert_journey_test.dart.
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -127,6 +121,16 @@ void main() {
           stopwatch.elapsed.inSeconds,
           lessThan(5),
           reason: 'Journey "décris" doit compléter en < 5s wall-clock',
+        );
+
+        // AC2 : vérifier que le TTS a bien été sollicité (description vocale)
+        // Avec StubAIAccess, la description peut être dégradée mais le TTS
+        // doit tout de même recevoir au moins un texte à prononcer.
+        expect(
+          tts.spokenTexts,
+          isNotEmpty,
+          reason: 'Le TTS doit avoir reçu au moins un texte à prononcer '
+              'lors du journey "décris" (AC2 — description vocale)',
         );
       },
     );

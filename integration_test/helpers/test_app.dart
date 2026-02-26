@@ -17,7 +17,27 @@ import 'package:kita/features/onboarding/di/providers.dart';
 import 'package:kita/features/onboarding/domain/permission_storytelling.dart';
 import 'package:kita/features/onboarding/domain/profile_detection.dart';
 import 'package:kita/features/onboarding/presentation/onboarding_screen.dart';
+import 'package:kita/features/orchestration/data/agent_bus_impl.dart';
+import 'package:kita/features/orchestration/data/agent_supervisor.dart';
+import 'package:kita/features/orchestration/data/input_router.dart';
+import 'package:kita/features/orchestration/data/kita_orchestrator.dart';
+import 'package:kita/features/orchestration/data/output_coordinator.dart';
+import 'package:kita/features/orchestration/data/stub_access.dart';
+import 'package:kita/features/orchestration/domain/clock.dart';
+import 'package:kita/features/plugins/data/plugin_sandbox_impl.dart';
+import 'package:kita/features/shell/domain/orb_state.dart';
+import 'package:kita/features/shell/domain/shell_mode.dart';
 import 'package:kita/shared/multi_modal/profile_adapter.dart';
+
+// Re-export orchestration types for test files that use OrchestratorTestHarness
+export 'package:kita/features/orchestration/data/agent_bus_impl.dart';
+export 'package:kita/features/orchestration/data/agent_supervisor.dart';
+export 'package:kita/features/orchestration/data/input_router.dart';
+export 'package:kita/features/orchestration/data/kita_orchestrator.dart';
+export 'package:kita/features/orchestration/data/output_coordinator.dart';
+export 'package:kita/features/orchestration/domain/clock.dart';
+export 'package:kita/features/shell/domain/orb_state.dart';
+export 'package:kita/features/shell/domain/shell_mode.dart';
 
 // =============================================================================
 // Mock TTS — ne parle pas en tests, capture les textes parlés
@@ -111,6 +131,76 @@ class FakePermissionRequester implements PermissionRequester {
 
   @override
   Future<void> openSettings() async {}
+}
+
+// =============================================================================
+// OrchestratorTestHarness — setup commun describe/alert journey tests
+// =============================================================================
+
+/// Encapsulates the full orchestrator stack for integration tests.
+///
+/// Eliminates code duplication between describe_journey_test.dart and
+/// alert_journey_test.dart which both need identical setUp/tearDown.
+class OrchestratorTestHarness {
+  late AgentBusImpl bus;
+  late PluginSandboxImpl sandbox;
+  late FakeClock clock;
+  late IntegrationMockTTSService tts;
+  late IntegrationMockHapticService haptic;
+  late AgentSupervisor supervisor;
+  late OutputCoordinator coordinator;
+  late InputRouter inputRouter;
+  late KitaOrchestrator orchestrator;
+  late List<OrbState> orbStates;
+  late List<ShellMode> shellModes;
+
+  void setUp() {
+    bus = AgentBusImpl();
+    sandbox = PluginSandboxImpl(
+      sensorAccess: StubSensorAccess(),
+      aiAccess: StubAIAccess(),
+    );
+    clock = FakeClock();
+    tts = IntegrationMockTTSService();
+    haptic = IntegrationMockHapticService();
+    orbStates = [];
+    shellModes = [];
+
+    coordinator = OutputCoordinator(
+      tts: tts,
+      haptic: haptic,
+      profileAdapter: IntegrationMockProfileAdapter(),
+      clock: clock,
+      bus: bus,
+      onOrbStateChanged: orbStates.add,
+      onShellModeChanged: shellModes.add,
+    );
+    supervisor = AgentSupervisor(
+      bus: bus,
+      sandbox: sandbox,
+      clock: clock,
+      ttsService: tts,
+      hapticService: haptic,
+      outputCoordinator: coordinator,
+    );
+    inputRouter = InputRouter(
+      supervisor: supervisor,
+      outputCoordinator: coordinator,
+      clock: clock,
+    );
+    orchestrator = KitaOrchestrator(
+      inputRouter: inputRouter,
+      supervisor: supervisor,
+      outputCoordinator: coordinator,
+    );
+  }
+
+  Future<void> tearDown() async {
+    coordinator.dispose();
+    tts.dispose();
+    await supervisor.dispose();
+    bus.dispose();
+  }
 }
 
 // =============================================================================
