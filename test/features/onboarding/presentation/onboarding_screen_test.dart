@@ -29,10 +29,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Bonjour, je suis Kita.'), findsOneWidget);
-      expect(
-        find.text('Je suis là pour t\'aider au quotidien.'),
-        findsOneWidget,
-      );
+      // Mic button for voice-first name capture
+      expect(find.byKey(const Key('mic_name')), findsOneWidget);
+      // Skip button for bypassing name entry
+      expect(find.byKey(const Key('skip_name')), findsOneWidget);
     });
 
     testWidgets('welcome step has name input field', (tester) async {
@@ -40,7 +40,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('name_input')), findsOneWidget);
-      expect(find.text('Ton prénom'), findsOneWidget);
+      expect(find.text('Ou tape ton prénom'), findsOneWidget);
     });
 
     testWidgets('welcome step has continue button', (tester) async {

@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/errors/result.dart';
 import '../../../core/theme/accessibility_tokens.dart';
 import '../../../core/utils/logger.dart';
 import '../../../shared/multi_modal/profile_adapter_impl.dart';
 import '../../../shared/multi_modal/profile_adapter_provider.dart';
+import '../../io/data/providers/stt_providers.dart';
 import '../../io/data/providers/tts_providers.dart';
 import '../../io/domain/tts_service.dart';
 import '../di/providers.dart';
@@ -37,6 +39,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final _nameController = TextEditingController();
   final _nameFocusNode = FocusNode();
   bool _hasSpoken = false;
+  bool _isListeningName = false;
   bool _showApiKeySetup = false;
   bool _navigatedToHome = false;
 
@@ -48,15 +51,52 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   /// Speak a greeting unconditionally — Kita is voice-first.
+  /// Asks for the name vocally so blind users don't need the keyboard.
   void _speakGreeting(TTSService tts) {
     if (_hasSpoken) return;
     _hasSpoken = true;
 
     _log.info('Speaking greeting (voice-first)');
     unawaited(tts.speak(
-      'Bonjour, je suis Kita. Je suis là pour t\'aider.',
+      'Bonjour, je suis Kita. Je suis là pour t\'aider. '
+      'Comment tu t\'appelles ? Appuie sur le micro pour me dire ton prénom, '
+      'ou passe cette étape.',
       priority: TTSPriority.urgent,
     ));
+  }
+
+  /// Start listening for the user's name via STT.
+  void _startListeningName() {
+    final stt = ref.read(sttServiceProvider);
+    if (stt.isListening) return;
+
+    setState(() => _isListeningName = true);
+    _log.info('Listening for name via STT');
+
+    unawaited(stt.startRecognition(onResult: (transcript, isFinal) {
+      if (isFinal && transcript.isNotEmpty) {
+        // Capitalize first letter of name
+        final name = transcript[0].toUpperCase() + transcript.substring(1);
+        _nameController.text = name;
+        setState(() => _isListeningName = false);
+        unawaited(stt.stopRecognition());
+        _submitName();
+      }
+    }).catchError((Object e) {
+      _log.error('STT failed for name capture', error: e);
+      setState(() => _isListeningName = false);
+      return const Result<void>.success(null);
+    }));
+  }
+
+  /// Stop listening and skip name entry.
+  void _skipName() {
+    final stt = ref.read(sttServiceProvider);
+    if (stt.isListening) {
+      unawaited(stt.stopRecognition());
+    }
+    setState(() => _isListeningName = false);
+    _submitName();
   }
 
   @override
@@ -142,22 +182,67 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         const SizedBox(height: 16),
         Semantics(
           child: Text(
-            'Je suis là pour t\'aider au quotidien.',
+            'Comment tu t\'appelles ?',
             style: theme.textTheme.bodyLarge,
             textAlign: TextAlign.center,
           ),
         ),
         const SizedBox(height: 32),
-        // Name input field
+
+        // --- Voice-first: large mic button for name ---
+        Center(
+          child: SizedBox(
+            width: 80,
+            height: 80,
+            child: Semantics(
+              button: true,
+              label: _isListeningName
+                  ? 'Écoute en cours. Dis ton prénom.'
+                  : 'Appuie pour dire ton prénom',
+              child: FilledButton(
+                key: const Key('mic_name'),
+                onPressed: _isListeningName ? null : _startListeningName,
+                style: FilledButton.styleFrom(
+                  shape: const CircleBorder(),
+                  backgroundColor: _isListeningName
+                      ? Colors.redAccent
+                      : theme.colorScheme.primary,
+                ),
+                child: Icon(
+                  _isListeningName ? Icons.hearing : Icons.mic,
+                  size: 36,
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (_isListeningName)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Semantics(
+              liveRegion: true,
+              child: Text(
+                'Je t\'écoute...',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.redAccent,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+
+        const SizedBox(height: 24),
+
+        // --- Fallback: text field for sighted users ---
         Semantics(
-          label: 'Ton prénom. Champ de saisie.',
+          label: 'Ou tape ton prénom ici. Champ de saisie.',
           textField: true,
           child: TextField(
             key: const Key('name_input'),
             controller: _nameController,
             focusNode: _nameFocusNode,
             decoration: const InputDecoration(
-              labelText: 'Ton prénom',
+              labelText: 'Ou tape ton prénom',
               hintText: 'Comment tu t\'appelles ?',
               border: OutlineInputBorder(),
             ),
@@ -165,18 +250,39 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             onSubmitted: (_) => _submitName(),
           ),
         ),
-        const SizedBox(height: 24),
-        SizedBox(
-          height: KitaAccessibility.touchTargetCritical,
-          child: Semantics(
-            button: true,
-            label: 'Continuer',
-            child: FilledButton(
-              key: const Key('continue_welcome'),
-              onPressed: _submitName,
-              child: const Text('Continuer'),
+        const SizedBox(height: 16),
+
+        // --- Two buttons: Continue + Skip ---
+        Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: KitaAccessibility.touchTargetCritical,
+                child: Semantics(
+                  button: true,
+                  label: 'Continuer avec ce prénom',
+                  child: FilledButton(
+                    key: const Key('continue_welcome'),
+                    onPressed: _submitName,
+                    child: const Text('Continuer'),
+                  ),
+                ),
+              ),
             ),
-          ),
+            const SizedBox(width: 12),
+            SizedBox(
+              height: KitaAccessibility.touchTargetCritical,
+              child: Semantics(
+                button: true,
+                label: 'Passer cette étape',
+                child: OutlinedButton(
+                  key: const Key('skip_name'),
+                  onPressed: _skipName,
+                  child: const Text('Passer'),
+                ),
+              ),
+            ),
+          ],
         ),
         const Spacer(),
       ],
