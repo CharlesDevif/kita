@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kita/features/io/data/providers/tts_providers.dart';
-import 'package:kita/features/io/domain/tts_service.dart';
 import 'package:kita/features/onboarding/di/providers.dart';
 import 'package:kita/features/onboarding/domain/onboarding_state.dart';
 import 'package:kita/features/onboarding/domain/permission_storytelling.dart';
@@ -123,7 +122,7 @@ void main() {
     );
 
     testWidgets(
-      'flow continues: profile -> permissions -> magic moment',
+      'flow continues: profile -> permissions auto-granted -> magic moment',
       (tester) async {
         await tester.pumpWidget(buildTestApp());
         await tester.pumpAndSettle();
@@ -141,26 +140,9 @@ void main() {
         await tester.tap(find.text('Aveugle'));
         await tester.pumpAndSettle();
 
-        // Should be at permissions step
-        expect(find.text('Permissions'), findsOneWidget);
-        // The permission card shows the story text for camera
-        expect(find.textContaining('caméra'), findsWidgets);
-
-        // Accept camera permission
-        await tester.tap(find.text('Accepter'));
-        await tester.pumpAndSettle();
-
-        // Should show microphone permission (story mentions "micro")
-        expect(find.textContaining('micro'), findsWidgets);
-        await tester.tap(find.text('Accepter'));
-        await tester.pumpAndSettle();
-
-        // Should show location permission (story mentions "position")
-        expect(find.textContaining('position'), findsWidgets);
-        await tester.tap(find.text('Accepter'));
-        await tester.pumpAndSettle();
-
-        // Should be at magic moment step
+        // Voice-first: permissions auto-request via onSpeak + FakePermissionRequester.
+        // All 3 permissions (camera, mic, location) auto-grant in a few frames,
+        // so the flow jumps directly to the magic moment step.
         expect(find.text('Premier essai'), findsOneWidget);
       },
     );
@@ -171,7 +153,8 @@ void main() {
         await tester.pumpWidget(buildTestApp());
         await tester.pumpAndSettle();
 
-        // Navigate through welcome + mode choice + profile + permissions
+        // Navigate through welcome + mode choice + profile
+        // (permissions auto-grant via voice-first + FakePermissionRequester)
         await tester.enterText(find.byKey(const Key('name_input')), 'Marie');
         await tester.tap(find.byKey(const Key('continue_welcome')));
         await tester.pumpAndSettle();
@@ -180,15 +163,7 @@ void main() {
         await tester.tap(find.text('Aveugle'));
         await tester.pumpAndSettle();
 
-        // Skip all permissions
-        await tester.tap(find.text('Accepter'));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Accepter'));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Accepter'));
-        await tester.pumpAndSettle();
-
-        // Magic moment step — try describe
+        // Permissions auto-completed — now at magic moment step
         expect(find.text('Premier essai'), findsOneWidget);
         await tester.tap(find.byKey(const Key('try_describe')));
         await tester.pump(const Duration(milliseconds: 600));

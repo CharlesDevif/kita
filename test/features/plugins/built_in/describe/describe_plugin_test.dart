@@ -247,21 +247,18 @@ void main() {
       expect(failure, isA<PluginFailure>());
     });
 
-    test('continues with original image when EXIF strip fails', () async {
+    test('passes captured image directly to AI (EXIF stripped by sandbox)', () async {
       mockSensors.photoToReturn = testImage();
       mockAI.responseToReturn = testAIResponse();
 
       final result = await plugin.handleInput(_agentInput());
 
-      // Should still succeed — graceful degradation
+      // Should succeed — plugin trusts the sandbox for privacy
       expect(result.isSuccess, isTrue);
 
-      // The image sent to AI should be the original (EXIF strip failed)
-      expect(mockAI.lastImageReceived, isNotNull);
-
-      // Verify warning was logged
-      final warnings = logEntries.where((e) => e.level == LogLevel.warning);
-      expect(warnings, isNotEmpty);
+      // The image sent to AI is exactly what the sensor returned
+      // (EXIF stripping is now handled by SandboxedSensorAccess)
+      expect(mockAI.lastImageReceived, same(mockSensors.photoToReturn));
     });
 
     test('logs each pipeline step', () async {
@@ -282,7 +279,6 @@ void main() {
 
       await plugin.handleInput(_agentInput());
 
-      // Filter to only plugin logs (ExifStripper logs with [IO] source)
       final pluginLogs = logEntries
           .where((e) => e.message.startsWith('[Plugin.Describe]'))
           .toList();

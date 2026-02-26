@@ -1,8 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kita/core/errors/kita_failure.dart';
+import 'package:kita/core/errors/result.dart';
+import 'package:kita/features/io/data/providers/stt_providers.dart';
+import 'package:kita/features/io/data/providers/tts_providers.dart';
+import 'package:kita/features/io/domain/speech_event.dart';
+import 'package:kita/features/io/domain/stt_service.dart';
+import 'package:kita/features/io/domain/tts_service.dart';
 import 'package:kita/features/onboarding/di/providers.dart';
 import 'package:kita/features/onboarding/domain/onboarding_state.dart';
+import 'package:kita/features/onboarding/domain/permission_storytelling.dart';
 import 'package:kita/features/onboarding/domain/profile_detection.dart';
 import 'package:kita/features/onboarding/presentation/onboarding_screen.dart';
 import 'package:kita/features/onboarding/presentation/profile_selector.dart';
@@ -15,6 +25,10 @@ Widget _buildTestApp() {
       detectedProfileProvider.overrideWith(
         (ref) => Stream.value(DetectedProfile.general),
       ),
+      // Provide fake permission requester so early mic request doesn't
+      // hit platform channels in tests.
+      permissionRequesterProvider
+          .overrideWithValue(_FakePermissionRequester()),
     ],
     child: const MaterialApp(
       home: OnboardingScreen(),
@@ -413,4 +427,209 @@ void main() {
       expect(isComplete, isTrue);
     });
   });
+
+  group('Voice flow', () {
+    late _FakeTTSService fakeTts;
+    late _FakeSTTService fakeStt;
+
+    setUp(() {
+      fakeTts = _FakeTTSService();
+      fakeStt = _FakeSTTService();
+    });
+
+    tearDown(() {
+      fakeTts.dispose();
+    });
+
+    Widget buildVoiceTestApp() {
+      return ProviderScope(
+        overrides: [
+          detectedProfileProvider.overrideWith(
+            (ref) => Stream.value(DetectedProfile.general),
+          ),
+          ttsServiceProvider.overrideWithValue(fakeTts),
+          sttServiceProvider.overrideWithValue(fakeStt),
+          permissionRequesterProvider
+              .overrideWithValue(_FakePermissionRequester()),
+        ],
+        child: const MaterialApp(
+          home: OnboardingScreen(),
+        ),
+      );
+    }
+
+    testWidgets('voice flow speaks welcome greeting', (tester) async {
+      await tester.pumpWidget(buildVoiceTestApp());
+      await tester.pumpAndSettle();
+
+      // Voice flow should have spoken the greeting
+      expect(fakeTts.lastSpokenText, contains('Bonjour'));
+      expect(fakeTts.lastSpokenText, contains('prénom'));
+    });
+
+    testWidgets('voice flow: user says name -> advances to mode choice',
+        (tester) async {
+      await tester.pumpWidget(buildVoiceTestApp());
+      await tester.pumpAndSettle();
+
+      // TTS spoke greeting; process TTS completion -> STT starts
+      await tester.pump();
+
+      expect(fakeStt.isListening, isTrue);
+
+      // Simulate user saying "Marie"
+      fakeStt.emitTranscript('Marie');
+      await tester.pumpAndSettle();
+
+      // Should have advanced to mode choice
+      expect(find.text('Pour qui ?'), findsOneWidget);
+    });
+
+    testWidgets('voice flow: user says "passer" -> skips name',
+        (tester) async {
+      await tester.pumpWidget(buildVoiceTestApp());
+      await tester.pumpAndSettle();
+
+      // Process TTS completion -> STT starts
+      await tester.pump();
+
+      // Simulate user saying "passer"
+      fakeStt.emitTranscript('passer');
+      await tester.pumpAndSettle();
+
+      // Should have advanced to mode choice (no name set)
+      expect(find.text('Pour qui ?'), findsOneWidget);
+    });
+
+    testWidgets(
+        'voice flow: mode choice -> user says "pour moi" -> advances to profile',
+        (tester) async {
+      await tester.pumpWidget(buildVoiceTestApp());
+      await tester.pumpAndSettle();
+
+      // Welcome: TTS completion -> STT -> user says name
+      await tester.pump();
+      fakeStt.emitTranscript('Marie');
+      await tester.pumpAndSettle();
+
+      // Mode choice: TTS completion -> STT -> user says "pour moi"
+      await tester.pump();
+      expect(fakeStt.isListening, isTrue);
+      fakeStt.emitTranscript('pour moi');
+      await tester.pumpAndSettle();
+
+      // Should show profile selection
+      expect(find.text('Choisis ton profil'), findsOneWidget);
+    });
+
+    testWidgets('buttons still work when voice flow is inactive',
+        (tester) async {
+      // Disable STT to force buttons-only mode
+      fakeStt.shouldFail = true;
+      await tester.pumpWidget(buildVoiceTestApp());
+      await tester.pumpAndSettle();
+
+      // Process TTS completion -> STT unavailable -> fallback to buttons
+      await tester.pump();
+
+      // Tap continue button (buttons fallback)
+      await tester.tap(find.byKey(const Key('continue_welcome')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Pour qui ?'), findsOneWidget);
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Fake services for voice flow testing
+// ---------------------------------------------------------------------------
+
+/// Fake permission requester that always grants — avoids platform channels.
+class _FakePermissionRequester implements PermissionRequester {
+  @override
+  Future<PermissionRequestStatus> request(KitaPermission permission) async {
+    return PermissionRequestStatus.granted;
+  }
+
+  @override
+  Future<void> openSettings() async {}
+}
+
+/// Fake TTS that emits [completed] events after each speak call,
+/// enabling the voice flow's speak-then-listen pattern in tests.
+class _FakeTTSService implements TTSService {
+  bool _isSpeaking = false;
+  String? lastSpokenText;
+  final _controller = StreamController<TtsSpeechEvent>.broadcast();
+
+  @override
+  bool get isSpeaking => _isSpeaking;
+
+  @override
+  Stream<TtsSpeechEvent> get speechEvents => _controller.stream;
+
+  @override
+  Future<Result<void>> speak(
+    String text, {
+    TTSPriority priority = TTSPriority.standard,
+  }) async {
+    lastSpokenText = text;
+    _isSpeaking = true;
+    // Emit completed event on next microtask so listeners are ready
+    unawaited(Future.microtask(() {
+      _isSpeaking = false;
+      if (!_controller.isClosed) {
+        _controller.add(TtsSpeechEvent.completed(text: text));
+      }
+    }));
+    return const Result.success(null);
+  }
+
+  @override
+  Future<Result<void>> stop() async {
+    _isSpeaking = false;
+    return const Result.success(null);
+  }
+
+  void dispose() => _controller.close();
+}
+
+/// Fake STT that allows manual transcript emission for controlled testing.
+class _FakeSTTService implements STTService {
+  STTResultCallback? _pendingCallback;
+  bool shouldFail = false;
+  bool _isListening = false;
+
+  @override
+  bool get isAvailable => !shouldFail;
+
+  @override
+  bool get isListening => _isListening;
+
+  @override
+  Future<Result<void>> startRecognition({
+    required STTResultCallback onResult,
+  }) async {
+    if (shouldFail) {
+      return const Result.failure(
+        UnexpectedFailure(logMessage: 'STT unavailable'),
+      );
+    }
+    _isListening = true;
+    _pendingCallback = onResult;
+    return const Result.success(null);
+  }
+
+  @override
+  Future<Result<void>> stopRecognition() async {
+    _isListening = false;
+    _pendingCallback = null;
+    return const Result.success(null);
+  }
+
+  /// Simulate receiving a final transcript from the user.
+  void emitTranscript(String text) {
+    _pendingCallback?.call(text, true);
+  }
 }

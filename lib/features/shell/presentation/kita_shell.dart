@@ -7,6 +7,7 @@ import '../../../core/errors/result.dart';
 import '../../../core/theme/multi_modal_tokens.dart';
 import '../../../core/utils/logger.dart';
 import '../../io/data/providers/stt_providers.dart';
+import '../../onboarding/di/providers.dart';
 import '../../orchestration/di/providers.dart';
 import '../../orchestration/domain/models/raw_input.dart';
 import '../di/orb_providers.dart';
@@ -16,6 +17,7 @@ import '../domain/shell_mode.dart';
 import 'kita_input.dart';
 import 'kita_orb.dart';
 import 'kita_status_indicator.dart';
+import 'shell_onboarding.dart';
 
 /// Main scaffold of the Kita app — Living Aura design.
 ///
@@ -287,23 +289,28 @@ class _KitaShellState extends ConsumerState<KitaShell>
     // Viewport opacity/visibility scales with active mode
     final viewportOpacity = t.clamp(0.0, 1.0);
 
+    // Check if onboarding is complete — if not, show conversational onboarding
+    final onboardingComplete = ref.watch(onboardingCompleteProvider);
+
     return Semantics(
       liveRegion: true,
       child: Opacity(
         opacity: 0.3 + 0.7 * viewportOpacity,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: widget.viewportChild ??
-              Center(
-                child: Text(
-                  'Tout va bien',
-                  style: TextStyle(
-                    color: const Color(0xFFE2E8F0)
-                        .withValues(alpha: 0.5 + 0.5 * viewportOpacity),
-                    fontSize: 16,
-                  ),
-                ),
-              ),
+          child: onboardingComplete
+              ? (widget.viewportChild ??
+                  Center(
+                    child: Text(
+                      'Tout va bien',
+                      style: TextStyle(
+                        color: const Color(0xFFE2E8F0)
+                            .withValues(alpha: 0.5 + 0.5 * viewportOpacity),
+                        fontSize: 16,
+                      ),
+                    ),
+                  ))
+              : const ShellOnboarding(),
         ),
       ),
     );

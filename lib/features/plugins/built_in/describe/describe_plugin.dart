@@ -6,7 +6,6 @@ import '../../../../core/errors/kita_failure.dart';
 import '../../../../core/errors/result.dart';
 import '../../../../core/utils/logger.dart';
 import '../../../ai/domain/ai_response.dart';
-import '../../../io/data/exif_stripper.dart';
 import '../../../orchestration/domain/kita_agent.dart';
 import '../../../orchestration/domain/models/agent_input.dart';
 import '../../../orchestration/domain/models/agent_manifest.dart';
@@ -239,18 +238,11 @@ Réponds en 5-8 phrases. Pas de formule d'introduction.''';
       case Success(:final value):
         _log.info('Photo captured: ${value.bytes.length} bytes');
 
-        // Step 2: Strip EXIF metadata for privacy
-        final imageToSend = switch (ExifStripper.strip(value)) {
-          Success(:final value) => value,
-          Failure(:final failure) => () {
-              _log.warning(
-                'EXIF strip failed, using original image: ${failure.logMessage}',
-              );
-              return value;
-            }(),
-        };
+        // EXIF metadata is stripped by the sandbox (SandboxedSensorAccess)
+        // so the image is already privacy-safe at this point.
+        final imageToSend = value;
 
-        // Step 3: Send to AI vision via sandboxed AI access
+        // Step 2: Send to AI vision via sandboxed AI access
         final aiResult = await context.ai.vision(imageToSend, describePrompt);
         switch (aiResult) {
           case Failure(:final failure):

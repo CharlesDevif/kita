@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/accessibility_tokens.dart';
@@ -19,6 +21,7 @@ class PermissionStep extends StatefulWidget {
     required this.onComplete,
     required this.storytelling,
     this.permissionRequester,
+    this.onSpeak,
     super.key,
   });
 
@@ -35,6 +38,11 @@ class PermissionStep extends StatefulWidget {
   /// If null, accept records granted without calling the OS (test mode).
   final PermissionRequester? permissionRequester;
 
+  /// Optional callback to speak text via TTS (voice-first).
+  /// When provided, permissions are announced vocally and the OS dialog
+  /// is auto-requested without waiting for the user to tap "Accept".
+  final Future<void> Function(String text)? onSpeak;
+
   @override
   State<PermissionStep> createState() => _PermissionStepState();
 }
@@ -50,6 +58,20 @@ class _PermissionStepState extends State<PermissionStep> {
   void initState() {
     super.initState();
     _permissions = permissionOrder(widget.profile);
+    // Voice-first: speak first permission and auto-request OS dialog
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _speakAndAutoRequest();
+    });
+  }
+
+  /// Speak the current permission explanation via TTS and auto-request
+  /// the OS permission dialog. Only active when [widget.onSpeak] is set.
+  void _speakAndAutoRequest() {
+    if (widget.onSpeak == null) return;
+    if (_currentIndex >= _permissions.length) return;
+    final text = '$_currentName. $_currentExplanation';
+    unawaited(widget.onSpeak!(text));
+    _requestCurrentPermission();
   }
 
   KitaPermission get _currentPermission => _permissions[_currentIndex];
@@ -223,6 +245,10 @@ class _PermissionStepState extends State<PermissionStep> {
         _currentIndex++;
         _cardState = PermissionCardState.asking;
         _isRequesting = false;
+      });
+      // Voice-first: speak and auto-request next permission after build
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _speakAndAutoRequest();
       });
     }
   }

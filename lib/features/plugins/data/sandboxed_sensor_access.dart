@@ -2,6 +2,7 @@ import '../../../core/errors/kita_failure.dart';
 import '../../../core/errors/result.dart';
 import '../../../core/utils/logger.dart';
 import '../../ai/domain/image_data.dart';
+import '../../io/data/exif_stripper.dart';
 import '../../io/domain/location_service.dart';
 import '../../io/domain/motion_service.dart';
 import '../domain/sensor_access.dart';
@@ -10,6 +11,10 @@ import '../domain/sensor_access.dart';
 ///
 /// Only sensors listed in [allowedPermissions] can be accessed.
 /// Unauthorized access returns [PermissionFailure].
+///
+/// Photos returned by [capturePhoto] are automatically stripped of EXIF
+/// metadata (GPS, device info, etc.) to protect user privacy before
+/// the image reaches the plugin.
 class SandboxedSensorAccess implements SensorAccess {
   const SandboxedSensorAccess({
     required this.delegate,
@@ -33,7 +38,21 @@ class SandboxedSensorAccess implements SensorAccess {
         permission: 'camera',
       ));
     }
-    return delegate.capturePhoto();
+    final result = await delegate.capturePhoto();
+    // Strip EXIF metadata at the sandbox boundary so plugins never
+    // see GPS coordinates, device info, or other identifying data.
+    return switch (result) {
+      Failure() => result,
+      Success(:final value) => switch (ExifStripper.strip(value)) {
+          Success(:final value) => Result.success(value),
+          Failure(:final failure) => () {
+              _log.warning(
+                'EXIF strip failed, using original image: ${failure.logMessage}',
+              );
+              return Result.success(value);
+            }(),
+        },
+    };
   }
 
   @override

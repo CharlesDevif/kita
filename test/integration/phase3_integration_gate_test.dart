@@ -11,6 +11,7 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kita/features/onboarding/di/providers.dart';
 import 'package:kita/features/orchestration/di/providers.dart';
 import 'package:image/image.dart' as img;
 
@@ -1102,6 +1103,8 @@ void main() {
         ProviderScope(
           overrides: [
             hasActiveOnDemandProvider.overrideWithValue(false),
+            onboardingCompleteProvider
+                .overrideWith(() => _CompletedOnboarding()),
           ],
           child: const MediaQuery(
             data: MediaQueryData(disableAnimations: true),
@@ -1689,4 +1692,10 @@ void main() {
       alertOutput.dispose();
     });
   });
+}
+
+/// Notifier that starts with onboarding already complete.
+class _CompletedOnboarding extends OnboardingCompleteNotifier {
+  @override
+  bool build() => true;
 }

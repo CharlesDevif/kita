@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:kita/core/navigation/router.dart';
 import 'package:kita/features/io/data/providers/tts_providers.dart';
 import 'package:kita/features/onboarding/di/providers.dart';
+import 'package:kita/features/onboarding/domain/onboarding_state.dart';
 import 'package:kita/features/onboarding/domain/profile_detection.dart';
 import 'package:kita/features/onboarding/presentation/onboarding_screen.dart';
 import 'package:kita/features/orchestration/di/providers.dart';
@@ -28,9 +29,20 @@ Widget _createTestApp(GoRouter router) {
   return ProviderScope(
     overrides: [
       hasActiveOnDemandProvider.overrideWithValue(false),
+      // Mark onboarding complete so ShellOnboarding doesn't start TTS/STT
+      onboardingNotifierProvider.overrideWith(() => _CompletedOnboarding()),
     ],
     child: MaterialApp.router(routerConfig: router),
   );
+}
+
+/// Notifier that starts with onboarding complete.
+class _CompletedOnboarding extends OnboardingNotifier {
+  @override
+  OnboardingState build() => const OnboardingState(
+        step: OnboardingStep.complete,
+        onboardingComplete: true,
+      );
 }
 
 void main() {

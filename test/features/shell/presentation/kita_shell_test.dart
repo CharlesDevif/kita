@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:kita/features/onboarding/di/providers.dart';
 import 'package:kita/features/orchestration/di/providers.dart';
 import 'package:kita/features/shell/domain/orb_state.dart';
 import 'package:kita/features/shell/domain/shell_mode.dart';
@@ -21,6 +22,8 @@ void main() {
     return ProviderScope(
       overrides: [
         hasActiveOnDemandProvider.overrideWithValue(false),
+        // Mark onboarding as complete so KitaShell shows normal viewport
+        onboardingCompleteProvider.overrideWith(() => _CompletedOnboarding()),
       ],
       child: MaterialApp(
         home: MediaQuery(
@@ -229,4 +232,10 @@ void main() {
       expect(find.byType(FocusTraversalOrder), findsNWidgets(3));
     });
   });
+}
+
+/// Notifier that starts with onboarding already complete.
+class _CompletedOnboarding extends OnboardingCompleteNotifier {
+  @override
+  bool build() => true;
 }

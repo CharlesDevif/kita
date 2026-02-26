@@ -24,7 +24,8 @@ android {
         applicationId = "com.kita.kita"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // Kita targets Android 12+ (API 31). ML Kit GenAI requires min 26.
+        minSdk = 31
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

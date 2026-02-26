@@ -11,9 +11,11 @@ import '../../../shared/multi_modal/profile_adapter_impl.dart';
 import '../../../shared/multi_modal/profile_adapter_provider.dart';
 import '../../io/data/providers/stt_providers.dart';
 import '../../io/data/providers/tts_providers.dart';
+import '../../io/domain/speech_event.dart';
 import '../../io/domain/tts_service.dart';
 import '../di/providers.dart';
 import '../domain/onboarding_state.dart';
+import '../domain/permission_storytelling.dart';
 import '../domain/profile_detection.dart';
 import 'api_key_setup_step.dart';
 import 'caregiver_flow.dart';
@@ -25,9 +27,13 @@ final _log = KitaLogger('Onboarding');
 
 /// Main onboarding screen — vocal-first flow.
 ///
-/// Steps: welcome -> name -> profile -> installing
+/// Steps: welcome -> modeChoice -> profile -> permissions -> magic -> complete.
 /// Each step is accessible with Semantics wrappers.
 /// Kita speaks unconditionally (voice-first, regardless of screen reader).
+///
+/// Voice pattern: TTS speaks prompt -> waits for TTS completion event ->
+/// auto-starts STT -> parses transcript for keywords -> advances or retries.
+/// Buttons remain as visual fallback for sighted users.
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
 
@@ -38,66 +44,304 @@ class OnboardingScreen extends ConsumerStatefulWidget {
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final _nameController = TextEditingController();
   final _nameFocusNode = FocusNode();
-  bool _hasSpoken = false;
-  bool _isListeningName = false;
+
+  /// Guard against concurrent voice cycles.
+  bool _voiceActive = false;
+
+  /// TTS completion listener for the speak-then-listen pattern.
+  StreamSubscription<TtsSpeechEvent>? _speechSub;
+
+  /// Timeout for STT listening.
+  Timer? _listenTimer;
+
+  /// Prevents re-triggering voice for the same step on rebuilds.
+  OnboardingStep? _lastSpokenStep;
+
+  /// Signal for MagicMomentStep to auto-trigger describe.
+  bool _magicDescribeTriggered = false;
+
   bool _showApiKeySetup = false;
   bool _navigatedToHome = false;
 
   @override
   void dispose() {
+    // Clean up voice state directly (ref is unavailable during unmount).
+    // STT/TTS lifecycle is managed by their providers via ref.onDispose.
+    _speechSub?.cancel();
+    _speechSub = null;
+    _listenTimer?.cancel();
+    _listenTimer = null;
+    _voiceActive = false;
     _nameController.dispose();
     _nameFocusNode.dispose();
     super.dispose();
   }
 
-  /// Speak a greeting unconditionally — Kita is voice-first.
-  /// Asks for the name vocally so blind users don't need the keyboard.
-  void _speakGreeting(TTSService tts) {
-    if (_hasSpoken) return;
-    _hasSpoken = true;
+  // ---------------------------------------------------------------------------
+  // Voice-first: _speakThenListen pattern
+  // ---------------------------------------------------------------------------
 
-    _log.info('Speaking greeting (voice-first)');
-    unawaited(tts.speak(
-      'Bonjour, je suis Kita. Je suis là pour t\'aider. '
-      'Comment tu t\'appelles ? Appuie sur le micro pour me dire ton prénom, '
-      'ou passe cette étape.',
-      priority: TTSPriority.urgent,
-    ));
-  }
-
-  /// Start listening for the user's name via STT.
-  void _startListeningName() {
-    final stt = ref.read(sttServiceProvider);
-    if (stt.isListening) return;
-
-    setState(() => _isListeningName = true);
-    _log.info('Listening for name via STT');
-
-    unawaited(stt.startRecognition(onResult: (transcript, isFinal) {
-      if (isFinal && transcript.isNotEmpty) {
-        // Capitalize first letter of name
-        final name = transcript[0].toUpperCase() + transcript.substring(1);
-        _nameController.text = name;
-        setState(() => _isListeningName = false);
-        unawaited(stt.stopRecognition());
-        _submitName();
-      }
-    }).catchError((Object e) {
-      _log.error('STT failed for name capture', error: e);
-      setState(() => _isListeningName = false);
-      return const Result<void>.success(null);
-    }));
-  }
-
-  /// Stop listening and skip name entry.
-  void _skipName() {
+  /// Cancel all active voice operations (TTS listener, STT, timer).
+  void _cancelVoice() {
+    _speechSub?.cancel();
+    _speechSub = null;
+    _listenTimer?.cancel();
+    _listenTimer = null;
     final stt = ref.read(sttServiceProvider);
     if (stt.isListening) {
       unawaited(stt.stopRecognition());
     }
-    setState(() => _isListeningName = false);
-    _submitName();
+    _voiceActive = false;
   }
+
+  /// Central voice-first pattern:
+  /// 1. TTS speaks [prompt]
+  /// 2. Waits for TTS completion event (matched by text)
+  /// 3. Auto-starts STT
+  /// 4. Calls [onTranscript] with the final transcript
+  /// 5. On timeout, retries up to [maxRetries] times
+  /// 6. If STT unavailable, falls back to buttons (no-op).
+  void _speakThenListen({
+    required String prompt,
+    required void Function(String transcript) onTranscript,
+    Duration timeout = const Duration(seconds: 8),
+    int maxRetries = 2,
+  }) {
+    if (_voiceActive) return;
+    _voiceActive = true;
+    _speakThenListenLoop(
+      prompt: prompt,
+      onTranscript: onTranscript,
+      timeout: timeout,
+      maxRetries: maxRetries,
+      attempt: 0,
+    );
+  }
+
+  void _speakThenListenLoop({
+    required String prompt,
+    required void Function(String transcript) onTranscript,
+    required Duration timeout,
+    required int maxRetries,
+    required int attempt,
+  }) {
+    if (!mounted) {
+      _voiceActive = false;
+      return;
+    }
+
+    final tts = ref.read(ttsServiceProvider);
+    final stt = ref.read(sttServiceProvider);
+
+    // Listen for TTS completion before starting STT.
+    // Text matching prevents reacting to stale events from a previous step.
+    _speechSub?.cancel();
+    _speechSub = tts.speechEvents.listen((event) {
+      if (event.type == TtsSpeechEventType.completed &&
+          event.text == prompt) {
+        _speechSub?.cancel();
+        _speechSub = null;
+
+        if (!mounted || !stt.isAvailable) {
+          _voiceActive = false;
+          return; // STT unavailable — buttons remain as fallback
+        }
+
+        // Start STT with timeout
+        _listenTimer?.cancel();
+        _listenTimer = Timer(timeout, () {
+          unawaited(stt.stopRecognition());
+          if (attempt < maxRetries && mounted) {
+            _speakThenListenLoop(
+              prompt: prompt,
+              onTranscript: onTranscript,
+              timeout: timeout,
+              maxRetries: maxRetries,
+              attempt: attempt + 1,
+            );
+          } else {
+            _voiceActive = false;
+          }
+        });
+
+        unawaited(stt.startRecognition(onResult: (transcript, isFinal) {
+          if (isFinal && transcript.isNotEmpty && mounted) {
+            _listenTimer?.cancel();
+            _listenTimer = null;
+            unawaited(stt.stopRecognition());
+            _voiceActive = false;
+            onTranscript(transcript);
+          }
+        }).catchError((Object e) {
+          _log.error('STT failed during voice flow', error: e);
+          _voiceActive = false;
+          return const Result<void>.success(null);
+        }));
+      }
+    });
+
+    // Speak the prompt
+    unawaited(tts.speak(prompt, priority: TTSPriority.urgent));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Per-step voice triggers
+  // ---------------------------------------------------------------------------
+
+  /// Called from build() — dispatches voice flow for the current step.
+  /// Guarded by [_lastSpokenStep] to prevent re-triggering on rebuild.
+  void _triggerVoiceForStep(OnboardingStep step) {
+    if (_lastSpokenStep == step) return;
+    _lastSpokenStep = step;
+    _cancelVoice();
+
+    switch (step) {
+      case OnboardingStep.welcome:
+        unawaited(_startWelcomeVoice());
+      case OnboardingStep.modeChoice:
+        _startModeChoiceVoice();
+      case OnboardingStep.profile:
+        _startProfileVoice();
+      case OnboardingStep.magic:
+        _log.info('Voice flow: magic moment');
+        // Voice setup happens in _buildMagicMoment's onSpeak callback
+        // via _setupMagicVoiceListener().
+      case OnboardingStep.detecting:
+      case OnboardingStep.permissions:
+      case OnboardingStep.caregiver:
+      case OnboardingStep.complete:
+        break; // These steps handle their own voice or don't need it
+    }
+  }
+
+  Future<void> _startWelcomeVoice() async {
+    _log.info('Voice flow: welcome — requesting mic permission');
+
+    // Request microphone permission early so STT can work from step 1.
+    // The permissions step will see it already granted and skip the OS dialog.
+    try {
+      final requester = ref.read(permissionRequesterProvider);
+      final status = await requester.request(KitaPermission.microphone);
+      _log.info('Early mic permission: ${status.name}');
+    } catch (e) {
+      _log.error('Early mic permission request failed', error: e);
+    }
+
+    if (!mounted) return;
+
+    _speakThenListen(
+      prompt: 'Bonjour, je suis Kita. Comment tu t\'appelles ? '
+          'Dis ton prénom, ou dis passer.',
+      onTranscript: (transcript) {
+        final lower = transcript.toLowerCase().trim();
+        if (lower.contains('passer') ||
+            lower.contains('passe') ||
+            lower == 'skip') {
+          _submitName();
+        } else {
+          final words = transcript.trim().split(RegExp(r'\s+'));
+          final first = words.first;
+          _nameController.text = first[0].toUpperCase() + first.substring(1);
+          _submitName();
+        }
+      },
+    );
+  }
+
+  void _startModeChoiceVoice() {
+    _log.info('Voice flow: mode choice');
+    final name = ref.read(onboardingNotifierProvider).userName;
+    final greeting =
+        name != null && name.isNotEmpty ? 'Enchanté $name. ' : '';
+    _speakThenListen(
+      prompt: '${greeting}C\'est pour toi ou pour quelqu\'un d\'autre ? '
+          'Dis pour moi, ou pour quelqu\'un.',
+      onTranscript: (transcript) {
+        _cancelVoice();
+        final lower = transcript.toLowerCase();
+        if (lower.contains('autre') || lower.contains('quelqu')) {
+          _log.info('Voice: caregiver mode');
+          ref.read(onboardingNotifierProvider.notifier).chooseCaregiverMode();
+        } else {
+          _log.info('Voice: standard mode');
+          ref.read(onboardingNotifierProvider.notifier).chooseStandardMode();
+        }
+      },
+    );
+  }
+
+  void _startProfileVoice() {
+    _log.info('Voice flow: profile');
+    _speakThenListen(
+      prompt: 'Quel est ton profil ? Dis aveugle, malvoyant, ou général.',
+      onTranscript: (transcript) {
+        final lower = transcript.toLowerCase();
+        AccessibilityProfile profile;
+        if (lower.contains('aveugle')) {
+          profile = AccessibilityProfile.blind;
+        } else if (lower.contains('malvoyant')) {
+          profile = AccessibilityProfile.lowVision;
+        } else {
+          profile = AccessibilityProfile.general;
+        }
+        _log.info('Voice: profile ${profile.name}');
+        _cancelVoice();
+        _selectProfile(profile);
+      },
+    );
+  }
+
+  /// Set up STT listener for "décris" after MagicMomentStep speaks.
+  /// Called from the onSpeak callback in _buildMagicMoment.
+  void _setupMagicVoiceListener(String spokenText) {
+    final tts = ref.read(ttsServiceProvider);
+    final stt = ref.read(sttServiceProvider);
+    if (_voiceActive || !stt.isAvailable) return;
+    _voiceActive = true;
+
+    _speechSub?.cancel();
+    _speechSub = tts.speechEvents.listen((event) {
+      if (event.type == TtsSpeechEventType.completed &&
+          event.text == spokenText) {
+        _speechSub?.cancel();
+        _speechSub = null;
+
+        if (!mounted) {
+          _voiceActive = false;
+          return;
+        }
+
+        _listenTimer?.cancel();
+        _listenTimer = Timer(const Duration(seconds: 10), () {
+          unawaited(stt.stopRecognition());
+          _voiceActive = false;
+        });
+
+        unawaited(stt.startRecognition(onResult: (transcript, isFinal) {
+          if (isFinal && transcript.isNotEmpty && mounted) {
+            final lower = transcript.toLowerCase();
+            if (lower.contains('décris') ||
+                lower.contains('decris') ||
+                lower.contains('describe')) {
+              _listenTimer?.cancel();
+              _listenTimer = null;
+              unawaited(stt.stopRecognition());
+              _voiceActive = false;
+              setState(() => _magicDescribeTriggered = true);
+            }
+          }
+        }).catchError((Object e) {
+          _log.error('STT failed during magic moment', error: e);
+          _voiceActive = false;
+          return const Result<void>.success(null);
+        }));
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Build
+  // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -106,11 +350,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     ref.watch(detectedProfileProvider);
     final theme = Theme.of(context);
 
-    // Speak greeting on welcome step — voice-first, unconditional
-    if (onboardingState.step == OnboardingStep.welcome) {
-      final tts = ref.read(ttsServiceProvider);
-      _speakGreeting(tts);
-    }
+    // Voice-first: trigger voice flow for current step
+    _triggerVoiceForStep(onboardingState.step);
 
     return Scaffold(
       body: SafeArea(
@@ -196,27 +437,33 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             height: 80,
             child: Semantics(
               button: true,
-              label: _isListeningName
+              label: _voiceActive
                   ? 'Écoute en cours. Dis ton prénom.'
                   : 'Appuie pour dire ton prénom',
               child: FilledButton(
                 key: const Key('mic_name'),
-                onPressed: _isListeningName ? null : _startListeningName,
+                onPressed: _voiceActive
+                    ? null
+                    : () {
+                        _cancelVoice();
+                        _lastSpokenStep = null; // Allow re-trigger
+                        _startWelcomeVoice();
+                      },
                 style: FilledButton.styleFrom(
                   shape: const CircleBorder(),
-                  backgroundColor: _isListeningName
+                  backgroundColor: _voiceActive
                       ? Colors.redAccent
                       : theme.colorScheme.primary,
                 ),
                 child: Icon(
-                  _isListeningName ? Icons.hearing : Icons.mic,
+                  _voiceActive ? Icons.hearing : Icons.mic,
                   size: 36,
                 ),
               ),
             ),
           ),
         ),
-        if (_isListeningName)
+        if (_voiceActive)
           Padding(
             padding: const EdgeInsets.only(top: 12),
             child: Semantics(
@@ -277,7 +524,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 label: 'Passer cette étape',
                 child: OutlinedButton(
                   key: const Key('skip_name'),
-                  onPressed: _skipName,
+                  onPressed: _submitName,
                   child: const Text('Passer'),
                 ),
               ),
@@ -290,20 +537,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   void _submitName() {
+    _cancelVoice();
     final name = _nameController.text.trim();
     final notifier = ref.read(onboardingNotifierProvider.notifier);
     if (name.isNotEmpty) {
       notifier.setUserName(name);
     }
     notifier.completeWelcome();
-
-    // Speak transition unconditionally — voice-first
-    final tts = ref.read(ttsServiceProvider);
-    final greeting = name.isNotEmpty ? 'Enchanté $name.' : '';
-    unawaited(tts.speak(
-      '$greeting Choisis ton profil d\'accessibilité.',
-      priority: TTSPriority.standard,
-    ));
+    // Greeting is included in the mode choice voice prompt.
   }
 
   Widget _buildModeChoice(
@@ -343,8 +584,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             child: FilledButton(
               key: const Key('mode_for_me'),
               onPressed: () {
+                _cancelVoice();
                 _log.info('Mode choice: standard (for self)');
-                ref.read(onboardingNotifierProvider.notifier).chooseStandardMode();
+                ref
+                    .read(onboardingNotifierProvider.notifier)
+                    .chooseStandardMode();
               },
               child: const Text('Pour moi'),
             ),
@@ -355,10 +599,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           height: KitaAccessibility.touchTargetMin,
           child: Semantics(
             button: true,
-            label: 'Pour quelqu\'un d\'autre. Configurer Kita en tant qu\'aidant.',
+            label:
+                'Pour quelqu\'un d\'autre. Configurer Kita en tant qu\'aidant.',
             child: OutlinedButton(
               key: const Key('mode_for_other'),
               onPressed: () {
+                _cancelVoice();
                 _log.info('Mode choice: caregiver (for someone else)');
                 ref
                     .read(onboardingNotifierProvider.notifier)
@@ -415,6 +661,31 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     );
   }
 
+  /// Selects a profile and propagates to ProfileAdapter.
+  Future<void> _selectProfile(AccessibilityProfile profile) async {
+    final notifier = ref.read(onboardingNotifierProvider.notifier);
+    try {
+      await notifier.selectProfile(profile);
+    } catch (e) {
+      _log.error('Profile selection failed', error: e);
+      // Continue — pack install may fail but Kita remains usable.
+    }
+
+    if (!mounted) return;
+
+    // Propagate to ProfileAdapter so output routing matches
+    ref
+        .read(userProfileProvider.notifier)
+        .setProfile(_mapToUserProfile(profile));
+
+    // Speak confirmation — voice-first
+    final tts = ref.read(ttsServiceProvider);
+    unawaited(tts.speak(
+      'Profil ${profile.name} sélectionné. Configuration en cours.',
+      priority: TTSPriority.standard,
+    ));
+  }
+
   Widget _buildProfile(
     BuildContext context,
     OnboardingState state,
@@ -430,26 +701,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         const Spacer(),
         ProfileSelector(
           selectedProfile: detectedProfile,
-          onProfileSelected: (profile) async {
-            final notifier = ref.read(onboardingNotifierProvider.notifier);
-            try {
-              await notifier.selectProfile(profile);
-            } catch (e) {
-              _log.error('Profile selection failed', error: e);
-              // Continue — pack install may fail but Kita remains usable.
-            }
-
-            // Propagate to ProfileAdapter so output routing matches
-            ref
-                .read(userProfileProvider.notifier)
-                .setProfile(_mapToUserProfile(profile));
-
-            // Speak confirmation unconditionally — voice-first
-            final tts = ref.read(ttsServiceProvider);
-            unawaited(tts.speak(
-              'Profil ${profile.name} sélectionné. Configuration en cours.',
-              priority: TTSPriority.standard,
-            ));
+          onProfileSelected: (profile) {
+            _cancelVoice();
+            _selectProfile(profile);
           },
         ),
         const Spacer(),
@@ -466,11 +720,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         state.detectedProfile?.profile ?? AccessibilityProfile.general;
     final storytelling = ref.read(permissionStorytellingProvider);
     final requester = ref.read(permissionRequesterProvider);
+    final tts = ref.read(ttsServiceProvider);
 
     return PermissionStep(
       profile: profile,
       storytelling: storytelling,
       permissionRequester: requester,
+      onSpeak: (text) async {
+        unawaited(tts.speak(text, priority: TTSPriority.standard));
+      },
       onComplete: (results) {
         final notifier = ref.read(onboardingNotifierProvider.notifier);
         // Record granted permissions in state
@@ -502,11 +760,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     final tts = ref.read(ttsServiceProvider);
 
     return MagicMomentStep(
+      autoTriggerDescribe: _magicDescribeTriggered,
       onComplete: () {
         setState(() => _showApiKeySetup = true);
       },
       onSpeak: (text) async {
         unawaited(tts.speak(text, priority: TTSPriority.standard));
+        // Voice-first: listen for "décris" after TTS completes
+        _setupMagicVoiceListener(text);
       },
     );
   }

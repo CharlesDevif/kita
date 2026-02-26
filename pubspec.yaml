@@ -57,6 +57,9 @@ dependencies:
   # ML / AI local
   tflite_flutter: ^0.12.1
   google_mlkit_object_detection: ^0.15.1
+  google_mlkit_text_recognition: ^0.15.1
+  google_mlkit_image_labeling: ^0.14.2
+  google_mlkit_genai_image_description: ^0.1.0
 
   # Image processing
   image: ^4.8.0

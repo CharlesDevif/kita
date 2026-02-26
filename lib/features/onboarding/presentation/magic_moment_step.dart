@@ -36,6 +36,7 @@ class MagicMomentStep extends StatefulWidget {
     required this.onComplete,
     this.onDescribe,
     this.onSpeak,
+    this.autoTriggerDescribe = false,
     super.key,
   });
 
@@ -49,6 +50,10 @@ class MagicMomentStep extends StatefulWidget {
   /// Optional callback to speak text via TTS.
   final Future<void> Function(String text)? onSpeak;
 
+  /// When set to true, auto-triggers the describe pipeline (voice-first).
+  /// Typically set when STT detects the user saying "décris".
+  final bool autoTriggerDescribe;
+
   @override
   State<MagicMomentStep> createState() => _MagicMomentStepState();
 }
@@ -61,6 +66,17 @@ class _MagicMomentStepState extends State<MagicMomentStep> {
   void initState() {
     super.initState();
     _speakInvitation();
+  }
+
+  @override
+  void didUpdateWidget(MagicMomentStep oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Voice-first: auto-trigger describe when parent signals via STT
+    if (widget.autoTriggerDescribe &&
+        !oldWidget.autoTriggerDescribe &&
+        _state == MagicMomentState.invitation) {
+      _tryDescribe();
+    }
   }
 
   void _speakInvitation() {

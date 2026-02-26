@@ -53,6 +53,25 @@ class FakeSensorAccess implements SensorAccess {
   }
 }
 
+class FakeSensorAccessWithFailure implements SensorAccess {
+  @override
+  Future<Result<ImageData>> capturePhoto() async {
+    return const Result.failure(PermissionFailure(
+      userMessage: 'Camera not available.',
+      logMessage: 'Camera not available',
+      permission: 'camera',
+    ));
+  }
+
+  @override
+  Future<Result<Position>> getCurrentPosition() async =>
+      throw UnimplementedError();
+
+  @override
+  Future<Result<MotionState>> getMotionState() async =>
+      throw UnimplementedError();
+}
+
 class FakeAIAccess implements AIAccess {
   int completeCount = 0;
   int visionCount = 0;
@@ -232,6 +251,36 @@ void main() {
       final result = await proxy.getMotionState();
       expect(result.isFailure, isTrue);
       expect((result as Failure).failure, isA<PermissionFailure>());
+    });
+
+    test('capturePhoto strips EXIF and returns success on undecodable image', () async {
+      // FakeSensorAccess returns empty bytes which cannot be decoded.
+      // EXIF stripping should fail gracefully and return the original image.
+      final proxy = SandboxedSensorAccess(
+        delegate: fakeSensors,
+        allowedPermissions: {'camera'},
+        pluginId: 'com.kita.test',
+      );
+
+      final result = await proxy.capturePhoto();
+
+      // Should still succeed with the original image (graceful fallback)
+      expect(result.isSuccess, isTrue);
+      final image = (result as Success<ImageData>).value;
+      expect(image.bytes.length, equals(0));
+    });
+
+    test('capturePhoto returns failure when delegate fails', () async {
+      // Create a sensor that fails
+      final failingSensors = FakeSensorAccessWithFailure();
+      final proxy = SandboxedSensorAccess(
+        delegate: failingSensors,
+        allowedPermissions: {'camera'},
+        pluginId: 'com.kita.test',
+      );
+
+      final result = await proxy.capturePhoto();
+      expect(result.isFailure, isTrue);
     });
   });
 
