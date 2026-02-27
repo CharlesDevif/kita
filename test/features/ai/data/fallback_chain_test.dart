@@ -345,6 +345,132 @@ void main() {
       });
     });
 
+    group('executeWithTools — tool-use cascade', () {
+      test('succeeds on first provider', () async {
+        final chain = makeChain();
+        final result = await chain.executeWithTools(
+          const AIRequest(prompt: 'Weather?'),
+          tools: [
+            const ToolSpec(
+              name: 'get_weather',
+              description: 'Weather',
+              parameters: {'type': 'object', 'properties': {}},
+            ),
+          ],
+        );
+
+        expect(result.isSuccess, isTrue);
+        final response = (result as Success<AIToolResponse>).value;
+        expect(response.meta.providerId, equals('claude'));
+        expect(cloudPowerful.callCount, equals(1));
+        expect(cloudFast.callCount, equals(0));
+        expect(localProvider.callCount, equals(0));
+      });
+
+      test('falls back when first provider fails', () async {
+        cloudPowerful.shouldFail = true;
+        final chain = makeChain();
+        final result = await chain.executeWithTools(
+          const AIRequest(prompt: 'Weather?'),
+          tools: [
+            const ToolSpec(
+              name: 'get_weather',
+              description: 'Weather',
+              parameters: {'type': 'object', 'properties': {}},
+            ),
+          ],
+        );
+
+        expect(result.isSuccess, isTrue);
+        final response = (result as Success<AIToolResponse>).value;
+        expect(response.meta.providerId, equals('openai'));
+      });
+
+      test('falls back to local when both cloud providers fail', () async {
+        cloudPowerful.shouldFail = true;
+        cloudFast.shouldFail = true;
+        final chain = makeChain();
+        final result = await chain.executeWithTools(
+          const AIRequest(prompt: 'Weather?'),
+          tools: [
+            const ToolSpec(
+              name: 'get_weather',
+              description: 'Weather',
+              parameters: {'type': 'object', 'properties': {}},
+            ),
+          ],
+        );
+
+        expect(result.isSuccess, isTrue);
+        final response = (result as Success<AIToolResponse>).value;
+        expect(response.meta.providerId, equals('mlkit'));
+      });
+
+      test('returns brute alert when all providers fail', () async {
+        cloudPowerful.shouldFail = true;
+        cloudFast.shouldFail = true;
+        localProvider.shouldFail = true;
+        final chain = makeChain();
+        final result = await chain.executeWithTools(
+          const AIRequest(prompt: 'Weather?'),
+          tools: [
+            const ToolSpec(
+              name: 'get_weather',
+              description: 'Weather',
+              parameters: {'type': 'object', 'properties': {}},
+            ),
+          ],
+        );
+
+        expect(result.isSuccess, isTrue);
+        final response = (result as Success<AIToolResponse>).value;
+        expect(response.meta.providerId, equals('brute-alert'));
+        expect(response.hasText, isTrue);
+        expect(response.hasToolCalls, isFalse);
+        expect(response.text, contains('Attention'));
+      });
+
+      test('catches exceptions and continues cascade', () async {
+        cloudPowerful.shouldThrow = true;
+        final chain = makeChain();
+        final result = await chain.executeWithTools(
+          const AIRequest(prompt: 'Weather?'),
+          tools: [
+            const ToolSpec(
+              name: 'get_weather',
+              description: 'Weather',
+              parameters: {'type': 'object', 'properties': {}},
+            ),
+          ],
+        );
+
+        expect(result.isSuccess, isTrue);
+        final response = (result as Success<AIToolResponse>).value;
+        expect(response.meta.providerId, equals('openai'));
+      });
+
+      test('passes history through to providers', () async {
+        final chain = makeChain();
+        final history = [
+          const ConversationMessage.user('Hello'),
+          const ConversationMessage.assistant('Hi there'),
+        ];
+        final result = await chain.executeWithTools(
+          const AIRequest(prompt: 'Weather?'),
+          tools: [
+            const ToolSpec(
+              name: 'get_weather',
+              description: 'Weather',
+              parameters: {'type': 'object', 'properties': {}},
+            ),
+          ],
+          history: history,
+        );
+
+        expect(result.isSuccess, isTrue);
+      });
+    });
+
     group('never-fail guarantee', () {
       test('brute alert is ALWAYS Success even with no providers', () async {
         final chain = FallbackChain(providers: []);

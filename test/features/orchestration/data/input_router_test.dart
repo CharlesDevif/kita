@@ -382,6 +382,17 @@ void main() {
         expect(tts.stopCalled, isTrue);
       });
 
+      test('"annule" triggers cancel same as "stop"', () async {
+        final input = RawInput.voice('annule', clock: clock);
+        await router.route(input);
+
+        final cancelMessages = busMessages
+            .where((m) => m.type == AgentMessageType.cancelAll)
+            .toList();
+        expect(cancelMessages, isNotEmpty);
+        expect(tts.stopCalled, isTrue);
+      });
+
       test('"arrête" works even when ConversationEngine is available',
           () async {
         final engine = MockConversationEngine();
@@ -649,7 +660,10 @@ void main() {
         expect(supervisor.agents.containsKey('com.kita.describe'), isTrue);
       });
 
-      test('engine handles tool call "describe"', () async {
+      test('engine tool calls are informational only (not re-executed)',
+          () async {
+        // ConversationEngine already executed tools during its loop.
+        // The router should NOT re-execute them — just log + speak text.
         engine.setNextResult(
           const Result.success(
             ConversationResponse(
@@ -668,14 +682,14 @@ void main() {
         // Engine was called
         expect(engine.processedInputs, ['dis-moi ce que tu vois']);
 
-        // Tool call should have spawned DescribeAgent
-        expect(supervisor.agents.containsKey('com.kita.describe'), isTrue);
-
         // Text response should be spoken
         expect(
           tts.spokenTexts,
           contains('Je vais décrire ce que je vois.'),
         );
+
+        // The router does NOT re-spawn DescribeAgent — the engine handled it
+        // internally. The toolCalls list is for logging only.
       });
 
       test('sensor input bypasses ConversationEngine', () async {
@@ -714,7 +728,14 @@ void main() {
         );
 
         // All stop variants should bypass engine
-        for (final stopVariant in ['stop', 'arrete', 'arrête', 'pause']) {
+        for (final stopVariant in [
+          'stop',
+          'arrete',
+          'arrête',
+          'pause',
+          'annule',
+          'annuler',
+        ]) {
           engine.processedInputs.clear();
           tts.stopCalled = false;
 

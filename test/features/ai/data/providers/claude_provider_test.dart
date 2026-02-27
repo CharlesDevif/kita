@@ -12,6 +12,7 @@ import 'package:kita/features/ai/domain/ai_response.dart';
 import 'package:kita/features/ai/domain/image_data.dart';
 import 'package:kita/features/ai/domain/provider_tier.dart';
 import 'package:kita/features/ai/domain/request_priority.dart';
+import 'package:kita/features/ai/domain/tool_models.dart';
 
 http_testing.MockClient _mockClient(
   Future<http.Response> Function(http.Request) handler,
@@ -241,6 +242,330 @@ void main() {
         expect(result.isFailure, isTrue);
         final failure = (result as Failure).failure;
         expect(failure, isA<NetworkFailure>());
+      });
+    });
+
+    group('completeWithTools()', () {
+      test('sends tools with correct Anthropic format (input_schema)', () async {
+        Map<String, dynamic>? sentBody;
+        final client = _mockClient((request) async {
+          sentBody = jsonDecode(request.body) as Map<String, dynamic>;
+          return http.Response(
+            jsonEncode({
+              'content': [
+                {'type': 'text', 'text': 'Let me check the weather.'},
+                {
+                  'type': 'tool_use',
+                  'id': 'toolu_abc123',
+                  'name': 'get_weather',
+                  'input': {'location': 'Paris'},
+                },
+              ],
+            }),
+            200,
+          );
+        });
+
+        final provider =
+            ClaudeProvider(apiKey: 'test-key', httpClient: client);
+        await provider.completeWithTools(
+          const AIRequest(prompt: 'What is the weather in Paris?'),
+          tools: [
+            const ToolSpec(
+              name: 'get_weather',
+              description: 'Get current weather',
+              parameters: {
+                'type': 'object',
+                'properties': {
+                  'location': {'type': 'string'},
+                },
+                'required': ['location'],
+              },
+            ),
+          ],
+        );
+
+        // Verify Anthropic format: tools use "input_schema", not "parameters"
+        final tools = sentBody!['tools'] as List;
+        final tool = tools[0] as Map<String, dynamic>;
+        expect(tool['name'], equals('get_weather'));
+        expect(tool['description'], equals('Get current weather'));
+        expect(tool.containsKey('input_schema'), isTrue);
+        expect(tool.containsKey('parameters'), isFalse);
+        final schema = tool['input_schema'] as Map<String, dynamic>;
+        expect(schema['type'], equals('object'));
+        expect(schema['required'], equals(['location']));
+      });
+
+      test('parses tool_use response blocks correctly', () async {
+        final client = _mockClient((_) async {
+          return http.Response(
+            jsonEncode({
+              'content': [
+                {'type': 'text', 'text': 'Checking weather now.'},
+                {
+                  'type': 'tool_use',
+                  'id': 'toolu_abc123',
+                  'name': 'get_weather',
+                  'input': {'location': 'Paris', 'unit': 'celsius'},
+                },
+              ],
+            }),
+            200,
+          );
+        });
+
+        final provider =
+            ClaudeProvider(apiKey: 'test-key', httpClient: client);
+        final result = await provider.completeWithTools(
+          const AIRequest(prompt: 'Weather in Paris?'),
+          tools: [
+            const ToolSpec(
+              name: 'get_weather',
+              description: 'Get weather',
+              parameters: {'type': 'object', 'properties': {}},
+            ),
+          ],
+        );
+
+        expect(result.isSuccess, isTrue);
+        final response = (result as Success<AIToolResponse>).value;
+        expect(response.text, equals('Checking weather now.'));
+        expect(response.hasToolCalls, isTrue);
+        expect(response.toolCalls, hasLength(1));
+        expect(response.toolCalls[0].id, equals('toolu_abc123'));
+        expect(response.toolCalls[0].name, equals('get_weather'));
+        expect(response.toolCalls[0].arguments['location'], equals('Paris'));
+        expect(response.toolCalls[0].arguments['unit'], equals('celsius'));
+        expect(response.meta.providerId, equals('claude'));
+        expect(response.meta.tier, equals(ProviderTier.cloudPowerful));
+      });
+
+      test('parses text-only response (no tool calls)', () async {
+        final client = _mockClient((_) async {
+          return http.Response(
+            jsonEncode({
+              'content': [
+                {'type': 'text', 'text': 'I cannot help with that.'},
+              ],
+            }),
+            200,
+          );
+        });
+
+        final provider =
+            ClaudeProvider(apiKey: 'test-key', httpClient: client);
+        final result = await provider.completeWithTools(
+          const AIRequest(prompt: 'Hello'),
+          tools: [
+            const ToolSpec(
+              name: 'tool1',
+              description: 'A tool',
+              parameters: {'type': 'object', 'properties': {}},
+            ),
+          ],
+        );
+
+        expect(result.isSuccess, isTrue);
+        final response = (result as Success<AIToolResponse>).value;
+        expect(response.hasText, isTrue);
+        expect(response.hasToolCalls, isFalse);
+        expect(response.text, equals('I cannot help with that.'));
+      });
+
+      test('parses multiple tool calls', () async {
+        final client = _mockClient((_) async {
+          return http.Response(
+            jsonEncode({
+              'content': [
+                {
+                  'type': 'tool_use',
+                  'id': 'toolu_1',
+                  'name': 'get_weather',
+                  'input': {'location': 'Paris'},
+                },
+                {
+                  'type': 'tool_use',
+                  'id': 'toolu_2',
+                  'name': 'get_time',
+                  'input': {'timezone': 'Europe/Paris'},
+                },
+              ],
+            }),
+            200,
+          );
+        });
+
+        final provider =
+            ClaudeProvider(apiKey: 'test-key', httpClient: client);
+        final result = await provider.completeWithTools(
+          const AIRequest(prompt: 'Weather and time in Paris?'),
+          tools: [
+            const ToolSpec(
+              name: 'get_weather',
+              description: 'Weather',
+              parameters: {'type': 'object', 'properties': {}},
+            ),
+            const ToolSpec(
+              name: 'get_time',
+              description: 'Time',
+              parameters: {'type': 'object', 'properties': {}},
+            ),
+          ],
+        );
+
+        expect(result.isSuccess, isTrue);
+        final response = (result as Success<AIToolResponse>).value;
+        expect(response.toolCalls, hasLength(2));
+        expect(response.toolCalls[0].name, equals('get_weather'));
+        expect(response.toolCalls[1].name, equals('get_time'));
+      });
+
+      test('serializes conversation history correctly', () async {
+        Map<String, dynamic>? sentBody;
+        final client = _mockClient((request) async {
+          sentBody = jsonDecode(request.body) as Map<String, dynamic>;
+          return http.Response(
+            jsonEncode({
+              'content': [
+                {'type': 'text', 'text': 'The weather is 15C.'},
+              ],
+            }),
+            200,
+          );
+        });
+
+        final provider =
+            ClaudeProvider(apiKey: 'test-key', httpClient: client);
+        await provider.completeWithTools(
+          const AIRequest(prompt: 'Now what about tomorrow?'),
+          tools: [
+            const ToolSpec(
+              name: 'get_weather',
+              description: 'Weather',
+              parameters: {'type': 'object', 'properties': {}},
+            ),
+          ],
+          history: [
+            const ConversationMessage.user('Weather in Paris?'),
+            ConversationMessage.assistantToolCalls([
+              const ToolCall(
+                id: 'toolu_prev1',
+                name: 'get_weather',
+                arguments: {'location': 'Paris'},
+              ),
+            ]),
+            const ConversationMessage.toolResult(
+              callId: 'toolu_prev1',
+              result: '15 degrees celsius',
+            ),
+          ],
+        );
+
+        final messages = sentBody!['messages'] as List;
+        expect(messages, hasLength(4)); // 3 history + 1 current
+
+        // User message
+        expect(messages[0]['role'], equals('user'));
+        expect(messages[0]['content'], equals('Weather in Paris?'));
+
+        // Assistant with tool calls — Anthropic format uses content array
+        expect(messages[1]['role'], equals('assistant'));
+        final assistantContent = messages[1]['content'] as List;
+        expect(assistantContent[0]['type'], equals('tool_use'));
+        expect(assistantContent[0]['id'], equals('toolu_prev1'));
+        expect(assistantContent[0]['name'], equals('get_weather'));
+        expect(assistantContent[0]['input'], equals({'location': 'Paris'}));
+
+        // Tool result — Anthropic format: role=user, content=[{type: tool_result}]
+        expect(messages[2]['role'], equals('user'));
+        final toolContent = messages[2]['content'] as List;
+        expect(toolContent[0]['type'], equals('tool_result'));
+        expect(toolContent[0]['tool_use_id'], equals('toolu_prev1'));
+        expect(toolContent[0]['content'], equals('15 degrees celsius'));
+
+        // Current user message
+        expect(messages[3]['role'], equals('user'));
+        expect(messages[3]['content'], equals('Now what about tomorrow?'));
+      });
+
+      test('returns failure on 401', () async {
+        final client = _mockClient((_) async {
+          return http.Response('unauthorized', 401);
+        });
+
+        final provider =
+            ClaudeProvider(apiKey: 'bad-key', httpClient: client);
+        final result = await provider.completeWithTools(
+          const AIRequest(prompt: 'test'),
+          tools: [
+            const ToolSpec(
+              name: 'tool1',
+              description: 'A tool',
+              parameters: {'type': 'object', 'properties': {}},
+            ),
+          ],
+        );
+
+        expect(result.isFailure, isTrue);
+        final failure = (result as Failure).failure;
+        expect(failure, isA<AIProviderFailure>());
+      });
+
+      test('returns failure on malformed JSON response', () async {
+        final client = _mockClient((_) async {
+          return http.Response('not json', 200);
+        });
+
+        final provider =
+            ClaudeProvider(apiKey: 'test-key', httpClient: client);
+        final result = await provider.completeWithTools(
+          const AIRequest(prompt: 'test'),
+          tools: [
+            const ToolSpec(
+              name: 'tool1',
+              description: 'A tool',
+              parameters: {'type': 'object', 'properties': {}},
+            ),
+          ],
+        );
+
+        expect(result.isFailure, isTrue);
+      });
+
+      test('handles tool_use block with empty input', () async {
+        final client = _mockClient((_) async {
+          return http.Response(
+            jsonEncode({
+              'content': [
+                {
+                  'type': 'tool_use',
+                  'id': 'toolu_abc',
+                  'name': 'get_location',
+                  'input': null,
+                },
+              ],
+            }),
+            200,
+          );
+        });
+
+        final provider =
+            ClaudeProvider(apiKey: 'test-key', httpClient: client);
+        final result = await provider.completeWithTools(
+          const AIRequest(prompt: 'Where am I?'),
+          tools: [
+            const ToolSpec(
+              name: 'get_location',
+              description: 'Get location',
+              parameters: {'type': 'object', 'properties': {}},
+            ),
+          ],
+        );
+
+        expect(result.isSuccess, isTrue);
+        final response = (result as Success<AIToolResponse>).value;
+        expect(response.toolCalls[0].arguments, isEmpty);
       });
     });
 

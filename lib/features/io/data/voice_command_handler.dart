@@ -58,6 +58,8 @@ class VoiceCommandHandler {
       'arrête',
       'arreter',
       'pause',
+      'annule',
+      'annuler',
     ],
     VoiceCommand.help: [
       'aide',

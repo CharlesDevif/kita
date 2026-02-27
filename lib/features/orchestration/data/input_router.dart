@@ -10,6 +10,7 @@ import '../domain/models/agent_ids.dart';
 import '../domain/models/output_priority.dart';
 import '../domain/models/raw_input.dart';
 import 'agent_supervisor.dart';
+import 'kita_tools.dart';
 import 'output_coordinator.dart';
 
 /// Classifies and routes raw user/sensor inputs to the appropriate agent.
@@ -107,12 +108,18 @@ class InputRouter {
 
   /// Handles the response from [ConversationEngine].
   ///
-  /// Speaks the text response and executes any tool calls.
+  /// The ConversationEngine already executes tool calls internally during
+  /// its tool-use loop (spawning agents, calling handleInput). The
+  /// [ConversationResponse.toolCalls] list is informational only — it
+  /// records which tools were executed, NOT tools to re-execute.
+  ///
+  /// This method only speaks the text response via TTS.
   Future<void> _handleConversationResponse(
       ConversationResponse response) async {
-    // Execute tool calls if any
-    for (final toolCall in response.toolCalls) {
-      await _executeToolCall(toolCall);
+    if (response.toolCalls.isNotEmpty) {
+      _log.info(
+        'ConversationEngine executed tools: ${response.toolCalls.join(", ")}',
+      );
     }
 
     // Speak the text response
@@ -122,18 +129,6 @@ class InputRouter {
         response.text,
         OutputPriority.standard,
       );
-    }
-  }
-
-  /// Executes a tool call from the ConversationEngine.
-  ///
-  /// Maps tool names to existing agent/command dispatching.
-  Future<void> _executeToolCall(String toolCall) async {
-    switch (toolCall) {
-      case 'describe':
-        await _handleDescribe();
-      default:
-        _log.debug('Unknown tool call: $toolCall');
     }
   }
 
@@ -158,11 +153,11 @@ class InputRouter {
 
       case Success(value: VoiceCommand.moreDetails):
         _log.info('Voice command: more details');
-        return _routeToFocusAgent(input, 'plus de details');
+        return _routeToFocusAgent(input, 'plus de détails');
 
       case Success(value: VoiceCommand.repeat):
         _log.info('Voice command: repeat');
-        return _routeToFocusAgent(input, 'repete');
+        return _routeToFocusAgent(input, 'répète');
 
       case Success(value: VoiceCommand.thanks):
         _log.info('Voice command: thanks');
@@ -197,9 +192,9 @@ class InputRouter {
     _log.info('Cancel all completed');
   }
 
-  /// Handles "decris": spawn DescribeAgent or re-route if already active.
+  /// Handles "décris": spawn DescribeAgent or re-route if already active.
   ///
-  /// **Pitfall #1**: If Marie says "decris" while DescribeAgent is already
+  /// **Pitfall #1**: If Marie says "décris" while DescribeAgent is already
   /// active, we re-route to the existing agent instead of double-spawning.
   Future<void> _handleDescribe() async {
     const describeId = AgentIds.describe;
@@ -209,7 +204,7 @@ class InputRouter {
       _log.info('DescribeAgent already active, re-routing command');
       final agent = _supervisor.agents[describeId]!.agent;
       await agent.handleInput(AgentInput(
-        command: 'decris',
+        command: KitaTools.commandDescribe,
         params: const {},
         source: InputSource.voice,
         timestamp: _clock.now(),
@@ -224,7 +219,7 @@ class InputRouter {
           final agent = _supervisor.agents[describeId]?.agent;
           if (agent != null) {
             await agent.handleInput(AgentInput(
-              command: 'decris',
+              command: KitaTools.commandDescribe,
               params: const {},
               source: InputSource.voice,
               timestamp: _clock.now(),
@@ -274,7 +269,7 @@ class InputRouter {
     await _routeToFallback(input.transcript ?? command);
   }
 
-  /// Routes to the AI fallback (conversation generale).
+  /// Routes to the AI fallback (conversation générale).
   ///
   /// Uses [RequestClassifier] to determine priority, then delegates
   /// to AIRouter for general conversation. For the MVP, provides

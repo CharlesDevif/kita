@@ -27,5 +27,5 @@ class ToolCall {
   final Map<String, dynamic> arguments;
 
   @override
-  String toString() => 'ToolCall(tool: $toolName, args: $arguments)';
+  String toString() => 'ToolCall(tool: $toolName, args: ${arguments.length} params)';
 }

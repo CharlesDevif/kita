@@ -173,13 +173,17 @@ class ConversationEngineImpl implements iface.ConversationEngine {
 
       // Execute each tool call and collect results.
       for (final call in currentResponse.toolCalls) {
+        if (_disposed) break;
         executedToolNames.add(call.name);
         final toolResult = await _executeToolCall(call);
+        if (_disposed) break;
         _addToHistory(ai.ConversationMessage.toolResult(
           callId: call.id,
           result: toolResult,
         ));
       }
+
+      if (_disposed) break;
 
       // Send tool results back to the LLM for the next turn.
       final nextResult = await _aiRouter.routeWithTools(
@@ -229,13 +233,13 @@ class ConversationEngineImpl implements iface.ConversationEngine {
     _log.info('Executing tool: ${call.name}');
 
     switch (call.name) {
-      case 'describe':
+      case KitaTools.toolDescribe:
         return _handleDescribeTool(call.arguments);
-      case 'alert':
+      case KitaTools.toolAlert:
         return _handleAlertTool(call.arguments);
       default:
         _log.warning('Unknown tool: ${call.name}');
-        return 'Outil inconnu: ${call.name}';
+        return 'Outil inconnu : ${call.name}';
     }
   }
 
@@ -247,7 +251,7 @@ class ConversationEngineImpl implements iface.ConversationEngine {
       _log.info('DescribeAgent already active, re-routing');
       final agent = _supervisor.agents[describeId]!.agent;
       await agent.handleInput(AgentInput(
-        command: 'decris',
+        command: KitaTools.commandDescribe,
         params: args,
         source: InputSource.voice,
         timestamp: _clock.now(),
@@ -261,7 +265,7 @@ class ConversationEngineImpl implements iface.ConversationEngine {
         final agent = _supervisor.agents[describeId]?.agent;
         if (agent != null) {
           await agent.handleInput(AgentInput(
-            command: 'decris',
+            command: KitaTools.commandDescribe,
             params: args,
             source: InputSource.voice,
             timestamp: _clock.now(),
@@ -292,7 +296,11 @@ class ConversationEngineImpl implements iface.ConversationEngine {
               ? 'Surveillance d\'obstacles activée.'
               : 'Impossible d\'activer la surveillance.';
         }
-        return 'Surveillance d\'obstacles activée.';
+        // Agent not registered — need to log that it should be spawned
+        // by the orchestrator. The AlertAgent is persistent and should be
+        // spawned during KitaOrchestrator.initialize(), not here.
+        _log.warning('AlertAgent not found, orchestrator may not be initialized');
+        return 'La surveillance n\'est pas disponible.';
 
       case 'stop':
         final entry = _supervisor.agents[alertId];

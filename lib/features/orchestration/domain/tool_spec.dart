@@ -119,7 +119,7 @@ class ToolSpec {
     buffer.writeln('Outil "$name": $description');
 
     if (parameters.isNotEmpty) {
-      buffer.writeln('  Parametres:');
+      buffer.writeln('  Paramètres:');
       for (final entry in parameters.entries) {
         final param = entry.value;
         final req = param.isRequired ? ' (obligatoire)' : ' (optionnel)';
