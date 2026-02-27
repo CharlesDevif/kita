@@ -65,4 +65,13 @@ class StubAIAccess implements AIAccess {
       pluginId: 'system',
     ));
   }
+
+  @override
+  Stream<String> visionStream(ImageData image, String prompt) async* {
+    throw const PluginFailure(
+      userMessage: 'Service IA vision non disponible.',
+      logMessage: 'StubAIAccess: visionStream not implemented',
+      pluginId: 'system',
+    );
+  }
 }

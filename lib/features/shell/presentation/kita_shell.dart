@@ -11,6 +11,7 @@ import '../../onboarding/di/providers.dart';
 import '../../orchestration/di/providers.dart';
 import '../../orchestration/domain/models/raw_input.dart';
 import '../di/orb_providers.dart';
+import '../domain/input_state.dart';
 import '../di/shell_mode_providers.dart';
 import '../domain/orb_state.dart';
 import '../domain/shell_mode.dart';
@@ -317,10 +318,20 @@ class _KitaShellState extends ConsumerState<KitaShell>
   }
 
   Widget _buildInput(BuildContext context) {
+    final onboardingComplete = ref.watch(onboardingCompleteProvider);
+
+    // During onboarding, hide input completely — ShellOnboarding manages its
+    // own voice/button interactions. Showing a disabled KitaInput is confusing
+    // and the text field is not readable by screen readers in disabled state.
+    if (!onboardingComplete && widget.inputChild == null) {
+      return const SizedBox.shrink();
+    }
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: widget.inputChild ??
           KitaInput(
+            state: InputState.idle,
             onTextSubmit: _onTextSubmit,
             onMicPressed: _onMicPressed,
           ),

@@ -30,9 +30,15 @@ Widget _createTestApp(GoRouter router) {
     overrides: [
       hasActiveOnDemandProvider.overrideWithValue(false),
       // Mark onboarding complete so ShellOnboarding doesn't start TTS/STT
-      onboardingNotifierProvider.overrideWith(() => _CompletedOnboarding()),
+      onboardingNotifierProvider.overrideWith(_CompletedOnboarding.new),
+      onboardingCompleteProvider
+          .overrideWith(_TrueOnboardingComplete.new),
     ],
-    child: MaterialApp.router(routerConfig: router),
+    // disableAnimations stops KitaOrb infinite animation (prevents pending timers)
+    child: MediaQuery(
+      data: const MediaQueryData(disableAnimations: true),
+      child: MaterialApp.router(routerConfig: router),
+    ),
   );
 }
 
@@ -43,6 +49,12 @@ class _CompletedOnboarding extends OnboardingNotifier {
         step: OnboardingStep.complete,
         onboardingComplete: true,
       );
+}
+
+/// Boolean notifier that starts as true (onboarding already done).
+class _TrueOnboardingComplete extends OnboardingCompleteNotifier {
+  @override
+  bool build() => true;
 }
 
 void main() {

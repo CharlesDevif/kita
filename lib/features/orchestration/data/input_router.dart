@@ -6,6 +6,7 @@ import '../../plugins/built_in/describe/describe_plugin.dart';
 import '../domain/clock.dart';
 import '../domain/models/agent_input.dart';
 import '../domain/models/agent_ids.dart';
+import '../domain/models/output_priority.dart';
 import '../domain/models/raw_input.dart';
 import 'agent_supervisor.dart';
 import 'output_coordinator.dart';
@@ -192,15 +193,21 @@ class InputRouter {
   /// Routes to the AI fallback (conversation generale).
   ///
   /// Uses [RequestClassifier] to determine priority, then delegates
-  /// to AIRouter for general conversation. For the MVP, this logs
-  /// and provides minimal feedback.
+  /// to AIRouter for general conversation. For the MVP, provides
+  /// audio feedback so the user knows their input was received.
   Future<void> _routeToFallback(String transcript) async {
     if (_classifier != null) {
       final priority = _classifier.classify(transcript);
       _log.debug('Fallback: classified as ${priority.getOrNull()?.name}');
     }
-    // For MVP: log the unrecognized command.
-    // Future: route to AIRouter for general conversation.
-    _log.info('Fallback: unrecognized command, no action taken');
+
+    // For MVP: provide vocal feedback so the user (Marie, blind) knows
+    // input was received. Silence = broken for a voice-first blind user.
+    _log.info('Fallback: unrecognized command, providing feedback');
+    await _outputCoordinator.enqueueSpeech(
+      AgentIds.system,
+      "Je n'ai pas compris. Dis décris pour décrire, ou stop pour arrêter.",
+      OutputPriority.standard,
+    );
   }
 }

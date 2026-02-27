@@ -1,6 +1,6 @@
 import 'dart:developer' as dev;
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, visibleForTesting;
 
 /// Log severity levels, mapped to dart:developer level values.
 enum LogLevel implements Comparable<LogLevel> {
@@ -75,6 +75,12 @@ class KitaLogger {
         (message: formatted, level: level, error: error, stackTrace: stackTrace),
       );
       return;
+    }
+
+    // In debug mode, also print to stdout for flutter run console visibility.
+    if (kDebugMode) {
+      final errorSuffix = error != null ? ' | $error' : '';
+      debugPrint('kita: $formatted$errorSuffix');
     }
 
     dev.log(

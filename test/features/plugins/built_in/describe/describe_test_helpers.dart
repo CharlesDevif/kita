@@ -50,6 +50,14 @@ class MockAIAccess implements AIAccess {
     if (failureToReturn != null) return Result.failure(failureToReturn!);
     return Result.success(responseToReturn!);
   }
+
+  @override
+  Stream<String> visionStream(ImageData image, String prompt) async* {
+    lastImageReceived = image;
+    lastPromptReceived = prompt;
+    if (failureToReturn != null) throw failureToReturn!;
+    yield responseToReturn!.content;
+  }
 }
 
 // --- Helpers ---

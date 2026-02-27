@@ -133,6 +133,7 @@ class AgentSupervisor {
         ? OutputHandleImpl(
             agentId: agentId,
             coordinator: _outputCoordinator,
+            onComplete: _onAgentComplete,
             agentType: agent.manifest.agentType,
           )
         : StubOutputHandle(

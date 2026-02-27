@@ -5,6 +5,7 @@ import '../../../core/utils/logger.dart';
 import '../domain/ai_provider.dart';
 import '../domain/ai_request.dart';
 import '../domain/ai_response.dart';
+import '../domain/image_data.dart';
 import '../domain/provider_tier.dart';
 import '../domain/request_priority.dart';
 
@@ -118,6 +119,95 @@ class FallbackChain {
         ),
       );
     }
+  }
+
+  /// Stream text completion token by token through the fallback chain.
+  ///
+  /// Cascades through providers by tier based on request priority.
+  /// The first provider that yields tokens wins. If a provider throws
+  /// before yielding, the next provider is tried.
+  ///
+  /// If all providers fail, yields the brute alert text.
+  Stream<String> executeStream(AIRequest request) async* {
+    final tiers = _tiersForPriority(request.priority ?? RequestPriority.standard);
+
+    for (final tier in tiers) {
+      final providersForTier =
+          _providers.where((p) => p.tier == tier && p.isAvailable).toList();
+
+      for (final provider in providersForTier) {
+        try {
+          var hasYielded = false;
+          await for (final token in provider.completeStream(request)) {
+            hasYielded = true;
+            yield token;
+          }
+          if (hasYielded) return;
+          // Empty stream — try next provider.
+          _log.warning(
+            'Provider ${provider.id} returned empty complete stream',
+          );
+        } catch (e, stack) {
+          _log.warning(
+            'Provider ${provider.id} complete stream failed, falling back',
+            error: e,
+            stackTrace: stack,
+          );
+          continue;
+        }
+      }
+    }
+
+    // All providers failed — yield brute alert.
+    _log.critical('All providers failed complete stream, returning brute alert');
+    yield _bruteAlertContent;
+  }
+
+  /// Stream vision response token by token through the fallback chain.
+  ///
+  /// Cascades through providers by tier (standard priority order).
+  /// The first provider that yields tokens wins. If a provider throws
+  /// before yielding, the next provider is tried.
+  ///
+  /// If all providers fail, yields the brute alert text.
+  Stream<String> executeVisionStream(
+    ImageData image,
+    String prompt, {
+    int? maxTokens,
+  }) async* {
+    final tiers = _tiersForPriority(RequestPriority.standard);
+
+    for (final tier in tiers) {
+      final providersForTier =
+          _providers.where((p) => p.tier == tier && p.isAvailable).toList();
+
+      for (final provider in providersForTier) {
+        try {
+          var hasYielded = false;
+          await for (final token
+              in provider.visionStream(image, prompt, maxTokens: maxTokens)) {
+            hasYielded = true;
+            yield token;
+          }
+          if (hasYielded) return;
+          // Empty stream — try next provider.
+          _log.warning(
+            'Provider ${provider.id} returned empty vision stream',
+          );
+        } catch (e, stack) {
+          _log.warning(
+            'Provider ${provider.id} vision stream failed, falling back',
+            error: e,
+            stackTrace: stack,
+          );
+          continue;
+        }
+      }
+    }
+
+    // All providers failed — yield brute alert.
+    _log.critical('All providers failed vision stream, returning brute alert');
+    yield _bruteAlertContent;
   }
 
   Duration _timeoutForTier(ProviderTier tier) {

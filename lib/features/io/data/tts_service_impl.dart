@@ -1,5 +1,6 @@
 import 'dart:async' show StreamController, unawaited;
 import 'dart:collection';
+import 'dart:io' show Platform;
 
 import 'package:flutter_tts/flutter_tts.dart';
 
@@ -54,6 +55,11 @@ class TTSServiceImpl implements TTSService {
   final StreamController<TtsSpeechEvent> _speechController =
       StreamController<TtsSpeechEvent>.broadcast();
 
+  /// Timestamp of last speech completion — used by callers to avoid
+  /// STT/TTS concurrency issues on Android (starting STT too soon after
+  /// TTS finishes can permanently block TTS).
+  DateTime? _lastSpeechCompletedAt;
+
   @override
   bool get isSpeaking => _speaking;
 
@@ -66,12 +72,54 @@ class TTSServiceImpl implements TTSService {
   /// Number of messages waiting in the queue.
   int get queueLength => _queue.length;
 
+  /// When the last speech completed — callers should wait ~1.5 s after this
+  /// before starting STT to avoid permanently blocking TTS on Android.
+  DateTime? get lastSpeechCompletedAt => _lastSpeechCompletedAt;
+
+  /// Detects Samsung TTS engine and switches to Google TTS if available.
+  ///
+  /// Samsung's `com.samsung.SMT` engine causes `speak()` to hang forever
+  /// on many Samsung devices (flutter_tts issue #483). Google's engine
+  /// (`com.google.android.tts`) is a reliable alternative present on
+  /// virtually all Android devices with Play Services.
+  Future<void> _selectReliableEngine() async {
+    try {
+      final dynamic defaultEngine = await _tts.getDefaultEngine;
+      final engineName = defaultEngine?.toString() ?? '';
+
+      if (engineName.contains('samsung')) {
+        final dynamic engines = await _tts.getEngines;
+        if (engines is List) {
+          final hasGoogle = engines
+              .any((e) => e.toString().contains('com.google.android.tts'));
+          if (hasGoogle) {
+            await _tts.setEngine('com.google.android.tts');
+            _log.info('Switched from Samsung to Google TTS engine');
+          } else {
+            _log.warning(
+              'Samsung TTS detected but Google TTS unavailable',
+            );
+          }
+        }
+      }
+    } catch (e) {
+      // Engine detection is best-effort — proceed with default engine.
+      _log.warning('TTS engine detection failed, using default');
+    }
+  }
+
   Future<Result<void>> _ensureInitialized() async {
     if (_initialized) {
       return const Result.success(null);
     }
 
     try {
+      // On Android, detect Samsung TTS engine which causes speak() to hang
+      // (flutter_tts issue #483). Switch to Google TTS if available.
+      if (Platform.isAndroid) {
+        await _selectReliableEngine();
+      }
+
       await _tts.setLanguage(language);
       await _tts.setSpeechRate(0.5);
       await _tts.setVolume(1.0);
@@ -192,6 +240,7 @@ class TTSServiceImpl implements TTSService {
   void _onSpeechComplete() {
     _currentRequest = null;
     _speaking = false;
+    _lastSpeechCompletedAt = DateTime.now();
     unawaited(_processQueue());
   }
 

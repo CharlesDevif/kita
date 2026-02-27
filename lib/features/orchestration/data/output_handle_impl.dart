@@ -14,8 +14,10 @@ class OutputHandleImpl implements OutputHandle {
   OutputHandleImpl({
     required this.agentId,
     required OutputCoordinator coordinator,
+    required void Function(String agentId) onComplete,
     this.agentType,
-  }) : _coordinator = coordinator;
+  })  : _coordinator = coordinator,
+        _onComplete = onComplete;
 
   @override
   final String agentId;
@@ -24,6 +26,7 @@ class OutputHandleImpl implements OutputHandle {
   final AgentType? agentType;
 
   final OutputCoordinator _coordinator;
+  final void Function(String agentId) _onComplete;
 
   @override
   Future<void> speak(
@@ -62,5 +65,6 @@ class OutputHandleImpl implements OutputHandle {
   @override
   void complete() {
     _coordinator.notifyAgentComplete(agentId);
+    _onComplete(agentId);
   }
 }

@@ -3,7 +3,7 @@ import 'package:kita/core/errors/kita_failure.dart';
 import 'package:kita/core/errors/result.dart';
 import 'package:kita/features/ai/data/ai_router_impl.dart';
 import 'package:kita/features/ai/data/request_classifier_impl.dart';
-import 'package:kita/features/ai/domain/ai_provider.dart';
+import 'package:kita/features/ai/domain/ai_provider.dart' show AIProvider, batchCompleteAsStream, batchVisionAsStream;
 import 'package:kita/features/ai/domain/ai_request.dart';
 import 'package:kita/features/ai/domain/ai_response.dart';
 import 'package:kita/features/ai/domain/image_data.dart';
@@ -74,6 +74,16 @@ class FakeProvider implements AIProvider {
       ),
       status: AIResponseStatus.success,
     ));
+  }
+
+  @override
+  Stream<String> completeStream(AIRequest request) {
+    return batchCompleteAsStream(() => complete(request));
+  }
+
+  @override
+  Stream<String> visionStream(ImageData image, String prompt, {int? maxTokens}) {
+    return batchVisionAsStream(() => vision(image, prompt, maxTokens: maxTokens));
   }
 
   @override

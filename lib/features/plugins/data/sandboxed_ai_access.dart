@@ -58,4 +58,24 @@ class SandboxedAIAccess implements AIAccess {
     quotaManager.recordCall(pluginId);
     return delegate.vision(image, prompt);
   }
+
+  @override
+  Stream<String> visionStream(ImageData image, String prompt) async* {
+    if (!allowedPermissions.contains('ai.vision')) {
+      _log.warning('Plugin $pluginId denied ai.vision streaming access');
+      throw PermissionFailure(
+        userMessage: "Le plugin n'a pas la permission IA vision.",
+        logMessage: 'Plugin $pluginId tried ai.visionStream without permission',
+        permission: 'ai.vision',
+      );
+    }
+
+    final quotaCheck = quotaManager.checkQuota(pluginId);
+    if (quotaCheck.isFailure) {
+      throw (quotaCheck as Failure).failure;
+    }
+
+    quotaManager.recordCall(pluginId);
+    yield* delegate.visionStream(image, prompt);
+  }
 }

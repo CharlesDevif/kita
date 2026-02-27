@@ -4,6 +4,7 @@ import 'package:kita/features/ai/domain/ai_provider.dart';
 import 'package:kita/features/ai/domain/ai_request.dart';
 import 'package:kita/features/ai/domain/ai_response.dart';
 import 'package:kita/features/ai/domain/ai_router.dart';
+import 'package:kita/features/ai/domain/image_data.dart';
 import 'package:kita/features/ai/domain/provider_tier.dart';
 
 class MockAIRouter implements AIRouter {
@@ -11,6 +12,18 @@ class MockAIRouter implements AIRouter {
 
   @override
   List<AIProvider> get availableProviders => [];
+
+  @override
+  Stream<String> routeStream(AIRequest request) async* {
+    if (shouldFail) throw Exception('Mock stream failure');
+    yield 'Routed stream response';
+  }
+
+  @override
+  Stream<String> routeVisionStream(ImageData image, String prompt, {int? maxTokens}) async* {
+    if (shouldFail) throw Exception('Mock vision stream failure');
+    yield 'Routed vision stream response';
+  }
 
   @override
   Future<Result<AIResponse>> route(AIRequest request) async {

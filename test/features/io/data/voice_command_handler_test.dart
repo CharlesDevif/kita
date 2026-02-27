@@ -82,6 +82,69 @@ void main() {
         expect(result.getOrNull(), equals(VoiceCommand.moreDetails));
       });
 
+      group('recognizes STT misrecognitions of "décris"', () {
+        test('"d\'écran" -> describe (apostrophe + phonetic)', () {
+          final result = VoiceCommandHandler.recognize("d'écran");
+          expect(result.isSuccess, isTrue);
+          expect(result.getOrNull(), equals(VoiceCommand.describe));
+        });
+
+        test('"d\u2019écran" -> describe (curly apostrophe)', () {
+          final result = VoiceCommandHandler.recognize("d\u2019écran");
+          expect(result.isSuccess, isTrue);
+          expect(result.getOrNull(), equals(VoiceCommand.describe));
+        });
+
+        test('"des cris" -> describe (word boundary variant)', () {
+          final result = VoiceCommandHandler.recognize('des cris');
+          expect(result.isSuccess, isTrue);
+          expect(result.getOrNull(), equals(VoiceCommand.describe));
+        });
+
+        test('"décrie" -> describe', () {
+          final result = VoiceCommandHandler.recognize('décrie');
+          expect(result.isSuccess, isTrue);
+          expect(result.getOrNull(), equals(VoiceCommand.describe));
+        });
+
+        test('"décris-moi" -> describe', () {
+          final result = VoiceCommandHandler.recognize('décris-moi');
+          expect(result.isSuccess, isTrue);
+          expect(result.getOrNull(), equals(VoiceCommand.describe));
+        });
+
+        test('"décri" -> describe (truncated)', () {
+          final result = VoiceCommandHandler.recognize('décri');
+          expect(result.isSuccess, isTrue);
+          expect(result.getOrNull(), equals(VoiceCommand.describe));
+        });
+
+        test('"décrire" -> describe (infinitive)', () {
+          final result = VoiceCommandHandler.recognize('décrire');
+          expect(result.isSuccess, isTrue);
+          expect(result.getOrNull(), equals(VoiceCommand.describe));
+        });
+
+        test('"Des cris" with leading capital -> describe', () {
+          final result = VoiceCommandHandler.recognize('Des cris');
+          expect(result.isSuccess, isTrue);
+          expect(result.getOrNull(), equals(VoiceCommand.describe));
+        });
+
+        test('"des crits" -> describe (plural variant)', () {
+          final result = VoiceCommandHandler.recognize('des crits');
+          expect(result.isSuccess, isTrue);
+          expect(result.getOrNull(), equals(VoiceCommand.describe));
+        });
+
+        test('"D\'écran ce que tu vois" with trailing words -> describe', () {
+          final result =
+              VoiceCommandHandler.recognize("D'écran ce que tu vois");
+          expect(result.isSuccess, isTrue);
+          expect(result.getOrNull(), equals(VoiceCommand.describe));
+        });
+      });
+
       test('is case-insensitive', () {
         final result = VoiceCommandHandler.recognize('DECRIS');
         expect(result.isSuccess, isTrue);

@@ -39,6 +39,8 @@ class GeminiNanoDescriptionResult {
 /// Abstraction over Gemini Nano (ML Kit GenAI Image Description API).
 ///
 /// Production code uses [GeminiNanoBridgeImpl]. Tests inject a mock.
+@Deprecated('Use GemmaBridge instead — Gemma3n E2B provides better coverage '
+    'and does not require AICore/S24+ hardware.')
 abstract interface class GeminiNanoBridge {
   /// Check if Gemini Nano image description is available on this device.
   Future<GeminiNanoStatus> checkAvailability();

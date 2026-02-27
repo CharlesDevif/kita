@@ -15,6 +15,8 @@
         android:label="kita"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- OpenCL for Gemma GPU acceleration (optional, soft requirement) -->
+        <uses-native-library android:name="libOpenCL.so" android:required="false"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"

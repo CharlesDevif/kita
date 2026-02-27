@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../ai/data/ai_router_impl.dart';
+import '../../ai/data/providers/gemma_bridge.dart';
 import '../../ai/data/providers/local_provider.dart';
 import '../../ai/data/request_classifier_impl.dart';
 import '../../ai/domain/ai_router.dart';
@@ -10,6 +13,7 @@ import '../../io/data/providers/haptic_providers.dart';
 import '../../io/data/providers/location_providers.dart';
 import '../../io/data/providers/motion_providers.dart';
 import '../../io/data/providers/tts_providers.dart';
+import '../../io/domain/speech_event.dart';
 import '../../plugins/data/plugin_sandbox_impl.dart';
 import '../../shell/di/orb_providers.dart';
 import '../../shell/di/shell_mode_providers.dart';
@@ -49,15 +53,29 @@ final agentBusProvider = Provider<AgentBus>((ref) {
   return bus;
 });
 
+/// The [GemmaBridge] for on-device LLM inference.
+///
+/// Provides text completion and vision via Gemma3n E2B bundled model.
+final gemmaBridgeProvider = Provider<GemmaBridge>((ref) {
+  final bridge = GemmaBridgeImpl();
+  // Fire-and-forget warmup: loads model + runs dummy inference so
+  // subsequent real calls skip GPU pipeline compilation (~4s saved).
+  unawaited(bridge.warmUp());
+  ref.onDispose(bridge.dispose);
+  return bridge;
+});
+
 /// The [AIRouter] for routing AI requests through the fallback chain.
 ///
 /// Starts with [LocalProvider] (always available, works offline).
+/// Gemma provides LLM text + vision; ML Kit provides OCR + label fallback.
 /// Cloud providers (Claude, OpenAI) are added when API keys are configured.
 final aiRouterProvider = Provider<AIRouter>((ref) {
   final classifier = ref.watch(requestClassifierProvider);
+  final gemmaBridge = ref.watch(gemmaBridgeProvider);
   return AIRouterImpl(
     classifier: classifier,
-    providers: [LocalProvider()],
+    providers: [LocalProvider(gemmaBridge: gemmaBridge)],
   );
 });
 
@@ -133,7 +151,25 @@ final outputCoordinatorProvider = Provider<OutputCoordinator>((ref) {
     },
   );
 
-  ref.onDispose(coordinator.dispose);
+  // Bridge TTS speech events to the OutputCoordinator so it can advance
+  // its queue when speech completes. Without this, the coordinator's
+  // _speechCompleter is never completed by real TTS events and falls
+  // back to the 30-second timeout, making the app feel unresponsive.
+  final speechSub = tts.speechEvents.listen((event) {
+    switch (event.type) {
+      case TtsSpeechEventType.started:
+        coordinator.onSpeechStart();
+      case TtsSpeechEventType.completed:
+        coordinator.onSpeechComplete();
+      case TtsSpeechEventType.interrupted:
+        coordinator.onSpeechCancelled();
+    }
+  });
+
+  ref.onDispose(() {
+    speechSub.cancel();
+    coordinator.dispose();
+  });
   return coordinator;
 });
 

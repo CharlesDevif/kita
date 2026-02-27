@@ -807,6 +807,7 @@ void main() {
     final handle = OutputHandleImpl(
       agentId: 'test_agent',
       coordinator: h.coordinator,
+      onComplete: (_) {},
       agentType: AgentType.onDemand,
     );
 
@@ -821,6 +822,7 @@ void main() {
     final handle = OutputHandleImpl(
       agentId: 'test_agent',
       coordinator: h.coordinator,
+      onComplete: (_) {},
     );
 
     await handle.haptic(HapticPattern.warning);
@@ -833,6 +835,7 @@ void main() {
     final handle = OutputHandleImpl(
       agentId: 'stream_agent',
       coordinator: h.coordinator,
+      onComplete: (_) {},
     );
 
     final events = <SpeechEvent>[];

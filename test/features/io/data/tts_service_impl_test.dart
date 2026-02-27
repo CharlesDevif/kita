@@ -23,9 +23,14 @@ void main() {
             case 'setVolume':
             case 'awaitSpeakCompletion':
             case 'stop':
+            case 'setEngine':
               return 1;
             case 'speak':
               return 1;
+            case 'getDefaultEngine':
+              return 'com.google.android.tts';
+            case 'getEngines':
+              return <String>['com.google.android.tts'];
             default:
               return null;
           }
@@ -92,6 +97,10 @@ void main() {
 
       final stopResult = await service.stop();
       expect(stopResult.isSuccess || stopResult.isFailure, isTrue);
+    });
+
+    test('lastSpeechCompletedAt is null initially', () {
+      expect(service.lastSpeechCompletedAt, isNull);
     });
   });
 }

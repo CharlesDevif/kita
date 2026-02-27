@@ -422,6 +422,22 @@ void main() {
         // Should not throw — logs and returns
       });
 
+      test('unknown command provides vocal feedback via TTS', () async {
+        final input = RawInput.voice('quelle heure est-il', clock: clock);
+        await router.route(input);
+
+        // Verify TTS was called with a helpful French message
+        expect(tts.spokenTexts, isNotEmpty);
+        expect(
+          tts.spokenTexts.last,
+          contains("Je n'ai pas compris"),
+        );
+        expect(
+          tts.spokenTexts.last,
+          contains('décris'),
+        );
+      });
+
       test('empty transcript is ignored', () async {
         final input = RawInput.voice('', clock: clock);
         await router.route(input);

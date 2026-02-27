@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' show Size;
 
@@ -6,6 +7,7 @@ import 'package:google_mlkit_image_labeling/google_mlkit_image_labeling.dart'
     as ml;
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart'
     as ml;
+import 'package:path_provider/path_provider.dart' as pp;
 
 /// Results from ML Kit vision analysis.
 class MlKitVisionResult {
@@ -77,7 +79,7 @@ class MlKitBridgeImpl implements MlKitBridge {
       throw StateError('MlKitBridge has been disposed');
     }
 
-    final inputImage = _buildInputImage(bytes, width: width, height: height);
+    final inputImage = await _buildInputImage(bytes, width: width, height: height);
 
     // Run OCR and labeling in parallel.
     final results = await Future.wait([
@@ -107,12 +109,18 @@ class MlKitBridgeImpl implements MlKitBridge {
     _imageLabeler = null;
   }
 
-  ml.InputImage _buildInputImage(
+  /// Builds an [InputImage] from the given bytes.
+  ///
+  /// If [width] and [height] are provided, the bytes are treated as raw
+  /// pixel data (BGRA8888). Otherwise, the bytes are assumed to be encoded
+  /// (JPEG/PNG) and are written to a temp file for ML Kit to decode natively
+  /// via [InputImage.fromFilePath].
+  Future<ml.InputImage> _buildInputImage(
     Uint8List bytes, {
     int? width,
     int? height,
-  }) {
-    // If we have dimensions, use fromBytes with metadata for better accuracy.
+  }) async {
+    // Raw pixel data with known dimensions → fromBytes.
     if (width != null && height != null) {
       return ml.InputImage.fromBytes(
         bytes: bytes,
@@ -125,20 +133,11 @@ class MlKitBridgeImpl implements MlKitBridge {
       );
     }
 
-    // Fallback: write bytes to a temp file would be complex, so use bitmap
-    // constructor with a reasonable guess. For JPEG/PNG encoded bytes the
-    // best approach is fromBytes; but ML Kit actually needs raw pixel data
-    // for fromBytes. For encoded images, we need fromFilePath — which
-    // requires disk I/O. Since we may not always have raw pixels, we handle
-    // this via fromBytes and let ML Kit's native side decode.
-    return ml.InputImage.fromBytes(
-      bytes: bytes,
-      metadata: ml.InputImageMetadata(
-        size: const Size(640, 480),
-        rotation: ml.InputImageRotation.rotation0deg,
-        format: ml.InputImageFormat.nv21,
-        bytesPerRow: 640,
-      ),
-    );
+    // Encoded image (JPEG/PNG) → write to temp file and use fromFilePath.
+    // ML Kit's fromBytes expects raw pixel data, not encoded formats.
+    final tempDir = await pp.getTemporaryDirectory();
+    final tempFile = File('${tempDir.path}/mlkit_input_${DateTime.now().millisecondsSinceEpoch}.jpg');
+    await tempFile.writeAsBytes(bytes);
+    return ml.InputImage.fromFilePath(tempFile.path);
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kita/core/errors/kita_failure.dart';
 import 'package:kita/core/errors/result.dart';
+import 'package:kita/features/ai/data/providers/gemma_bridge.dart';
 import 'package:kita/features/ai/data/providers/gemini_nano_bridge.dart';
 import 'package:kita/features/ai/data/providers/local_provider.dart';
 import 'package:kita/features/ai/data/providers/ml_kit_bridge.dart';
@@ -12,6 +13,9 @@ import 'package:kita/features/ai/domain/ai_response.dart';
 import 'package:kita/features/ai/domain/image_data.dart';
 import 'package:kita/features/ai/domain/provider_tier.dart';
 import 'package:kita/features/ai/domain/request_priority.dart';
+
+// Re-export MockGemmaBridge from the gemma_bridge_test for use here.
+import 'gemma_bridge_test.dart' show MockGemmaBridge;
 
 /// Mock MlKitBridge for unit tests — no native dependencies needed.
 class MockMlKitBridge implements MlKitBridge {
@@ -692,6 +696,155 @@ void main() {
       );
       sw.stop();
       expect(sw.elapsedMilliseconds, lessThan(50));
+    });
+  });
+
+  group('LocalProvider — Gemma integration', () {
+    late LocalProvider provider;
+    late MockMlKitBridge mockMlKit;
+    late MockGemmaBridge mockGemma;
+    late MockGeminiNanoBridge mockNano;
+
+    setUp(() {
+      mockMlKit = MockMlKitBridge();
+      mockGemma = MockGemmaBridge();
+      mockNano = MockGeminiNanoBridge()
+        ..statusToReturn = GeminiNanoStatus.unavailable;
+      provider = LocalProvider(
+        platform: TargetPlatform.android,
+        mlKitBridge: mockMlKit,
+        geminiNanoBridge: mockNano,
+        gemmaBridge: mockGemma,
+      );
+    });
+
+    test('complete uses Gemma when ready', () async {
+      mockGemma.statusToReturn = GemmaModelStatus.ready;
+      mockGemma.completionToReturn =
+          const GemmaCompletionResult(text: 'Bonjour ! Je suis Kita.');
+
+      final result = await provider.complete(
+        const AIRequest(prompt: 'bonjour'),
+      );
+
+      expect(result.isSuccess, isTrue);
+      final response = (result as Success<AIResponse>).value;
+      expect(response.content, equals('Bonjour ! Je suis Kita.'));
+      expect(response.meta.providerId, equals('gemma'));
+      expect(mockGemma.completeCallCount, equals(1));
+    });
+
+    test('complete falls back to keywords when Gemma not ready', () async {
+      mockGemma.statusToReturn = GemmaModelStatus.error;
+
+      final result = await provider.complete(
+        const AIRequest(
+          prompt: 'obstacle devant',
+          priority: RequestPriority.critical,
+        ),
+      );
+
+      expect(result.isSuccess, isTrue);
+      final response = (result as Success<AIResponse>).value;
+      expect(response.content, contains('Attention'));
+      expect(mockGemma.completeCallCount, equals(0));
+    });
+
+    test('complete falls back to keywords when Gemma throws', () async {
+      mockGemma.statusToReturn = GemmaModelStatus.ready;
+      mockGemma.completionError = Exception('Gemma crashed');
+
+      final result = await provider.complete(
+        const AIRequest(prompt: 'aide moi'),
+      );
+
+      expect(result.isSuccess, isTrue);
+      final response = (result as Success<AIResponse>).value;
+      expect(response.content, contains('hors-ligne'));
+      expect(mockGemma.completeCallCount, equals(1));
+    });
+
+    test('complete falls back to keywords when Gemma returns empty', () async {
+      mockGemma.statusToReturn = GemmaModelStatus.ready;
+      mockGemma.completionToReturn = const GemmaCompletionResult(text: '');
+
+      final result = await provider.complete(
+        const AIRequest(prompt: 'random query xyz'),
+      );
+
+      expect(result.isSuccess, isTrue);
+      final response = (result as Success<AIResponse>).value;
+      expect(response.content, contains('locale limitee'));
+    });
+
+    test('vision uses Gemma when ready', () async {
+      mockGemma.statusToReturn = GemmaModelStatus.ready;
+      mockGemma.visionToReturn = const GemmaVisionResult(
+        description: 'Je vois une femme assise a une table avec un ordinateur.',
+      );
+
+      final result = await provider.vision(
+        ImageData(bytes: Uint8List.fromList([1, 2, 3])),
+        'describe',
+      );
+
+      expect(result.isSuccess, isTrue);
+      final response = (result as Success<AIResponse>).value;
+      expect(response.content, contains('femme assise'));
+      expect(response.meta.providerId, equals('gemma'));
+      expect(mockGemma.describeCallCount, equals(1));
+      // Neither Nano nor ML Kit should be called.
+      expect(mockNano.describeCallCount, equals(0));
+      expect(mockMlKit.analyzeCallCount, equals(0));
+    });
+
+    test('vision falls back to ML Kit when Gemma not ready', () async {
+      mockGemma.statusToReturn = GemmaModelStatus.error;
+      mockMlKit.resultToReturn = const MlKitVisionResult(
+        recognizedText: '',
+        labels: [MlKitLabel(label: 'Person', confidence: 0.9)],
+      );
+
+      final result = await provider.vision(
+        ImageData(bytes: Uint8List.fromList([1, 2, 3])),
+        'describe',
+      );
+
+      expect(result.isSuccess, isTrue);
+      final response = (result as Success<AIResponse>).value;
+      expect(response.content, contains('personne'));
+      expect(mockGemma.describeCallCount, equals(0));
+      expect(mockMlKit.analyzeCallCount, equals(1));
+    });
+
+    test('vision falls through Gemma → Nano → ML Kit', () async {
+      mockGemma.statusToReturn = GemmaModelStatus.ready;
+      mockGemma.visionError = Exception('Gemma vision crashed');
+      mockNano.statusToReturn = GeminiNanoStatus.unavailable;
+      mockMlKit.resultToReturn = const MlKitVisionResult(
+        recognizedText: 'Rue de la Paix',
+        labels: [],
+      );
+
+      final result = await provider.vision(
+        ImageData(bytes: Uint8List.fromList([1, 2, 3])),
+        'describe',
+      );
+
+      expect(result.isSuccess, isTrue);
+      final response = (result as Success<AIResponse>).value;
+      expect(response.content, contains('Rue de la Paix'));
+      expect(response.meta.providerId, equals('mlkit'));
+      // All providers were tried.
+      expect(mockGemma.describeCallCount, equals(1));
+      expect(mockMlKit.analyzeCallCount, equals(1));
+    });
+
+    test('dispose releases Gemma bridge', () async {
+      await provider.dispose();
+      expect(mockGemma.disposeCalled, isTrue);
+      expect(mockMlKit.disposeCalled, isTrue);
+      expect(mockNano.disposeCalled, isTrue);
     });
   });
 

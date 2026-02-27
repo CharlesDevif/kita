@@ -73,4 +73,10 @@ class RealAIAccess implements AIAccess {
       imageData: image,
     ));
   }
+
+  @override
+  Stream<String> visionStream(ImageData image, String prompt) {
+    _log.debug('Routing AI vision stream request via real router');
+    return _router.routeVisionStream(image, prompt);
+  }
 }

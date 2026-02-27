@@ -8,6 +8,7 @@ import '../../domain/ai_request.dart';
 import '../../domain/ai_response.dart';
 import '../../domain/image_data.dart';
 import '../../domain/provider_tier.dart';
+import 'gemma_bridge.dart';
 import 'gemini_nano_bridge.dart';
 import 'ml_kit_bridge.dart';
 
@@ -56,14 +57,16 @@ const _labelTranslations = <String, String>{
 
 /// Local AI provider for on-device inference.
 ///
-/// Two-tier vision architecture:
-/// 1. **Gemini Nano** (Android, AICore devices) — rich natural language
-///    descriptions via ML Kit GenAI Image Description API.
-/// 2. **ML Kit fallback** (Android/iOS) — OCR + image labels for a basic
+/// Three-tier architecture:
+/// 1. **Gemma** (bundled LLM) — rich text completion and vision via
+///    flutter_gemma with Gemma3n E2B model.
+/// 2. **Gemini Nano** (Android, AICore devices) — vision fallback via
+///    ML Kit GenAI Image Description API.
+/// 3. **ML Kit fallback** (Android/iOS) — OCR + image labels for a basic
 ///    "Je vois : personne, table, chaise" response.
 ///
-/// The provider tries Gemini Nano first (if available), then falls back to
-/// ML Kit. Text-only requests always use keyword matching (no LLM needed).
+/// For text: Gemma first, then keyword matching fallback.
+/// For vision: Gemma first, then Gemini Nano, then ML Kit.
 ///
 /// Always returns [ProviderTier.local] and works 100% offline.
 class LocalProvider implements AIProvider {
@@ -71,9 +74,11 @@ class LocalProvider implements AIProvider {
     TargetPlatform? platform,
     MlKitBridge? mlKitBridge,
     GeminiNanoBridge? geminiNanoBridge,
+    GemmaBridge? gemmaBridge,
   })  : _platform = platform ?? defaultTargetPlatform,
         _mlKitBridge = mlKitBridge,
-        _geminiNanoBridge = geminiNanoBridge;
+        _geminiNanoBridge = geminiNanoBridge,
+        _gemmaBridge = gemmaBridge;
 
   static final _log = KitaLogger('AI');
 
@@ -87,6 +92,12 @@ class LocalProvider implements AIProvider {
   /// [GeminiNanoBridgeImpl] is lazily created on first vision call
   /// (Android only).
   GeminiNanoBridge? _geminiNanoBridge;
+
+  /// Injected Gemma bridge for testability.
+  GemmaBridge? _gemmaBridge;
+
+  /// Cached Gemma model status. Avoids re-checking on every call.
+  GemmaModelStatus? _gemmaStatus;
 
   /// Cached result of Gemini Nano availability check.
   /// Avoids re-checking on every vision call.
@@ -125,11 +136,19 @@ class LocalProvider implements AIProvider {
 
     _log.debug('Processing local request');
 
+    final stopwatch = Stopwatch()..start();
+
+    // Tier 1: Try Gemma LLM for rich text responses.
+    final gemmaResult = await _tryGemmaComplete(request, stopwatch);
+    if (gemmaResult != null) return gemmaResult;
+
+    // Tier 2: Fall back to keyword matching.
+    stopwatch.stop();
     return Result.success(AIResponse(
       content: _localResponse(request.prompt),
       meta: AIResponseMeta(
         providerId: id,
-        latency: const Duration(milliseconds: 10),
+        latency: stopwatch.elapsed,
         tier: ProviderTier.local,
       ),
       status: AIResponseStatus.degraded,
@@ -154,14 +173,98 @@ class LocalProvider implements AIProvider {
 
     final stopwatch = Stopwatch()..start();
 
-    // Tier 1: Try Gemini Nano (Android only, AICore devices).
+    // Tier 1: Try Gemma vision (bundled LLM, all platforms).
+    final gemmaResult = await _tryGemmaVision(image, prompt, stopwatch);
+    if (gemmaResult != null) return gemmaResult;
+
+    // Tier 2: Try Gemini Nano (Android only, AICore devices).
     if (_platform == TargetPlatform.android) {
       final nanoResult = await _tryGeminiNano(image, stopwatch);
       if (nanoResult != null) return nanoResult;
     }
 
-    // Tier 2: Fall back to ML Kit (labels + OCR).
+    // Tier 3: Fall back to ML Kit (labels + OCR).
     return _tryMlKit(image, stopwatch);
+  }
+
+  @override
+  Stream<String> visionStream(
+    ImageData image,
+    String prompt, {
+    int? maxTokens,
+  }) async* {
+    if (!isAvailable) {
+      throw AIProviderFailure(
+        userMessage: 'IA locale non disponible sur cette plateforme.',
+        logMessage: 'Local vision stream not available on $_platform',
+        providerId: id,
+      );
+    }
+
+    _log.debug('Processing local vision stream request');
+
+    // Tier 1: Try Gemma streaming vision (native token-by-token).
+    if (_gemmaBridge != null) {
+      try {
+        final status = await _checkGemmaStatus();
+        if (status == GemmaModelStatus.ready) {
+          var hasYielded = false;
+          await for (final token
+              in _gemmaBridge!.describeImageStream(image.bytes, prompt: prompt)) {
+            hasYielded = true;
+            yield token;
+          }
+          if (hasYielded) return;
+        }
+      } on Exception catch (e, stack) {
+        _log.warning(
+          'Gemma vision streaming failed, falling back',
+          error: e,
+          stackTrace: stack,
+        );
+      }
+    }
+
+    // Tier 2: Try Gemini Nano (batch, yields full result as one chunk).
+    if (_platform == TargetPlatform.android) {
+      try {
+        final bridge = _getOrCreateNanoBridge();
+        final status = await _checkNanoAvailability(bridge);
+        if (status == GeminiNanoStatus.available) {
+          final result = await bridge.describeImage(image.bytes);
+          if (result.description.isNotEmpty) {
+            yield result.description;
+            return;
+          }
+        }
+      } on Exception catch (e, stack) {
+        _log.warning(
+          'Gemini Nano vision streaming failed, falling back',
+          error: e,
+          stackTrace: stack,
+        );
+      }
+    }
+
+    // Tier 3: ML Kit fallback (batch, yields full result as one chunk).
+    try {
+      final bridge = _getOrCreateMlKitBridge();
+      final result = await bridge.analyzeImage(
+        image.bytes,
+        width: image.width,
+        height: image.height,
+      );
+      yield _formatVisionResult(result);
+    } on Exception catch (e, stack) {
+      _log.error('ML Kit vision stream failed', error: e, stackTrace: stack);
+      throw AIProviderFailure(
+        userMessage: 'Analyse d\'image locale échouée.',
+        logMessage: 'ML Kit vision stream error: ${e.runtimeType}',
+        providerId: id,
+        cause: e,
+        stackTrace: stack,
+      );
+    }
   }
 
   @override
@@ -170,9 +273,33 @@ class LocalProvider implements AIProvider {
     return const Result.success(null);
   }
 
+  @override
+  Stream<String> completeStream(AIRequest request) async* {
+    if (_gemmaBridge == null) return;
+
+    try {
+      final status = await _checkGemmaStatus();
+      if (status != GemmaModelStatus.ready) {
+        _log.debug('Gemma not ready for streaming, returning empty stream');
+        return;
+      }
+
+      yield* _gemmaBridge!.completeStream(request.prompt, maxTokens: request.maxTokens);
+    } on Exception catch (e, stack) {
+      _log.warning(
+        'Gemma streaming failed',
+        error: e,
+        stackTrace: stack,
+      );
+      // Return empty stream on error — caller should handle absence.
+    }
+  }
+
   /// Releases native resources. Must be called when the provider
   /// is no longer needed (e.g. via `ref.onDispose`).
   Future<void> dispose() async {
+    await _gemmaBridge?.dispose();
+    _gemmaBridge = null;
     await _geminiNanoBridge?.dispose();
     _geminiNanoBridge = null;
     await _mlKitBridge?.dispose();
@@ -180,7 +307,107 @@ class LocalProvider implements AIProvider {
   }
 
   // ---------------------------------------------------------------------------
-  // Gemini Nano (Tier 1)
+  // Gemma LLM (Tier 1)
+  // ---------------------------------------------------------------------------
+
+  /// Attempts Gemma text completion. Returns null if unavailable or failed
+  /// (caller should fall through to keyword matching).
+  Future<Result<AIResponse>?> _tryGemmaComplete(
+    AIRequest request,
+    Stopwatch stopwatch,
+  ) async {
+    if (_gemmaBridge == null) return null;
+
+    try {
+      final status = await _checkGemmaStatus();
+      if (status != GemmaModelStatus.ready) {
+        _log.debug('Gemma not ready (status: ${status.name}), '
+            'falling back to keyword matching');
+        return null;
+      }
+
+      final result = await _gemmaBridge!.complete(
+        request.prompt,
+        maxTokens: request.maxTokens,
+      );
+      stopwatch.stop();
+
+      if (result.text.isEmpty) return null;
+
+      _log.info('Gemma text completion done');
+      return Result.success(AIResponse(
+        content: result.text,
+        meta: AIResponseMeta(
+          providerId: 'gemma',
+          latency: stopwatch.elapsed,
+          tier: ProviderTier.local,
+        ),
+        status: AIResponseStatus.degraded,
+      ));
+    } on Exception catch (e, stack) {
+      _log.warning(
+        'Gemma text completion failed, falling back to keywords',
+        error: e,
+        stackTrace: stack,
+      );
+      return null;
+    }
+  }
+
+  /// Attempts Gemma vision. Returns null if unavailable or failed
+  /// (caller should fall through to Gemini Nano / ML Kit).
+  Future<Result<AIResponse>?> _tryGemmaVision(
+    ImageData image,
+    String prompt,
+    Stopwatch stopwatch,
+  ) async {
+    if (_gemmaBridge == null) return null;
+
+    try {
+      final status = await _checkGemmaStatus();
+      if (status != GemmaModelStatus.ready) {
+        _log.debug('Gemma not ready (status: ${status.name}), '
+            'falling back to other vision providers');
+        return null;
+      }
+
+      final result = await _gemmaBridge!.describeImage(
+        image.bytes,
+        prompt: prompt,
+      );
+      stopwatch.stop();
+
+      if (result.description.isEmpty) return null;
+
+      _log.info('Gemma vision completed');
+      return Result.success(AIResponse(
+        content: result.description,
+        meta: AIResponseMeta(
+          providerId: 'gemma',
+          latency: stopwatch.elapsed,
+          tier: ProviderTier.local,
+        ),
+        status: AIResponseStatus.degraded,
+      ));
+    } on Exception catch (e, stack) {
+      _log.warning(
+        'Gemma vision failed, falling back to other providers',
+        error: e,
+        stackTrace: stack,
+      );
+      return null;
+    }
+  }
+
+  /// Check and cache Gemma model status.
+  Future<GemmaModelStatus> _checkGemmaStatus() async {
+    if (_gemmaStatus == GemmaModelStatus.ready) return GemmaModelStatus.ready;
+    _gemmaStatus = await _gemmaBridge!.checkStatus();
+    return _gemmaStatus!;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Gemini Nano (Tier 2)
   // ---------------------------------------------------------------------------
 
   /// Attempts Gemini Nano vision. Returns null if unavailable or failed

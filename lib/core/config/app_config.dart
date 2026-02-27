@@ -5,7 +5,7 @@
 abstract final class AppConfig {
   // AI Provider timeouts
   static const Duration aiCloudTimeout = Duration(seconds: 3);
-  static const Duration aiLocalTimeout = Duration(milliseconds: 500);
+  static const Duration aiLocalTimeout = Duration(seconds: 15);
   static const Duration pluginTimeout = Duration(seconds: 10);
   static const Duration networkTimeout = Duration(seconds: 10);
 

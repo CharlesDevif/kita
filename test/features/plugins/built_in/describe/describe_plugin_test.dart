@@ -200,7 +200,7 @@ void main() {
       expect(output.content, contains('salon'));
     });
 
-    test('response metadata contains provider info', () async {
+    test('response metadata contains streaming flag', () async {
       mockSensors.photoToReturn = testImage();
       mockAI.responseToReturn = testAIResponse();
 
@@ -208,12 +208,10 @@ void main() {
       final output = (result as Success<AgentOutput>).value;
 
       expect(output.metadata, isNotNull);
-      expect(output.metadata!['provider'], 'claude');
-      expect(output.metadata!['latency_ms'], 2500);
-      expect(output.metadata!['tier'], 'cloudPowerful');
+      expect(output.metadata!['streaming'], isTrue);
     });
 
-    test('sends describe prompt to AI vision', () async {
+    test('sends describe prompt to AI vision stream', () async {
       mockSensors.photoToReturn = testImage();
       mockAI.responseToReturn = testAIResponse();
 
@@ -270,7 +268,7 @@ void main() {
       final messages = logEntries.map((e) => e.message).toList();
       expect(messages, contains(contains('Handling command')));
       expect(messages, contains(contains('Photo captured')));
-      expect(messages, contains(contains('Description received')));
+      expect(messages, contains(contains('Streaming description complete')));
     });
 
     test('plugin logs contain [Plugin.Describe] source', () async {

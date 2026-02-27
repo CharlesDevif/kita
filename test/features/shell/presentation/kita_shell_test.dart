@@ -7,6 +7,7 @@ import 'package:kita/features/orchestration/di/providers.dart';
 import 'package:kita/features/shell/domain/orb_state.dart';
 import 'package:kita/features/shell/domain/shell_mode.dart';
 import 'package:kita/features/shell/presentation/kita_orb.dart';
+import 'package:kita/features/shell/presentation/kita_input.dart';
 import 'package:kita/features/shell/presentation/kita_shell.dart';
 import 'package:kita/features/shell/presentation/kita_status_indicator.dart';
 
@@ -232,10 +233,79 @@ void main() {
       expect(find.byType(FocusTraversalOrder), findsNWidgets(3));
     });
   });
+
+  group('KitaShell onboarding input visibility', () {
+    Widget buildShellWithOnboarding({
+      bool onboardingComplete = false,
+      Widget? inputChild,
+    }) {
+      return ProviderScope(
+        overrides: [
+          hasActiveOnDemandProvider.overrideWithValue(false),
+          onboardingCompleteProvider.overrideWith(
+            () => onboardingComplete
+                ? _CompletedOnboarding()
+                : _IncompleteOnboarding(),
+          ),
+        ],
+        child: MaterialApp(
+          home: MediaQuery(
+            data: const MediaQueryData(
+              size: Size(400, 800),
+              disableAnimations: true,
+            ),
+            child: KitaShell(
+              modeOverride: ShellMode.passive,
+              orbStateOverride: OrbState.passive,
+              inputChild: inputChild,
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('hides KitaInput during onboarding', (tester) async {
+      await tester.pumpWidget(
+        buildShellWithOnboarding(onboardingComplete: false),
+      );
+      await tester.pump();
+
+      expect(find.byType(KitaInput), findsNothing);
+    });
+
+    testWidgets('shows KitaInput after onboarding completes', (tester) async {
+      await tester.pumpWidget(
+        buildShellWithOnboarding(onboardingComplete: true),
+      );
+      await tester.pump();
+
+      expect(find.byType(KitaInput), findsOneWidget);
+    });
+
+    testWidgets('shows custom inputChild even during onboarding',
+        (tester) async {
+      await tester.pumpWidget(
+        buildShellWithOnboarding(
+          onboardingComplete: false,
+          inputChild: const Text('Custom input'),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Custom input'), findsOneWidget);
+      expect(find.byType(KitaInput), findsNothing);
+    });
+  });
 }
 
 /// Notifier that starts with onboarding already complete.
 class _CompletedOnboarding extends OnboardingCompleteNotifier {
   @override
   bool build() => true;
+}
+
+/// Notifier that starts with onboarding NOT complete.
+class _IncompleteOnboarding extends OnboardingCompleteNotifier {
+  @override
+  bool build() => false;
 }

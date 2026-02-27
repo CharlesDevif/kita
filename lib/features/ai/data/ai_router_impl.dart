@@ -4,6 +4,7 @@ import '../domain/ai_provider.dart';
 import '../domain/ai_request.dart';
 import '../domain/ai_response.dart';
 import '../domain/ai_router.dart';
+import '../domain/image_data.dart';
 import '../domain/request_classifier.dart';
 import '../domain/request_priority.dart';
 import 'fallback_chain.dart';
@@ -65,6 +66,23 @@ class AIRouterImpl implements AIRouter {
         status: response.status,
       );
     });
+  }
+
+  @override
+  Stream<String> routeStream(AIRequest request) {
+    final classified = _classifyIfNeeded(request);
+    _log.debug('Routing text stream request');
+    return _fallbackChain.executeStream(classified);
+  }
+
+  @override
+  Stream<String> routeVisionStream(
+    ImageData image,
+    String prompt, {
+    int? maxTokens,
+  }) {
+    _log.debug('Routing vision stream request');
+    return _fallbackChain.executeVisionStream(image, prompt, maxTokens: maxTokens);
   }
 
   AIRequest _classifyIfNeeded(AIRequest request) {

@@ -83,6 +83,16 @@ class _ConfigurableMockProvider implements AIProvider {
   }
 
   @override
+  Stream<String> completeStream(AIRequest request) {
+    return batchCompleteAsStream(() => complete(request));
+  }
+
+  @override
+  Stream<String> visionStream(ImageData image, String prompt, {int? maxTokens}) {
+    return batchVisionAsStream(() => vision(image, prompt, maxTokens: maxTokens));
+  }
+
+  @override
   Future<Result<void>> validateApiKey(String key) async {
     return const Result.success(null);
   }

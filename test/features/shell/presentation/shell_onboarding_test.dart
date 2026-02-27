@@ -1,10 +1,18 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kita/core/errors/kita_failure.dart';
 import 'package:kita/core/errors/result.dart';
+import 'package:kita/features/ai/data/providers/gemma_bridge.dart';
+import 'package:kita/features/ai/domain/ai_provider.dart';
+import 'package:kita/features/ai/domain/ai_request.dart';
+import 'package:kita/features/ai/domain/ai_response.dart';
+import 'package:kita/features/ai/domain/ai_router.dart';
+import 'package:kita/features/ai/domain/image_data.dart';
+import 'package:kita/features/ai/domain/provider_tier.dart';
 import 'package:kita/features/io/data/providers/stt_providers.dart';
 import 'package:kita/features/io/data/providers/tts_providers.dart';
 import 'package:kita/features/io/domain/speech_event.dart';
@@ -13,25 +21,31 @@ import 'package:kita/features/io/domain/tts_service.dart';
 import 'package:kita/features/onboarding/di/providers.dart';
 import 'package:kita/features/onboarding/domain/permission_storytelling.dart';
 import 'package:kita/features/onboarding/domain/profile_detection.dart';
+import 'package:kita/features/orchestration/di/providers.dart';
 import 'package:kita/features/shell/presentation/shell_onboarding.dart';
 
 void main() {
   late _FakeTTSService fakeTts;
   late _FakeSTTService fakeStt;
   late _FakePermissionRequester fakePermissions;
+  late _FakeAIRouter fakeAIRouter;
+  late _FakeGemmaBridge fakeGemmaBridge;
 
   setUp(() {
     fakeTts = _FakeTTSService();
     fakeStt = _FakeSTTService();
     fakePermissions = _FakePermissionRequester();
+    fakeAIRouter = _FakeAIRouter();
+    fakeGemmaBridge = _FakeGemmaBridge();
   });
 
   tearDown(() {
     fakeTts.dispose();
   });
 
-  Widget buildTestApp({bool sttAvailable = true}) {
+  Widget buildTestApp({bool sttAvailable = true, bool aiAvailable = false}) {
     fakeStt.shouldFail = !sttAvailable;
+    fakeAIRouter.hasProviders = aiAvailable;
 
     return ProviderScope(
       overrides: [
@@ -41,6 +55,8 @@ void main() {
         ttsServiceProvider.overrideWithValue(fakeTts),
         sttServiceProvider.overrideWithValue(fakeStt),
         permissionRequesterProvider.overrideWithValue(fakePermissions),
+        aiRouterProvider.overrideWithValue(fakeAIRouter),
+        gemmaBridgeProvider.overrideWithValue(fakeGemmaBridge),
       ],
       child: const MaterialApp(
         home: Scaffold(
@@ -110,6 +126,54 @@ void main() {
       // Should advance to camera permission without name
       expect(fakeTts.lastSpokenText, contains('camera'));
       expect(fakeTts.lastSpokenText, isNot(contains('Marie')));
+    });
+
+    testWidgets('skips name when transcript is only filler words',
+        (tester) async {
+      await tester.pumpWidget(buildTestApp());
+      await tester.pumpAndSettle();
+
+      await tester.pump();
+      fakeStt.emitTranscript("alors ca c'est OK");
+      await tester.pumpAndSettle();
+
+      // No name should be captured — camera prompt without "Enchantee"
+      expect(fakeTts.lastSpokenText, contains('camera'));
+      expect(fakeTts.lastSpokenText, isNot(contains('Enchantee')));
+    });
+
+    testWidgets('extracts name from "je m\'appelle Marie"', (tester) async {
+      await tester.pumpWidget(buildTestApp());
+      await tester.pumpAndSettle();
+
+      await tester.pump();
+      fakeStt.emitTranscript("je m'appelle Marie");
+      await tester.pumpAndSettle();
+
+      expect(fakeTts.lastSpokenText, contains('Enchantee Marie'));
+    });
+
+    testWidgets('extracts name from "bonjour moi c\'est Thomas"',
+        (tester) async {
+      await tester.pumpWidget(buildTestApp());
+      await tester.pumpAndSettle();
+
+      await tester.pump();
+      fakeStt.emitTranscript("bonjour moi c'est Thomas");
+      await tester.pumpAndSettle();
+
+      expect(fakeTts.lastSpokenText, contains('Enchantee Thomas'));
+    });
+
+    testWidgets('extracts simple one-word name "Marie"', (tester) async {
+      await tester.pumpWidget(buildTestApp());
+      await tester.pumpAndSettle();
+
+      await tester.pump();
+      fakeStt.emitTranscript('Marie');
+      await tester.pumpAndSettle();
+
+      expect(fakeTts.lastSpokenText, contains('Enchantee Marie'));
     });
   });
 
@@ -220,7 +284,7 @@ void main() {
       fakeStt.emitTranscript('decris');
       await tester.pumpAndSettle();
 
-      // Wait for completion delays
+      // Wait for completion delays (2s + 2s)
       await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
       await tester.pump(const Duration(seconds: 2));
@@ -319,7 +383,7 @@ void main() {
       await tester.tap(find.byKey(const Key('onboarding_continue')));
       await tester.pumpAndSettle();
 
-      // Wait for completion
+      // Wait for completion delays (2s + 2s)
       await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
       await tester.pump(const Duration(seconds: 2));
@@ -381,6 +445,66 @@ void main() {
       );
 
       handle.dispose();
+    });
+  });
+
+  group('ShellOnboarding AI probe race condition', () {
+    testWidgets('probe waits for Gemma warmup before sending request',
+        (tester) async {
+      // Gemma starts in loading state, simulating warmup in progress.
+      fakeGemmaBridge.status = GemmaModelStatus.loading;
+      fakeAIRouter.hasProviders = true;
+      fakeAIRouter.probeResponse = 'Bonjour';
+
+      await tester.pumpWidget(buildTestApp(aiAvailable: true));
+
+      // The probe is running but Gemma is still loading.
+      // No route call should have been made yet.
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(fakeAIRouter.routeCallCount, 0);
+
+      // Simulate Gemma finishing warmup after ~1s.
+      fakeGemmaBridge.status = GemmaModelStatus.ready;
+
+      // Pump past the 500ms poll interval so the probe picks up the ready state.
+      await tester.pump(const Duration(milliseconds: 600));
+      // Allow the route Future to complete.
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Now the probe should have called aiRouter.route().
+      expect(fakeAIRouter.routeCallCount, greaterThan(0));
+    });
+
+    testWidgets('probe aborts when Gemma is in error state', (tester) async {
+      fakeGemmaBridge.status = GemmaModelStatus.error;
+      fakeAIRouter.hasProviders = true;
+
+      await tester.pumpWidget(buildTestApp(aiAvailable: true));
+      await tester.pumpAndSettle();
+
+      // Probe should have aborted without calling route.
+      expect(fakeAIRouter.routeCallCount, 0);
+    });
+
+    testWidgets('probe skips when Gemma warmup times out', (tester) async {
+      // Gemma stays in loading state forever — simulates a stalled warmup.
+      fakeGemmaBridge.status = GemmaModelStatus.loading;
+      fakeAIRouter.hasProviders = true;
+
+      await tester.pumpWidget(buildTestApp(aiAvailable: true));
+
+      // Pump past the 20s probe timeout (poll every 500ms × 40 = 20s).
+      // Add extra pumps to clear pending timers from the poll loop.
+      for (var i = 0; i < 45; i++) {
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+
+      // Also pump through STT timeouts (8s default) that may be running.
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pumpAndSettle();
+
+      // Probe should NOT have sent a route request since Gemma never became ready.
+      expect(fakeAIRouter.routeCallCount, 0);
     });
   });
 }
@@ -475,4 +599,109 @@ class _FakeSTTService implements STTService {
   void emitTranscript(String text) {
     _pendingCallback?.call(text, true);
   }
+}
+
+class _FakeAIRouter implements AIRouter {
+  bool hasProviders = false;
+  int routeCallCount = 0;
+  String? probeResponse;
+
+  @override
+  List<AIProvider> get availableProviders =>
+      hasProviders ? [_FakeAIProvider()] : [];
+
+  @override
+  Future<Result<AIResponse>> route(AIRequest request) async {
+    routeCallCount++;
+    return Result.success(AIResponse(
+      content: probeResponse ?? '',
+      meta: const AIResponseMeta(
+        providerId: 'fake',
+        latency: Duration.zero,
+        tier: ProviderTier.local,
+      ),
+      status: AIResponseStatus.success,
+    ));
+  }
+
+  @override
+  Stream<String> routeStream(AIRequest request) async* {
+    // Empty stream — onboarding falls back to non-streaming path.
+  }
+
+  @override
+  Stream<String> routeVisionStream(ImageData image, String prompt,
+      {int? maxTokens}) async* {
+    yield 'Vision response';
+  }
+}
+
+class _FakeAIProvider implements AIProvider {
+  @override
+  String get id => 'fake';
+  @override
+  String get displayName => 'Fake';
+  @override
+  ProviderTier get tier => ProviderTier.local;
+  @override
+  bool get isAvailable => true;
+  @override
+  Future<Result<AIResponse>> complete(AIRequest request) async =>
+      throw UnimplementedError();
+  @override
+  Stream<String> completeStream(AIRequest request) => throw UnimplementedError();
+  @override
+  Future<Result<AIResponse>> vision(ImageData image, String prompt,
+          {int? maxTokens}) async =>
+      throw UnimplementedError();
+  @override
+  Stream<String> visionStream(ImageData image, String prompt,
+          {int? maxTokens}) =>
+      throw UnimplementedError();
+  @override
+  Future<Result<void>> validateApiKey(String key) async =>
+      throw UnimplementedError();
+}
+
+class _FakeGemmaBridge implements GemmaBridge {
+  GemmaModelStatus status = GemmaModelStatus.ready;
+
+  @override
+  Future<GemmaModelStatus> checkStatus() async => status;
+
+  @override
+  Future<void> warmUp() async {}
+
+  @override
+  Future<GemmaCompletionResult> complete(
+    String prompt, {
+    String? systemPrompt,
+    int? maxTokens,
+  }) async {
+    return const GemmaCompletionResult(text: '');
+  }
+
+  @override
+  Stream<String> completeStream(
+    String prompt, {
+    String? systemPrompt,
+    int? maxTokens,
+  }) async* {}
+
+  @override
+  Future<GemmaVisionResult> describeImage(
+    Uint8List bytes, {
+    String? prompt,
+  }) async {
+    return const GemmaVisionResult(description: '');
+  }
+
+  @override
+  Stream<String> describeImageStream(
+    Uint8List bytes, {
+    String? prompt,
+  }) async* {}
+
+  @override
+  Future<void> dispose() async {}
 }

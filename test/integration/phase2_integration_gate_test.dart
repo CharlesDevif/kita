@@ -4,6 +4,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kita/features/onboarding/di/providers.dart';
 import 'package:kita/features/orchestration/di/providers.dart';
 import 'package:sqlite3/sqlite3.dart' as sql;
 
@@ -112,6 +113,16 @@ class _MockAIProvider implements AIProvider {
   }
 
   @override
+  Stream<String> completeStream(AIRequest request) {
+    return batchCompleteAsStream(() => complete(request));
+  }
+
+  @override
+  Stream<String> visionStream(ImageData image, String prompt, {int? maxTokens}) {
+    return batchVisionAsStream(() => vision(image, prompt, maxTokens: maxTokens));
+  }
+
+  @override
   Future<Result<void>> validateApiKey(String key) async {
     return const Result.success(null);
   }
@@ -167,6 +178,11 @@ class _MockAIAccess implements AIAccess {
       ),
       status: AIResponseStatus.success,
     ));
+  }
+
+  @override
+  Stream<String> visionStream(ImageData image, String prompt) async* {
+    yield 'Photo: un trottoir avec des pietons';
   }
 }
 
@@ -246,10 +262,15 @@ void main() {
         ProviderScope(
           overrides: [
             hasActiveOnDemandProvider.overrideWithValue(false),
+            onboardingCompleteProvider
+                .overrideWith(_CompletedOnboarding.new),
           ],
-          child: const MaterialApp(
-            home: KitaShell(
-              orbStateOverride: OrbState.passive,
+          child: const MediaQuery(
+            data: MediaQueryData(disableAnimations: true),
+            child: MaterialApp(
+              home: KitaShell(
+                orbStateOverride: OrbState.passive,
+              ),
             ),
           ),
         ),
@@ -701,4 +722,10 @@ void main() {
       expect(hapticTriggered, isTrue);
     });
   });
+}
+
+/// Notifier that starts with onboarding already complete.
+class _CompletedOnboarding extends OnboardingCompleteNotifier {
+  @override
+  bool build() => true;
 }

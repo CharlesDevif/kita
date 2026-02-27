@@ -101,6 +101,12 @@ class FakeAIAccess implements AIAccess {
       status: AIResponseStatus.success,
     ));
   }
+
+  @override
+  Stream<String> visionStream(ImageData image, String prompt) async* {
+    visionCount++;
+    yield 'Vision response';
+  }
 }
 
 class FakeMemoryAccess implements MemoryAccess {

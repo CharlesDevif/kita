@@ -451,7 +451,7 @@ void main() {
       await spawnPlugin();
     });
 
-    test('flags offline when AI response is degraded', () async {
+    test('degraded AI response still streams content successfully', () async {
       mockSensors.photoToReturn = testImage();
       mockAI.responseToReturn = testAIResponse(
         content: 'Texte OCR brut.',
@@ -460,18 +460,21 @@ void main() {
 
       final result = await plugin.handleInput(_agentInput());
 
+      // Streaming pipeline delivers content regardless of degraded status
+      // (offline detection is not available in streaming mode — tokens carry
+      // no metadata). The content itself is still delivered to TTS.
       expect(result.isSuccess, isTrue);
-      expect(plugin.state.isOffline, isTrue);
       final output = (result as Success<AgentOutput>).value;
-      expect(output.content, contains('Mode local'));
-      expect(output.metadata!['offline'], true);
+      expect(output.content, contains('Texte OCR brut'));
+      expect(output.metadata!['streaming'], true);
     });
 
-    test('detailed request with degraded response flags offline', () async {
+    test('detailed request with degraded response still delivers content',
+        () async {
       // First: normal describe
       await doInitialDescribe(content: 'Normal.');
 
-      // Then: detailed, but degraded
+      // Then: detailed, but degraded — streaming delivers content anyway
       mockAI.responseToReturn = testAIResponse(
         content: 'Texte OCR detaille.',
         status: AIResponseStatus.degraded,
@@ -483,7 +486,7 @@ void main() {
 
       expect(result.isSuccess, isTrue);
       final output = (result as Success<AgentOutput>).value;
-      expect(output.content, contains('Mode local'));
+      expect(output.content, contains('Texte OCR detaille'));
     });
   });
 
@@ -614,13 +617,11 @@ void main() {
       // The Shell uses these fields to route through ProfileAdapter:
       // - type: determines output modality
       // - content: text for TTS (vocal) and viewport (visual)
-      // - metadata: provider info for logging/analytics
+      // - metadata: streaming flag for logging/analytics
       expect(output.type, AgentOutputType.text);
       expect(output.content, isNotEmpty);
       expect(output.metadata, isNotNull);
-      expect(output.metadata!['provider'], isA<String>());
-      expect(output.metadata!['latency_ms'], isA<int>());
-      expect(output.metadata!['tier'], isA<String>());
+      expect(output.metadata!['streaming'], true);
     });
 
     test('merci response contains return_passive action for Shell', () async {
@@ -639,7 +640,7 @@ void main() {
       expect(output.content, isEmpty);
     });
 
-    test('offline response contains offline flag for Shell', () async {
+    test('degraded response still delivered via streaming', () async {
       mockSensors.photoToReturn = testImage();
       mockAI.responseToReturn = testAIResponse(
         content: 'Texte OCR.',
@@ -650,10 +651,11 @@ void main() {
 
       final output = (result as Success<AgentOutput>).value;
 
-      // The Shell uses 'offline' metadata to adjust ProfileAdapter output
-      // (e.g., announce "Mode local" prefix via TTS).
-      expect(output.metadata!['offline'], true);
-      expect(output.content, contains('Mode local'));
+      // Streaming pipeline delivers content directly — offline detection
+      // is not available at the plugin level (tokens carry no metadata).
+      // The content is still fully delivered to TTS.
+      expect(output.metadata!['streaming'], true);
+      expect(output.content, contains('Texte OCR'));
     });
   });
 }

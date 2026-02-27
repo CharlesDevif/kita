@@ -60,6 +60,7 @@ dependencies:
   google_mlkit_text_recognition: ^0.15.1
   google_mlkit_image_labeling: ^0.14.2
   google_mlkit_genai_image_description: ^0.1.0
+  flutter_gemma: ^0.12.4
 
   # Image processing
   image: ^4.8.0
@@ -95,6 +96,7 @@ flutter:
 
   assets:
     - assets/sounds/
+    - assets/models/
 
   fonts:
     - family: SpaceGrotesk

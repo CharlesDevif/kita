@@ -23,13 +23,25 @@ class VoiceCommandHandler {
   /// Maps normalized trigger words to their [VoiceCommand].
   ///
   /// Each command has multiple accepted variations for tolerance.
+  /// STT commonly mishears "décris" as phonetically similar phrases,
+  /// so extra variants are included for robust matching.
   static final Map<VoiceCommand, List<String>> _commandPatterns = {
     VoiceCommand.describe: [
       'decris',
       'decrit',
+      'decrie',
+      'decri',
+      'decrire',
       'decrivez',
+      'decris-moi',
       'describe',
       'description',
+      'ecris', // STT often hears "décris" as "tu écris"
+      // Common STT misrecognitions of "décris":
+      'des cris', // phonetically close
+      'des crit', // variant
+      'decran', // "d'écran" after apostrophe stripping
+      'des crits', // plural variant
     ],
     VoiceCommand.read: [
       'lis',
@@ -99,7 +111,7 @@ class VoiceCommandHandler {
 
     for (final entry in _commandPatterns.entries) {
       for (final pattern in entry.value) {
-        if (normalized == pattern || normalized.startsWith('$pattern ')) {
+        if (normalized.contains(pattern)) {
           _log.info('Voice command recognized: ${entry.key.name}');
           return Result.success(entry.key);
         }
@@ -114,9 +126,13 @@ class VoiceCommandHandler {
     );
   }
 
-  /// Normalizes text for command matching: lowercase, trim, strip accents.
+  /// Normalizes text for command matching: lowercase, trim, strip accents,
+  /// and remove apostrophes/curly quotes that STT inserts in contractions.
   static String _normalize(String text) {
-    return _stripAccents(text.toLowerCase().trim());
+    final stripped = _stripAccents(text.toLowerCase().trim());
+    // Remove apostrophes/curly quotes so "d'écran" -> "decran"
+    // Covers: ' (U+0027), \u2019 (right single quote), \u02BC (modifier apostrophe)
+    return stripped.replaceAll(RegExp("['\\u2019\\u02BC]"), '');
   }
 
   /// Strips common French diacritical marks for tolerant matching.
