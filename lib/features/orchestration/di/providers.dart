@@ -28,6 +28,8 @@ import '../data/output_coordinator.dart';
 import '../data/real_access.dart';
 import '../domain/agent_bus.dart';
 import '../domain/clock.dart';
+import '../data/conversation_engine.dart';
+import '../domain/conversation_engine.dart';
 import '../domain/models/agent_manifest.dart';
 
 // =============================================================================
@@ -178,19 +180,43 @@ final requestClassifierProvider = Provider<RequestClassifier>((ref) {
   return RequestClassifierImpl();
 });
 
+/// The [ConversationEngine] for LLM-based conversational routing.
+///
+/// Uses [ConversationEngineImpl] which implements the tool-use loop:
+/// user message -> LLM -> (tool call -> execute -> feed back) -> response.
+///
+/// When the LLM is unavailable (no providers), [isReady] returns false
+/// and [InputRouter] falls back to VoiceCommandHandler pattern matching.
+final conversationEngineProvider = Provider<ConversationEngine>((ref) {
+  final aiRouter = ref.watch(aiRouterProvider);
+  final supervisor = ref.watch(agentSupervisorProvider);
+  final clock = ref.watch(clockProvider);
+  final engine = ConversationEngineImpl(
+    aiRouter: aiRouter,
+    supervisor: supervisor,
+    clock: clock,
+  );
+  ref.onDispose(engine.dispose);
+  return engine;
+});
+
 /// The [InputRouter] for input classification and routing.
 ///
 /// keepAlive — persists for the entire app lifecycle.
+/// Injects [ConversationEngine] when available for LLM-based routing,
+/// with automatic fallback to VoiceCommandHandler pattern matching.
 final inputRouterProvider = Provider<InputRouter>((ref) {
   final supervisor = ref.watch(agentSupervisorProvider);
   final coordinator = ref.watch(outputCoordinatorProvider);
   final clock = ref.watch(clockProvider);
   final classifier = ref.watch(requestClassifierProvider);
+  final conversationEngine = ref.watch(conversationEngineProvider);
   return InputRouter(
     supervisor: supervisor,
     outputCoordinator: coordinator,
     clock: clock,
     classifier: classifier,
+    conversationEngine: conversationEngine,
   );
 });
 

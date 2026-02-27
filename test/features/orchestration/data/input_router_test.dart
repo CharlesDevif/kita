@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kita/core/errors/kita_failure.dart';
 import 'package:kita/core/errors/result.dart';
 import 'package:kita/features/io/domain/haptic_service.dart';
 import 'package:kita/features/io/domain/speech_event.dart';
@@ -12,6 +13,7 @@ import 'package:kita/features/orchestration/data/input_router.dart';
 import 'package:kita/features/orchestration/data/output_coordinator.dart';
 import 'package:kita/features/orchestration/data/stub_access.dart';
 import 'package:kita/features/orchestration/domain/clock.dart';
+import 'package:kita/features/orchestration/domain/conversation_engine.dart';
 import 'package:kita/features/orchestration/domain/kita_agent.dart';
 import 'package:kita/features/orchestration/domain/models/agent_input.dart';
 import 'package:kita/features/orchestration/domain/models/agent_manifest.dart';
@@ -143,6 +145,40 @@ class TrackableAgent implements KitaAgent {
 
   @override
   Widget? buildViewport(BuildContext context) => null;
+}
+
+/// Mock ConversationEngine for testing routing with LLM.
+class MockConversationEngine implements ConversationEngine {
+  bool _isReady = true;
+  Result<ConversationResponse>? _nextResult;
+  final List<String> processedInputs = [];
+
+  @override
+  bool get isReady => _isReady;
+
+  set isReady(bool value) => _isReady = value;
+
+  void setNextResult(Result<ConversationResponse> result) {
+    _nextResult = result;
+  }
+
+  @override
+  Future<Result<ConversationResponse>> processInput(String input) async {
+    processedInputs.add(input);
+    return _nextResult ??
+        Result.success(ConversationResponse(text: 'Réponse IA: $input'));
+  }
+
+  @override
+  Stream<String> processInputStream(String input) async* {
+    final result = await processInput(input);
+    switch (result) {
+      case Success(:final value):
+        yield value.text;
+      case Failure(:final failure):
+        throw failure;
+    }
+  }
 }
 
 AgentManifest _alertManifest() => const AgentManifest(
@@ -281,7 +317,7 @@ void main() {
       });
     });
 
-    group('voice command: stop', () {
+    group('voice command: stop (safety critical)', () {
       test('"stop" publishes cancelAll and calls coordinator cancelAll',
           () async {
         final input = RawInput.voice('stop', clock: clock);
@@ -319,6 +355,49 @@ void main() {
 
         // onDemand agent should be terminated
         expect(supervisor.agents.containsKey('com.kita.describe'), isFalse);
+      });
+
+      test('"stop" works even when ConversationEngine is available',
+          () async {
+        // Create router with ConversationEngine
+        final engine = MockConversationEngine();
+        final routerWithEngine = InputRouter(
+          supervisor: supervisor,
+          outputCoordinator: coordinator,
+          clock: clock,
+          conversationEngine: engine,
+        );
+
+        final input = RawInput.voice('stop', clock: clock);
+        await routerWithEngine.route(input);
+
+        // "stop" should be pattern-matched, NOT sent to ConversationEngine
+        expect(engine.processedInputs, isEmpty);
+
+        // cancelAll should still work
+        final cancelMessages = busMessages
+            .where((m) => m.type == AgentMessageType.cancelAll)
+            .toList();
+        expect(cancelMessages, isNotEmpty);
+        expect(tts.stopCalled, isTrue);
+      });
+
+      test('"arrête" works even when ConversationEngine is available',
+          () async {
+        final engine = MockConversationEngine();
+        final routerWithEngine = InputRouter(
+          supervisor: supervisor,
+          outputCoordinator: coordinator,
+          clock: clock,
+          conversationEngine: engine,
+        );
+
+        final input = RawInput.voice('arrête', clock: clock);
+        await routerWithEngine.route(input);
+
+        // Should NOT go to ConversationEngine
+        expect(engine.processedInputs, isEmpty);
+        expect(tts.stopCalled, isTrue);
       });
     });
 
@@ -459,6 +538,194 @@ void main() {
 
         // Should spawn DescribeAgent via voice command recognition
         expect(supervisor.agents.containsKey('com.kita.describe'), isTrue);
+      });
+    });
+
+    // ========================================================================
+    // ConversationEngine routing tests
+    // ========================================================================
+
+    group('ConversationEngine routing', () {
+      late MockConversationEngine engine;
+      late InputRouter routerWithEngine;
+
+      setUp(() {
+        engine = MockConversationEngine();
+        routerWithEngine = InputRouter(
+          supervisor: supervisor,
+          outputCoordinator: coordinator,
+          clock: clock,
+          conversationEngine: engine,
+        );
+      });
+
+      test('routes to ConversationEngine when available and ready', () async {
+        engine.setNextResult(
+          const Result.success(
+            ConversationResponse(text: 'Bonjour, comment puis-je aider?'),
+          ),
+        );
+
+        final input = RawInput.voice('bonjour', clock: clock);
+        await routerWithEngine.route(input);
+
+        // Engine should have received the input
+        expect(engine.processedInputs, ['bonjour']);
+
+        // Response should be spoken via TTS
+        expect(tts.spokenTexts, contains('Bonjour, comment puis-je aider?'));
+      });
+
+      test('falls back to VoiceCommandHandler when engine not ready',
+          () async {
+        engine.isReady = false;
+
+        // "decris" should fall through to VoiceCommandHandler
+        final input = RawInput.voice('decris', clock: clock);
+        await routerWithEngine.route(input);
+
+        // Engine should NOT have been called
+        expect(engine.processedInputs, isEmpty);
+
+        // DescribeAgent should be spawned via VoiceCommandHandler
+        expect(supervisor.agents.containsKey('com.kita.describe'), isTrue);
+      });
+
+      test('falls back to VoiceCommandHandler when engine returns failure',
+          () async {
+        engine.setNextResult(
+          const Result.failure(
+            AIProviderFailure(
+              userMessage: 'Erreur IA',
+              logMessage: 'LLM timeout'),
+          ),
+        );
+
+        // Unrecognized command should go to engine first, then fallback
+        final input = RawInput.voice('quelle heure est-il', clock: clock);
+        await routerWithEngine.route(input);
+
+        // Engine was called
+        expect(engine.processedInputs, ['quelle heure est-il']);
+
+        // But since it failed, fallback provides the "not understood" message
+        expect(tts.spokenTexts, isNotEmpty);
+        expect(tts.spokenTexts.last, contains("Je n'ai pas compris"));
+      });
+
+      test('falls back to VoiceCommandHandler when engine returns empty',
+          () async {
+        engine.setNextResult(
+          const Result.success(ConversationResponse(text: '')),
+        );
+
+        final input = RawInput.voice('quelle heure est-il', clock: clock);
+        await routerWithEngine.route(input);
+
+        // Engine was called
+        expect(engine.processedInputs, ['quelle heure est-il']);
+
+        // Empty response -> fallback
+        expect(tts.spokenTexts, isNotEmpty);
+        expect(tts.spokenTexts.last, contains("Je n'ai pas compris"));
+      });
+
+      test('engine failure falls back to "decris" voice command', () async {
+        engine.setNextResult(
+          const Result.failure(
+            AIProviderFailure(
+              userMessage: 'Erreur IA',
+              logMessage: 'Model not loaded'),
+          ),
+        );
+
+        final input = RawInput.voice('decris', clock: clock);
+        await routerWithEngine.route(input);
+
+        // Engine was called
+        expect(engine.processedInputs, ['decris']);
+
+        // Engine failed -> VoiceCommandHandler catches "decris"
+        expect(supervisor.agents.containsKey('com.kita.describe'), isTrue);
+      });
+
+      test('engine handles tool call "describe"', () async {
+        engine.setNextResult(
+          const Result.success(
+            ConversationResponse(
+              text: 'Je vais décrire ce que je vois.',
+              toolCalls: ['describe'],
+            ),
+          ),
+        );
+
+        final input = RawInput.voice(
+          'dis-moi ce que tu vois',
+          clock: clock,
+        );
+        await routerWithEngine.route(input);
+
+        // Engine was called
+        expect(engine.processedInputs, ['dis-moi ce que tu vois']);
+
+        // Tool call should have spawned DescribeAgent
+        expect(supervisor.agents.containsKey('com.kita.describe'), isTrue);
+
+        // Text response should be spoken
+        expect(
+          tts.spokenTexts,
+          contains('Je vais décrire ce que je vois.'),
+        );
+      });
+
+      test('sensor input bypasses ConversationEngine', () async {
+        final alertAgent = TrackableAgent(manifest: _alertManifest());
+        await supervisor.spawn(alertAgent);
+
+        final input = RawInput.sensor(
+          {'distance': 2.0, 'label': 'person'},
+          clock: clock,
+        );
+        await routerWithEngine.route(input);
+
+        // Engine should NOT have been called
+        expect(engine.processedInputs, isEmpty);
+
+        // AlertAgent should have received the input
+        expect(alertAgent.receivedInputs, hasLength(1));
+      });
+
+      test('empty transcript is ignored even with engine', () async {
+        final input = RawInput.voice('', clock: clock);
+        await routerWithEngine.route(input);
+
+        expect(engine.processedInputs, isEmpty);
+      });
+    });
+
+    group('ConversationEngine: stop command priority', () {
+      test('"stop" is never sent to ConversationEngine', () async {
+        final engine = MockConversationEngine();
+        final routerWithEngine = InputRouter(
+          supervisor: supervisor,
+          outputCoordinator: coordinator,
+          clock: clock,
+          conversationEngine: engine,
+        );
+
+        // All stop variants should bypass engine
+        for (final stopVariant in ['stop', 'arrete', 'arrête', 'pause']) {
+          engine.processedInputs.clear();
+          tts.stopCalled = false;
+
+          final input = RawInput.voice(stopVariant, clock: clock);
+          await routerWithEngine.route(input);
+
+          expect(engine.processedInputs, isEmpty,
+              reason: '"$stopVariant" should not be sent to engine');
+          expect(tts.stopCalled, isTrue,
+              reason: '"$stopVariant" should trigger cancel');
+        }
       });
     });
   });

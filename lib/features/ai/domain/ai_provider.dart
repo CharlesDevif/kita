@@ -3,6 +3,7 @@ import 'ai_request.dart';
 import 'ai_response.dart';
 import 'image_data.dart';
 import 'provider_tier.dart';
+import 'tool_models.dart';
 
 abstract interface class AIProvider {
   String get id;
@@ -30,6 +31,19 @@ abstract interface class AIProvider {
   ///
   /// Throws on failure (caught by [FallbackChain] for cascading).
   Stream<String> visionStream(ImageData image, String prompt, {int? maxTokens});
+
+  /// Complete a request with tool use / function calling.
+  ///
+  /// The LLM may return text, tool calls, or both. Cloud providers use
+  /// native tool-use APIs; local providers use prompt engineering.
+  ///
+  /// [tools] — available tools the LLM can call.
+  /// [history] — prior conversation messages (for multi-turn tool loops).
+  Future<Result<AIToolResponse>> completeWithTools(
+    AIRequest request, {
+    required List<ToolSpec> tools,
+    List<ConversationMessage> history = const [],
+  });
 
   Future<Result<void>> validateApiKey(String key);
 }

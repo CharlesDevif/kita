@@ -13,6 +13,7 @@ import 'package:kita/features/ai/domain/ai_response.dart';
 import 'package:kita/features/ai/domain/ai_router.dart';
 import 'package:kita/features/ai/domain/image_data.dart';
 import 'package:kita/features/ai/domain/provider_tier.dart';
+import 'package:kita/features/ai/domain/tool_models.dart';
 import 'package:kita/features/io/data/providers/stt_providers.dart';
 import 'package:kita/features/io/data/providers/tts_providers.dart';
 import 'package:kita/features/io/domain/speech_event.dart';
@@ -634,6 +635,22 @@ class _FakeAIRouter implements AIRouter {
       {int? maxTokens}) async* {
     yield 'Vision response';
   }
+
+  @override
+  Future<Result<AIToolResponse>> routeWithTools(
+    AIRequest request, {
+    required List<ToolSpec> tools,
+    List<ConversationMessage> history = const [],
+  }) async {
+    return Result.success(AIToolResponse(
+      text: 'Fake tool response',
+      meta: const AIResponseMeta(
+        providerId: 'fake',
+        latency: Duration.zero,
+        tier: ProviderTier.local,
+      ),
+    ));
+  }
 }
 
 class _FakeAIProvider implements AIProvider {
@@ -657,6 +674,13 @@ class _FakeAIProvider implements AIProvider {
   @override
   Stream<String> visionStream(ImageData image, String prompt,
           {int? maxTokens}) =>
+      throw UnimplementedError();
+  @override
+  Future<Result<AIToolResponse>> completeWithTools(
+    AIRequest request, {
+    required List<ToolSpec> tools,
+    List<ConversationMessage> history = const [],
+  }) async =>
       throw UnimplementedError();
   @override
   Future<Result<void>> validateApiKey(String key) async =>

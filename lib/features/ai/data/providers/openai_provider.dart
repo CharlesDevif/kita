@@ -12,6 +12,7 @@ import '../../domain/ai_request.dart';
 import '../../domain/ai_response.dart';
 import '../../domain/image_data.dart';
 import '../../domain/provider_tier.dart';
+import '../../domain/tool_models.dart';
 
 /// OpenAI Chat Completions API provider.
 ///
@@ -101,6 +102,78 @@ class OpenAIProvider implements AIProvider {
   @override
   Stream<String> visionStream(ImageData image, String prompt, {int? maxTokens}) {
     return batchVisionAsStream(() => vision(image, prompt, maxTokens: maxTokens));
+  }
+
+  @override
+  Future<Result<AIToolResponse>> completeWithTools(
+    AIRequest request, {
+    required List<ToolSpec> tools,
+    List<ConversationMessage> history = const [],
+  }) async {
+    final stopwatch = Stopwatch()..start();
+
+    final messages = <Map<String, dynamic>>[
+      ...history.map(_conversationMessageToJson),
+      {
+        'role': 'user',
+        'content': request.prompt,
+      },
+    ];
+
+    final body = <String, dynamic>{
+      'model': model,
+      'max_tokens': request.maxTokens ?? 1024,
+      'messages': messages,
+      'tools': tools.map(_toolSpecToJson).toList(),
+    };
+
+    try {
+      final response = await _client
+          .post(
+            Uri.parse(_baseUrl),
+            headers: _headers(_apiKey),
+            body: jsonEncode(body),
+          )
+          .timeout(timeout);
+
+      stopwatch.stop();
+
+      if (response.statusCode == 200) {
+        return _parseToolResponse(response.body, stopwatch.elapsed);
+      }
+
+      if (response.statusCode == 401) {
+        _log.warning('Invalid API key');
+        return Result.failure(AIProviderFailure.invalidApiKey(id));
+      }
+
+      if (response.statusCode == 429) {
+        _log.warning('Rate limited');
+        return Result.failure(AIProviderFailure.rateLimited(id));
+      }
+
+      _log.warning('API error: ${response.statusCode}');
+      return Result.failure(AIProviderFailure(
+        userMessage: 'Le service OpenAI est temporairement indisponible.',
+        logMessage: 'OpenAI API error: ${response.statusCode}',
+        providerId: id,
+      ));
+    } on Exception catch (e, stack) {
+      stopwatch.stop();
+
+      if (e is TimeoutException) {
+        _log.warning('Tool request timed out');
+        return Result.failure(NetworkFailure.timeout(endpoint: _baseUrl));
+      }
+
+      _log.warning('Network error', error: e, stackTrace: stack);
+      return Result.failure(NetworkFailure(
+        userMessage: 'Erreur de connexion au service OpenAI.',
+        logMessage: 'OpenAI network error: $e',
+        cause: e,
+        stackTrace: stack,
+      ));
+    }
   }
 
   @override
@@ -219,6 +292,106 @@ class OpenAIProvider implements AIProvider {
         cause: e,
         stackTrace: stack,
       ));
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tool use helpers
+  // ---------------------------------------------------------------------------
+
+  Result<AIToolResponse> _parseToolResponse(String body, Duration latency) {
+    try {
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final choices = json['choices'] as List<dynamic>;
+      final message =
+          (choices[0] as Map<String, dynamic>)['message'] as Map<String, dynamic>;
+
+      final text = message['content'] as String?;
+      final toolCalls = <ToolCall>[];
+
+      final rawToolCalls = message['tool_calls'] as List<dynamic>?;
+      if (rawToolCalls != null) {
+        for (final raw in rawToolCalls) {
+          final tc = raw as Map<String, dynamic>;
+          final function = tc['function'] as Map<String, dynamic>;
+          final argsString = function['arguments'] as String? ?? '{}';
+
+          Map<String, dynamic> parsedArgs;
+          try {
+            parsedArgs = jsonDecode(argsString) as Map<String, dynamic>;
+          } catch (_) {
+            _log.warning('Failed to parse tool call arguments');
+            parsedArgs = {};
+          }
+
+          toolCalls.add(ToolCall(
+            id: tc['id'] as String,
+            name: function['name'] as String,
+            arguments: parsedArgs,
+          ));
+        }
+      }
+
+      return Result.success(AIToolResponse(
+        text: text,
+        toolCalls: toolCalls,
+        meta: AIResponseMeta(
+          providerId: id,
+          latency: latency,
+          tier: tier,
+        ),
+      ));
+    } catch (e, stack) {
+      _log.error('Failed to parse tool response', error: e, stackTrace: stack);
+      return Result.failure(AIProviderFailure(
+        userMessage: 'Reponse du service OpenAI invalide.',
+        logMessage: 'OpenAI tool response parse error: $e',
+        providerId: id,
+        cause: e,
+        stackTrace: stack,
+      ));
+    }
+  }
+
+  Map<String, dynamic> _toolSpecToJson(ToolSpec tool) => {
+        'type': 'function',
+        'function': {
+          'name': tool.name,
+          'description': tool.description,
+          'parameters': tool.parameters,
+        },
+      };
+
+  Map<String, dynamic> _conversationMessageToJson(ConversationMessage msg) {
+    switch (msg.role) {
+      case ConversationRole.user:
+        return {'role': 'user', 'content': msg.content ?? ''};
+      case ConversationRole.assistant:
+        final result = <String, dynamic>{
+          'role': 'assistant',
+        };
+        if (msg.content != null) {
+          result['content'] = msg.content;
+        }
+        if (msg.toolCalls != null && msg.toolCalls!.isNotEmpty) {
+          result['tool_calls'] = msg.toolCalls!
+              .map((tc) => {
+                    'id': tc.id,
+                    'type': 'function',
+                    'function': {
+                      'name': tc.name,
+                      'arguments': jsonEncode(tc.arguments),
+                    },
+                  })
+              .toList();
+        }
+        return result;
+      case ConversationRole.tool:
+        return {
+          'role': 'tool',
+          'tool_call_id': msg.toolCallId,
+          'content': msg.content ?? '',
+        };
     }
   }
 

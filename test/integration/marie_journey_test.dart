@@ -24,6 +24,7 @@ import 'package:kita/features/ai/domain/ai_request.dart';
 import 'package:kita/features/ai/domain/ai_response.dart';
 import 'package:kita/features/ai/domain/image_data.dart';
 import 'package:kita/features/ai/domain/provider_tier.dart';
+import 'package:kita/features/ai/domain/tool_models.dart';
 import 'package:kita/features/io/data/voice_command_handler.dart';
 import 'package:kita/features/onboarding/data/pack_installer.dart';
 import 'package:kita/features/onboarding/di/providers.dart';
@@ -126,6 +127,22 @@ class _MockVisionAIProvider implements AIProvider {
       yield '$word ';
       await Future<void>.delayed(Duration.zero);
     }
+  }
+
+  @override
+  Future<Result<AIToolResponse>> completeWithTools(
+    AIRequest request, {
+    required List<ToolSpec> tools,
+    List<ConversationMessage> history = const [],
+  }) async {
+    return Result.success(AIToolResponse(
+      text: 'Mock tool response',
+      meta: AIResponseMeta(
+        providerId: id,
+        latency: const Duration(milliseconds: 50),
+        tier: tier,
+      ),
+    ));
   }
 
   @override

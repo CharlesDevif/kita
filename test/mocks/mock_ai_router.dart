@@ -6,6 +6,7 @@ import 'package:kita/features/ai/domain/ai_response.dart';
 import 'package:kita/features/ai/domain/ai_router.dart';
 import 'package:kita/features/ai/domain/image_data.dart';
 import 'package:kita/features/ai/domain/provider_tier.dart';
+import 'package:kita/features/ai/domain/tool_models.dart';
 
 class MockAIRouter implements AIRouter {
   bool shouldFail = false;
@@ -44,6 +45,31 @@ class MockAIRouter implements AIRouter {
         tier: ProviderTier.cloudFast,
       ),
       status: AIResponseStatus.success,
+    ));
+  }
+
+  @override
+  Future<Result<AIToolResponse>> routeWithTools(
+    AIRequest request, {
+    required List<ToolSpec> tools,
+    List<ConversationMessage> history = const [],
+  }) async {
+    if (shouldFail) {
+      return const Result.failure(
+        AIProviderFailure(
+          userMessage: 'Aucun fournisseur disponible',
+          logMessage: 'No providers available',
+          providerId: 'router',
+        ),
+      );
+    }
+    return const Result.success(AIToolResponse(
+      text: 'Routed tool response',
+      meta: AIResponseMeta(
+        providerId: 'mock-provider',
+        latency: Duration(milliseconds: 150),
+        tier: ProviderTier.cloudFast,
+      ),
     ));
   }
 }

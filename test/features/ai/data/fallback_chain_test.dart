@@ -10,6 +10,7 @@ import 'package:kita/features/ai/domain/ai_response.dart';
 import 'package:kita/features/ai/domain/image_data.dart';
 import 'package:kita/features/ai/domain/provider_tier.dart';
 import 'package:kita/features/ai/domain/request_priority.dart';
+import 'package:kita/features/ai/domain/tool_models.dart';
 
 /// Test helper: configurable fake AI provider.
 class FakeAIProvider implements AIProvider {
@@ -99,6 +100,35 @@ class FakeAIProvider implements AIProvider {
   @override
   Stream<String> visionStream(ImageData image, String prompt, {int? maxTokens}) {
     return batchVisionAsStream(() => vision(image, prompt, maxTokens: maxTokens));
+  }
+
+  @override
+  Future<Result<AIToolResponse>> completeWithTools(
+    AIRequest request, {
+    required List<ToolSpec> tools,
+    List<ConversationMessage> history = const [],
+  }) async {
+    callCount++;
+    if (shouldThrow) {
+      throw Exception('Provider $id tool-use crashed');
+    }
+    if (shouldFail) {
+      return Result.failure(
+        AIProviderFailure(
+          userMessage: 'Erreur',
+          logMessage: 'Fake $id tool-use failure',
+          providerId: id,
+        ),
+      );
+    }
+    return Result.success(AIToolResponse(
+      text: 'Tool response from $id',
+      meta: AIResponseMeta(
+        providerId: id,
+        latency: Duration(milliseconds: delayMs),
+        tier: tier,
+      ),
+    ));
   }
 
   @override

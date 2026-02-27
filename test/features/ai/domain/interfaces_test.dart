@@ -9,7 +9,6 @@ import 'package:kita/features/ai/domain/image_data.dart';
 import 'package:kita/features/ai/domain/provider_tier.dart';
 import 'package:kita/features/ai/domain/request_classifier.dart';
 import 'package:kita/features/ai/domain/request_priority.dart';
-
 import '../../../mocks/mocks.dart';
 
 void main() {

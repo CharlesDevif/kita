@@ -12,6 +12,7 @@ import '../../domain/ai_request.dart';
 import '../../domain/ai_response.dart';
 import '../../domain/image_data.dart';
 import '../../domain/provider_tier.dart';
+import '../../domain/tool_models.dart';
 
 /// Anthropic Claude API provider.
 ///
@@ -107,6 +108,78 @@ class ClaudeProvider implements AIProvider {
   @override
   Stream<String> visionStream(ImageData image, String prompt, {int? maxTokens}) {
     return batchVisionAsStream(() => vision(image, prompt, maxTokens: maxTokens));
+  }
+
+  @override
+  Future<Result<AIToolResponse>> completeWithTools(
+    AIRequest request, {
+    required List<ToolSpec> tools,
+    List<ConversationMessage> history = const [],
+  }) async {
+    final stopwatch = Stopwatch()..start();
+
+    final messages = <Map<String, dynamic>>[
+      ...history.map(_conversationMessageToJson),
+      {
+        'role': 'user',
+        'content': request.prompt,
+      },
+    ];
+
+    final body = <String, dynamic>{
+      'model': model,
+      'max_tokens': request.maxTokens ?? 1024,
+      'messages': messages,
+      'tools': tools.map(_toolSpecToJson).toList(),
+    };
+
+    try {
+      final response = await _client
+          .post(
+            Uri.parse(_baseUrl),
+            headers: _headers(_apiKey),
+            body: jsonEncode(body),
+          )
+          .timeout(timeout);
+
+      stopwatch.stop();
+
+      if (response.statusCode == 200) {
+        return _parseToolResponse(response.body, stopwatch.elapsed);
+      }
+
+      if (response.statusCode == 401) {
+        _log.warning('Invalid API key');
+        return Result.failure(AIProviderFailure.invalidApiKey(id));
+      }
+
+      if (response.statusCode == 429) {
+        _log.warning('Rate limited');
+        return Result.failure(AIProviderFailure.rateLimited(id));
+      }
+
+      _log.warning('API error: ${response.statusCode}');
+      return Result.failure(AIProviderFailure(
+        userMessage: 'Le service Claude est temporairement indisponible.',
+        logMessage: 'Claude API error: ${response.statusCode}',
+        providerId: id,
+      ));
+    } on Exception catch (e, stack) {
+      stopwatch.stop();
+
+      if (e is TimeoutException) {
+        _log.warning('Tool request timed out');
+        return Result.failure(NetworkFailure.timeout(endpoint: _baseUrl));
+      }
+
+      _log.warning('Network error', error: e, stackTrace: stack);
+      return Result.failure(NetworkFailure(
+        userMessage: 'Erreur de connexion au service Claude.',
+        logMessage: 'Claude network error: $e',
+        cause: e,
+        stackTrace: stack,
+      ));
+    }
   }
 
   @override
@@ -231,6 +304,94 @@ class ClaudeProvider implements AIProvider {
         cause: e,
         stackTrace: stack,
       ));
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tool use helpers
+  // ---------------------------------------------------------------------------
+
+  Result<AIToolResponse> _parseToolResponse(String body, Duration latency) {
+    try {
+      final json = jsonDecode(body) as Map<String, dynamic>;
+      final content = json['content'] as List<dynamic>;
+
+      String? text;
+      final toolCalls = <ToolCall>[];
+
+      for (final block in content) {
+        final blockMap = block as Map<String, dynamic>;
+        final type = blockMap['type'] as String;
+
+        if (type == 'text') {
+          text = blockMap['text'] as String?;
+        } else if (type == 'tool_use') {
+          toolCalls.add(ToolCall(
+            id: blockMap['id'] as String,
+            name: blockMap['name'] as String,
+            arguments: blockMap['input'] as Map<String, dynamic>? ?? {},
+          ));
+        }
+      }
+
+      return Result.success(AIToolResponse(
+        text: text,
+        toolCalls: toolCalls,
+        meta: AIResponseMeta(
+          providerId: id,
+          latency: latency,
+          tier: tier,
+        ),
+      ));
+    } catch (e, stack) {
+      _log.error('Failed to parse tool response', error: e, stackTrace: stack);
+      return Result.failure(AIProviderFailure(
+        userMessage: 'Reponse du service Claude invalide.',
+        logMessage: 'Claude tool response parse error: $e',
+        providerId: id,
+        cause: e,
+        stackTrace: stack,
+      ));
+    }
+  }
+
+  Map<String, dynamic> _toolSpecToJson(ToolSpec tool) => {
+        'name': tool.name,
+        'description': tool.description,
+        'input_schema': tool.parameters,
+      };
+
+  Map<String, dynamic> _conversationMessageToJson(ConversationMessage msg) {
+    switch (msg.role) {
+      case ConversationRole.user:
+        return {'role': 'user', 'content': msg.content ?? ''};
+      case ConversationRole.assistant:
+        if (msg.toolCalls != null && msg.toolCalls!.isNotEmpty) {
+          return {
+            'role': 'assistant',
+            'content': [
+              if (msg.content != null) {'type': 'text', 'text': msg.content},
+              ...msg.toolCalls!.map((tc) => {
+                    'type': 'tool_use',
+                    'id': tc.id,
+                    'name': tc.name,
+                    'input': tc.arguments,
+                  }),
+            ],
+          };
+        }
+        return {'role': 'assistant', 'content': msg.content ?? ''};
+      case ConversationRole.tool:
+        return {
+          'role': 'user',
+          'content': [
+            {
+              'type': 'tool_result',
+              'tool_use_id': msg.toolCallId,
+              'content': msg.content ?? '',
+            },
+          ],
+        };
     }
   }
 

@@ -8,6 +8,7 @@ import '../domain/ai_response.dart';
 import '../domain/image_data.dart';
 import '../domain/provider_tier.dart';
 import '../domain/request_priority.dart';
+import '../domain/tool_models.dart';
 
 /// Never-fail fallback chain for AI requests.
 ///
@@ -44,6 +45,72 @@ class FallbackChain {
     // All providers failed — return brute alert (never fails).
     _log.critical('All providers failed, returning brute alert');
     return Result.success(_bruteAlertResponse());
+  }
+
+  /// Execute a tool-use request through the fallback chain.
+  ///
+  /// Prefers cloud providers (cloudPowerful first) for native tool-use
+  /// support. Falls back to local provider with prompt-engineered tool use.
+  Future<Result<AIToolResponse>> executeWithTools(
+    AIRequest request, {
+    required List<ToolSpec> tools,
+    List<ConversationMessage> history = const [],
+  }) async {
+    // Tool use works best on powerful cloud models. Use standard priority
+    // tier order: cloudPowerful -> cloudFast -> local.
+    final tiers = _tiersForPriority(RequestPriority.standard);
+
+    for (final tier in tiers) {
+      final providersForTier =
+          _providers.where((p) => p.tier == tier && p.isAvailable).toList();
+
+      for (final provider in providersForTier) {
+        final timeout = _timeoutForTier(tier);
+
+        try {
+          final result = await provider
+              .completeWithTools(request, tools: tools, history: history)
+              .timeout(timeout, onTimeout: () {
+            _log.warning(
+              'Provider ${provider.id} tool-use timed out '
+              'after ${timeout.inMilliseconds}ms',
+            );
+            return Result.failure(
+              AIProviderFailure(
+                userMessage: 'Le fournisseur IA a mis trop de temps.',
+                logMessage: 'Provider ${provider.id} tool-use timeout '
+                    'after ${timeout.inMilliseconds}ms',
+                providerId: provider.id,
+              ),
+            );
+          });
+
+          if (result.isSuccess) return result;
+
+          _log.warning(
+            'Provider ${provider.id} tool-use failed, falling back',
+          );
+        } catch (e, stack) {
+          _log.warning(
+            'Provider ${provider.id} tool-use threw exception, falling back',
+            error: e,
+            stackTrace: stack,
+          );
+        }
+      }
+    }
+
+    // All providers failed — return text-only brute alert.
+    _log.critical('All providers failed tool-use, returning brute alert');
+    return const Result.success(AIToolResponse(
+      text: _bruteAlertContent,
+      meta: AIResponseMeta(
+        providerId: 'brute-alert',
+        latency: Duration.zero,
+        tier: ProviderTier.local,
+        cached: false,
+      ),
+    ));
   }
 
   /// Returns the tier order for a given priority.

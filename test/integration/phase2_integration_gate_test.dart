@@ -19,6 +19,7 @@ import 'package:kita/features/ai/domain/ai_request.dart';
 import 'package:kita/features/ai/domain/ai_response.dart';
 import 'package:kita/features/ai/domain/image_data.dart';
 import 'package:kita/features/ai/domain/provider_tier.dart';
+import 'package:kita/features/ai/domain/tool_models.dart';
 import 'package:kita/features/io/domain/location_service.dart';
 import 'package:kita/features/io/domain/motion_service.dart';
 import 'package:kita/features/memory/data/daos/consent_dao.dart';
@@ -120,6 +121,30 @@ class _MockAIProvider implements AIProvider {
   @override
   Stream<String> visionStream(ImageData image, String prompt, {int? maxTokens}) {
     return batchVisionAsStream(() => vision(image, prompt, maxTokens: maxTokens));
+  }
+
+  @override
+  Future<Result<AIToolResponse>> completeWithTools(
+    AIRequest request, {
+    required List<ToolSpec> tools,
+    List<ConversationMessage> history = const [],
+  }) async {
+    if (shouldFail) {
+      return const Result.failure(
+        AIProviderFailure(
+          userMessage: 'Erreur provider',
+          logMessage: 'Mock failure',
+        ),
+      );
+    }
+    return Result.success(AIToolResponse(
+      text: responseContent,
+      meta: AIResponseMeta(
+        providerId: id,
+        latency: const Duration(milliseconds: 50),
+        tier: tier,
+      ),
+    ));
   }
 
   @override

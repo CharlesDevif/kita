@@ -4,6 +4,7 @@ import '../../ai/domain/request_classifier.dart';
 import '../../io/data/voice_command_handler.dart';
 import '../../plugins/built_in/describe/describe_plugin.dart';
 import '../domain/clock.dart';
+import '../domain/conversation_engine.dart';
 import '../domain/models/agent_input.dart';
 import '../domain/models/agent_ids.dart';
 import '../domain/models/output_priority.dart';
@@ -15,24 +16,27 @@ import 'output_coordinator.dart';
 ///
 /// Routing logic (in order of priority):
 /// 1. "stop" / "annule" -> cancelAll broadcast + coordinator.cancelAll() + feedback "OK"
-/// 2. "decris" / "describe" -> spawn DescribeAgent (or re-route if already active)
-/// 3. sensor data -> route to AlertAgent.handleInput()
-/// 4. "plus de details" / "repete" / "merci" -> route to focused agent
-/// 5. Unknown command -> route to fallback (RequestClassifier + AIRouter)
+///    (ALWAYS pattern-matched — safety critical, never depends on LLM)
+/// 2. Sensor data -> route to AlertAgent.handleInput()
+/// 3. If [ConversationEngine] is available and ready:
+///    -> LLM processes input (may respond, call tools, or both)
+/// 4. FALLBACK: If LLM unavailable or ConversationEngine fails:
+///    -> VoiceCommandHandler pattern matching (preserves all command-based UX)
 ///
-/// MVP: This router uses a monolithic switch/if routing strategy that works
-/// well for 2-3 agents. For 5+ agents, refactor to a strategy pattern or
-/// chain-of-responsibility where agents register their own routing rules.
+/// The transition from command-based to conversational is gradual:
+/// users without API keys or with cold Gemma still get full command UX.
 class InputRouter {
   InputRouter({
     required AgentSupervisor supervisor,
     required OutputCoordinator outputCoordinator,
     required Clock clock,
     RequestClassifier? classifier,
+    ConversationEngine? conversationEngine,
   })  : _supervisor = supervisor,
         _outputCoordinator = outputCoordinator,
         _clock = clock,
-        _classifier = classifier;
+        _classifier = classifier,
+        _conversationEngine = conversationEngine;
 
   static final _log = KitaLogger('Orchestration.Router');
 
@@ -40,14 +44,16 @@ class InputRouter {
   final OutputCoordinator _outputCoordinator;
   final Clock _clock;
   final RequestClassifier? _classifier;
+  final ConversationEngine? _conversationEngine;
 
   /// Routes a [RawInput] to the appropriate handler or agent.
   ///
   /// This is the main entry point for all inputs. Classification happens
   /// in this order:
   /// 1. Sensor inputs -> AlertAgent directly
-  /// 2. Voice/text -> VoiceCommandHandler for known commands
-  /// 3. Unrecognized -> RequestClassifier for priority, then fallback
+  /// 2. Critical safety commands ("stop") -> always pattern-matched
+  /// 3. ConversationEngine (if available) -> LLM-based routing
+  /// 4. VoiceCommandHandler fallback -> pattern matching
   Future<void> route(RawInput input) async {
     // 1. Sensor input -> route directly to AlertAgent
     if (input.source == InputSource.sensor) {
@@ -55,17 +61,95 @@ class InputRouter {
       return _routeToAlertAgent(input);
     }
 
-    // 2. Voice/text input -> try VoiceCommandHandler first
+    // 2. Voice/text input -> extract transcript
     final transcript = input.transcript ?? '';
     if (transcript.isEmpty) {
       _log.debug('Empty transcript, ignoring');
       return;
     }
 
+    // 3. ALWAYS check critical safety commands first (pattern-matched, no LLM)
+    //    "stop" must work even if the LLM is down — safety critical for
+    //    blind users who need to immediately cancel all activity.
     final cmdResult = VoiceCommandHandler.recognize(transcript);
+    if (cmdResult case Success(value: VoiceCommand.stop)) {
+      _log.info('Safety command: stop (always pattern-matched)');
+      return _handleCancel();
+    }
+
+    // 4. If ConversationEngine is available and ready, route through it
+    if (_conversationEngine != null && _conversationEngine.isReady) {
+      _log.info('Routing to ConversationEngine');
+      final engineResult =
+          await _conversationEngine.processInput(transcript);
+      switch (engineResult) {
+        case Success(:final value):
+          if (!value.isEmpty) {
+            _log.info('ConversationEngine responded');
+            await _handleConversationResponse(value);
+            return;
+          }
+          // Empty response — fall through to VoiceCommandHandler
+          _log.debug('ConversationEngine returned empty, falling back');
+        case Failure(:final failure):
+          // LLM error — fall through to VoiceCommandHandler
+          _log.warning(
+              'ConversationEngine failed: ${failure.logMessage}, '
+              'falling back to VoiceCommandHandler');
+      }
+    }
+
+    // 5. FALLBACK: VoiceCommandHandler pattern matching
+    //    This preserves all current functionality for users without LLM.
+    _log.debug('Using VoiceCommandHandler fallback');
+    await _routeViaVoiceCommands(transcript, cmdResult, input);
+  }
+
+  /// Handles the response from [ConversationEngine].
+  ///
+  /// Speaks the text response and executes any tool calls.
+  Future<void> _handleConversationResponse(
+      ConversationResponse response) async {
+    // Execute tool calls if any
+    for (final toolCall in response.toolCalls) {
+      await _executeToolCall(toolCall);
+    }
+
+    // Speak the text response
+    if (response.text.isNotEmpty) {
+      await _outputCoordinator.enqueueSpeech(
+        AgentIds.system,
+        response.text,
+        OutputPriority.standard,
+      );
+    }
+  }
+
+  /// Executes a tool call from the ConversationEngine.
+  ///
+  /// Maps tool names to existing agent/command dispatching.
+  Future<void> _executeToolCall(String toolCall) async {
+    switch (toolCall) {
+      case 'describe':
+        await _handleDescribe();
+      default:
+        _log.debug('Unknown tool call: $toolCall');
+    }
+  }
+
+  /// Routes input through VoiceCommandHandler pattern matching.
+  ///
+  /// This is the fallback path when ConversationEngine is unavailable.
+  /// [cmdResult] is pre-computed from [VoiceCommandHandler.recognize] to
+  /// avoid double-recognition (we already checked for "stop" above).
+  Future<void> _routeViaVoiceCommands(
+    String transcript,
+    Result<VoiceCommand> cmdResult,
+    RawInput input,
+  ) async {
     switch (cmdResult) {
+      // "stop" was already handled above, but for completeness:
       case Success(value: VoiceCommand.stop):
-        _log.info('Voice command: stop');
         return _handleCancel();
 
       case Success(value: VoiceCommand.describe):

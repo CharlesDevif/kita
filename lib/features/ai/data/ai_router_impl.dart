@@ -7,6 +7,7 @@ import '../domain/ai_router.dart';
 import '../domain/image_data.dart';
 import '../domain/request_classifier.dart';
 import '../domain/request_priority.dart';
+import '../domain/tool_models.dart';
 import 'fallback_chain.dart';
 
 /// Implementation of [AIRouter] that classifies requests and routes them
@@ -83,6 +84,42 @@ class AIRouterImpl implements AIRouter {
   }) {
     _log.debug('Routing vision stream request');
     return _fallbackChain.executeVisionStream(image, prompt, maxTokens: maxTokens);
+  }
+
+  @override
+  Future<Result<AIToolResponse>> routeWithTools(
+    AIRequest request, {
+    required List<ToolSpec> tools,
+    List<ConversationMessage> history = const [],
+  }) async {
+    final stopwatch = Stopwatch()..start();
+
+    _log.debug('Routing tool-use request');
+
+    final result = await _fallbackChain.executeWithTools(
+      request,
+      tools: tools,
+      history: history,
+    );
+    stopwatch.stop();
+
+    return result.map((response) {
+      _log.info(
+        'Tool-use request completed via ${response.meta.providerId} '
+        'in ${stopwatch.elapsedMilliseconds}ms '
+        '(tool calls: ${response.toolCalls.length})',
+      );
+      return AIToolResponse(
+        text: response.text,
+        toolCalls: response.toolCalls,
+        meta: AIResponseMeta(
+          providerId: response.meta.providerId,
+          latency: stopwatch.elapsed,
+          tier: response.meta.tier,
+          cached: response.meta.cached,
+        ),
+      );
+    });
   }
 
   AIRequest _classifyIfNeeded(AIRequest request) {

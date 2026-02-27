@@ -3,6 +3,7 @@ import 'ai_provider.dart';
 import 'ai_request.dart';
 import 'ai_response.dart';
 import 'image_data.dart';
+import 'tool_models.dart';
 
 abstract interface class AIRouter {
   Future<Result<AIResponse>> route(AIRequest request);
@@ -18,6 +19,16 @@ abstract interface class AIRouter {
   /// Used by agents (e.g. DescribePlugin) that pipe tokens to TTS via
   /// [SentenceBuffer] for low-latency speech output.
   Stream<String> routeVisionStream(ImageData image, String prompt, {int? maxTokens});
+
+  /// Route a request with tool use through the fallback chain.
+  ///
+  /// Prefers cloud providers (better native tool-use support).
+  /// Falls back to local provider with prompt-engineered tool use.
+  Future<Result<AIToolResponse>> routeWithTools(
+    AIRequest request, {
+    required List<ToolSpec> tools,
+    List<ConversationMessage> history = const [],
+  });
 
   List<AIProvider> get availableProviders;
 }

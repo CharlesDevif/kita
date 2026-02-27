@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 
+import 'dart:convert';
+
 import '../../../../core/errors/kita_failure.dart';
 import '../../../../core/errors/result.dart';
 import '../../../../core/utils/logger.dart';
@@ -8,6 +10,7 @@ import '../../domain/ai_request.dart';
 import '../../domain/ai_response.dart';
 import '../../domain/image_data.dart';
 import '../../domain/provider_tier.dart';
+import '../../domain/tool_models.dart';
 import 'gemma_bridge.dart';
 import 'gemini_nano_bridge.dart';
 import 'ml_kit_bridge.dart';
@@ -293,6 +296,146 @@ class LocalProvider implements AIProvider {
       );
       // Return empty stream on error — caller should handle absence.
     }
+  }
+
+  @override
+  Future<Result<AIToolResponse>> completeWithTools(
+    AIRequest request, {
+    required List<ToolSpec> tools,
+    List<ConversationMessage> history = const [],
+  }) async {
+    if (!isAvailable) {
+      return Result.failure(AIProviderFailure(
+        userMessage: 'IA locale non disponible sur cette plateforme.',
+        logMessage: 'Local provider not available for tool use on $_platform',
+        providerId: id,
+      ));
+    }
+
+    _log.debug('Processing local tool-use request via prompt engineering');
+
+    final stopwatch = Stopwatch()..start();
+
+    // Try Gemma with prompt-engineered tool use.
+    if (_gemmaBridge != null) {
+      try {
+        final status = await _checkGemmaStatus();
+        if (status == GemmaModelStatus.ready) {
+          final toolPrompt = _buildToolPrompt(request.prompt, tools, history);
+          final result = await _gemmaBridge!.complete(toolPrompt);
+          stopwatch.stop();
+
+          if (result.text.isNotEmpty) {
+            final toolResponse = _parseGemmaToolResponse(
+              result.text,
+              stopwatch.elapsed,
+            );
+            if (toolResponse != null) {
+              _log.info('Gemma tool-use completion done');
+              return Result.success(toolResponse);
+            }
+          }
+        }
+      } on Exception catch (e, stack) {
+        _log.warning(
+          'Gemma tool-use completion failed',
+          error: e,
+          stackTrace: stack,
+        );
+      }
+    }
+
+    // Fallback: return the text response without tool calls.
+    stopwatch.stop();
+    return Result.success(AIToolResponse(
+      text: _localResponse(request.prompt),
+      meta: AIResponseMeta(
+        providerId: id,
+        latency: stopwatch.elapsed,
+        tier: ProviderTier.local,
+      ),
+    ));
+  }
+
+  /// Build a prompt that instructs Gemma to use tools via structured JSON.
+  String _buildToolPrompt(
+    String userMessage,
+    List<ToolSpec> tools,
+    List<ConversationMessage> history,
+  ) {
+    final toolDescriptions = tools.map((t) {
+      final params = jsonEncode(t.parameters);
+      return '- ${t.name}: ${t.description}\n  Parameters: $params';
+    }).join('\n');
+
+    final historyText = history.map((msg) {
+      final role = msg.role.name;
+      return '[$role]: ${msg.content ?? '(tool call)'}';
+    }).join('\n');
+
+    return '''[Instructions]
+You have access to the following tools:
+$toolDescriptions
+
+To call a tool, respond with ONLY a JSON object like:
+{"tool_call": {"name": "tool_name", "arguments": {"key": "value"}}}
+
+If you do not need a tool, respond with plain text.
+
+${historyText.isNotEmpty ? '[History]\n$historyText\n' : ''}[Message]
+$userMessage''';
+  }
+
+  /// Try to parse a Gemma response as a tool call. Returns null if parsing
+  /// fails (response is treated as plain text).
+  AIToolResponse? _parseGemmaToolResponse(String text, Duration latency) {
+    final trimmed = text.trim();
+
+    // Try to find JSON in the response.
+    final jsonStart = trimmed.indexOf('{');
+    final jsonEnd = trimmed.lastIndexOf('}');
+
+    if (jsonStart >= 0 && jsonEnd > jsonStart) {
+      try {
+        final jsonStr = trimmed.substring(jsonStart, jsonEnd + 1);
+        final parsed = jsonDecode(jsonStr) as Map<String, dynamic>;
+        final toolCall = parsed['tool_call'] as Map<String, dynamic>?;
+
+        if (toolCall != null) {
+          final name = toolCall['name'] as String?;
+          final args = toolCall['arguments'] as Map<String, dynamic>?;
+
+          if (name != null) {
+            return AIToolResponse(
+              toolCalls: [
+                ToolCall(
+                  id: 'local_${DateTime.now().millisecondsSinceEpoch}',
+                  name: name,
+                  arguments: args ?? {},
+                ),
+              ],
+              meta: AIResponseMeta(
+                providerId: 'gemma',
+                latency: latency,
+                tier: ProviderTier.local,
+              ),
+            );
+          }
+        }
+      } catch (_) {
+        // JSON parsing failed — treat as plain text below.
+      }
+    }
+
+    // No tool call detected — return as text.
+    return AIToolResponse(
+      text: trimmed,
+      meta: AIResponseMeta(
+        providerId: 'gemma',
+        latency: latency,
+        tier: ProviderTier.local,
+      ),
+    );
   }
 
   /// Releases native resources. Must be called when the provider
