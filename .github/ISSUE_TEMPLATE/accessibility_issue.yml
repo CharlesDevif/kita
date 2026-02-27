@@ -1,0 +1,129 @@
+name: "Probleme d'accessibilite"
+description: "Signaler un probleme d'accessibilite ou de conformite WCAG"
+title: "[A11y] "
+labels: ["accessibility", "triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        L'accessibilite est au coeur de Kita. Merci de signaler ce probleme pour nous aider
+        a garantir une experience inclusive pour tous les utilisateurs.
+
+  - type: checkboxes
+    id: existing-search
+    attributes:
+      label: "Verification prealable"
+      options:
+        - label: "J'ai recherche dans les issues existantes et ce probleme n'a pas encore ete signale"
+          required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: "Description du probleme"
+      description: "Decrivez le probleme d'accessibilite rencontre."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: wcag-criterion
+    attributes:
+      label: "Critere WCAG concerne"
+      description: "Selectionnez le ou les criteres WCAG 2.1 affectes (si connus)."
+      multiple: true
+      options:
+        - "1.1 - Alternatives textuelles"
+        - "1.2 - Medias temporels (audio/video)"
+        - "1.3 - Adaptable (structure, ordre)"
+        - "1.4 - Distinguable (contraste, taille texte)"
+        - "2.1 - Accessible au clavier"
+        - "2.2 - Delai suffisant"
+        - "2.3 - Crises et reactions physiques"
+        - "2.4 - Navigable"
+        - "2.5 - Modalites de saisie"
+        - "3.1 - Lisible"
+        - "3.2 - Previsible"
+        - "3.3 - Aide a la saisie"
+        - "4.1 - Compatible (technologies d'assistance)"
+        - "Je ne suis pas sur du critere"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: assistive-technology
+    attributes:
+      label: "Technologie d'assistance utilisee"
+      description: "Avec quelle technologie d'assistance avez-vous rencontre le probleme ?"
+      multiple: true
+      options:
+        - "TalkBack (Android)"
+        - "VoiceOver (iOS)"
+        - "Switch Access"
+        - "Voice Control (iOS)"
+        - "Voice Access (Android)"
+        - "Braille display"
+        - "Agrandissement d'ecran"
+        - "Mode contraste eleve"
+        - "Autre (preciser dans les details)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: "Etapes pour reproduire"
+      description: "Les etapes pour reproduire le probleme d'accessibilite."
+      placeholder: |
+        1. Activer [technologie d'assistance]...
+        2. Naviguer vers...
+        3. Tenter de...
+        4. Observer le probleme...
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: "Impact sur l'utilisateur"
+      description: "Quel est l'impact concret sur l'experience utilisateur ? Le contenu est-il inaccessible, difficile a atteindre, ou incomprehensible ?"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: "Severite"
+      options:
+        - "Bloquant - Contenu ou fonctionnalite totalement inaccessible"
+        - "Majeur - Utilisable mais avec difficulte significative"
+        - "Mineur - Gene legere, contournement facile"
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: "Appareil et OS"
+      placeholder: "ex: Pixel 8 / Android 14, iPhone 15 / iOS 17"
+    validations:
+      required: true
+
+  - type: input
+    id: kita-version
+    attributes:
+      label: "Version de Kita"
+      placeholder: "ex: 1.0.0"
+
+  - type: textarea
+    id: screenshots-recordings
+    attributes:
+      label: "Captures d'ecran / Enregistrements"
+      description: "Si possible, ajoutez des captures ou un enregistrement montrant le probleme avec la technologie d'assistance."
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: "Contexte supplementaire"
+      description: "Toute autre information utile (parametres d'accessibilite actifs, langue, etc.)."

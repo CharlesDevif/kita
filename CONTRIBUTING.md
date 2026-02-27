@@ -1,129 +1,180 @@
-# Contributing to Kita
+# Contribuer a Kita
 
-Kita est un compagnon IA mobile d'assistance au handicap visuel, auditif et cognitif. Nous accueillons les contributions qui améliorent l'accessibilité, la qualité du code et l'expérience utilisateur.
+Merci de votre interet pour Kita ! Chaque contribution compte, qu'il s'agisse de code, de documentation, de tests d'accessibilite ou simplement d'un rapport de bug.
 
-**Persona cible :** Marie, 28 ans, aveugle de naissance, utilisatrice VoiceOver. Chaque contribution doit être pensée pour elle en premier.
+Kita est un compagnon IA mobile d'assistance au handicap (visuel, auditif, cognitif). Notre mission est de rendre la technologie accessible a tous. L'application est concue pour Marie, 28 ans, aveugle de naissance, utilisatrice VoiceOver -- chaque contribution doit etre pensee pour elle en premier.
+
+> **Licence :** MIT. En contribuant, vous acceptez que vos contributions soient publiees sous cette licence.
 
 ---
 
-## Prérequis
+## Table des matieres
+
+- [Code de conduite](#code-de-conduite)
+- [Comment contribuer](#comment-contribuer)
+- [Prerequis](#prerequis)
+- [Installation locale](#installation-locale)
+- [Architecture du projet](#architecture-du-projet)
+- [Conventions de code](#conventions-de-code)
+- [Regles d'accessibilite](#regles-daccessibilite)
+- [Workflow Git](#workflow-git)
+- [Processus de review](#processus-de-review)
+- [Deploiement](#deploiement)
+- [Questions et support](#questions-et-support)
+
+---
+
+## Code de conduite
+
+Ce projet adopte le [Contributor Covenant v2.1](CODE_OF_CONDUCT.md). En participant, vous vous engagez a respecter ses termes. Tout comportement inacceptable peut etre signale a l'equipe de maintenance.
+
+---
+
+## Comment contribuer
+
+### Signaler un bug
+
+1. Verifiez que le bug n'a pas deja ete signale dans les [issues existantes](../../issues).
+2. Ouvrez une nouvelle issue en utilisant le template **Bug Report**.
+3. Incluez : etapes de reproduction, comportement attendu vs. observe, version Flutter/Dart, appareil et OS.
+4. Si le bug concerne l'accessibilite (lecteur d'ecran, contraste, navigation), ajoutez le prefixe `[a11y]` dans le titre.
+
+### Proposer une fonctionnalite
+
+1. Ouvrez une issue avec le template **Feature Request**.
+2. Decrivez le besoin utilisateur (pas seulement la solution technique).
+3. Precisez quel handicap ou scenario d'accessibilite est concerne.
+4. Les propositions alignees avec le [PRD](_bmad-output/planning-artifacts/prd.md) ont plus de chances d'etre acceptees.
+
+### Soumettre du code
+
+1. Consultez les issues ouvertes, en priorite celles avec le label `good first issue`.
+2. Commentez l'issue pour signaler que vous travaillez dessus.
+3. Suivez le [workflow Git](#workflow-git) ci-dessous.
+4. Soumettez une pull request vers `develop`.
+
+### Ameliorer la documentation
+
+Les corrections de typos, ameliorations de documentation et traductions sont toujours bienvenues. Pas besoin d'issue prealable pour les corrections mineures.
+
+### Tester l'accessibilite
+
+Vous utilisez un lecteur d'ecran (VoiceOver, TalkBack) ? Vos retours sont precieux ! Ouvrez une issue avec le label `accessibility` pour signaler tout probleme d'accessibilite rencontre.
+
+---
+
+## Prerequis
 
 | Outil | Version minimale | Notes |
 |-------|-----------------|-------|
-| Flutter | 3.41.2 | `flutter --version` pour vérifier |
-| Dart | 3.11.0 | Inclus dans Flutter |
+| Flutter | 3.41+ | `flutter --version` pour verifier |
+| Dart | 3.11+ | Inclus dans Flutter |
 | Android SDK | API 31 (Android 12), target 35 | Configurer `ANDROID_HOME` |
 | Xcode | 15+ | macOS uniquement, pour les builds iOS |
-| Ruby | 3.1+ | Pour Fastlane |
-| Bundler | dernière version | `gem install bundler` |
+| Git | 2.30+ | |
 
 ---
 
-## Setup de l'environnement de développement
+## Installation locale
 
 ```bash
-# 1. Cloner le repository
-git clone https://github.com/[org]/kita.git
+# 1. Fork le depot sur GitHub, puis clonez votre fork
+git clone https://github.com/<votre-username>/kita.git
 cd kita
 
-# 2. Installer les dépendances Flutter
+# 2. Ajoutez le depot principal comme remote
+git remote add upstream https://github.com/<org>/kita.git
+
+# 3. Installez les dependances Flutter
 flutter pub get
 
-# 3. Générer les fichiers de code (Drift, Freezed, Riverpod)
+# 4. Lancez la generation de code (Drift, Freezed, Riverpod)
 dart run build_runner build --delete-conflicting-outputs
 
-# 4. Lancer les tests pour vérifier que tout fonctionne
+# 5. Verifiez que tout fonctionne
 flutter test
-
-# 5. (Optionnel) Installer les dépendances Fastlane
-bundle install
+dart analyze --fatal-infos
 ```
 
-### Variables d'environnement recommandées
+### Variables d'environnement recommandees
 
 ```bash
-# Ajouter à votre ~/.zshrc ou ~/.bashrc
+# Ajouter a votre ~/.zshrc ou ~/.bashrc
 export PATH="$HOME/development/flutter/bin:$PATH"
 export ANDROID_HOME="$HOME/Android/Sdk"
 export PATH="$PATH:$ANDROID_HOME/platform-tools"
 ```
 
----
-
-## Workflow de contribution
-
-### Branches
-
-```
-main          ← branche stable, protégée (PRs uniquement)
-develop       ← intégration continue
-epic/e{N}-{nom} ← branche par epic/agent depuis develop
-```
-
-**Pour une contribution :**
-```bash
-git checkout develop
-git pull origin develop
-git checkout -b fix/description-courte-du-fix
-# ... vos modifications ...
-git push origin fix/description-courte-du-fix
-# Ouvrir une PR vers develop
-```
-
-### Pull Requests
-
-- **Target :** `develop` (jamais directement vers `main`)
-- **Merge strategy :** squash-merge (1 commit par story/feature)
-- **Titre :** format conventionnel `type: description courte`
-  - `feat: ajouter détection obstacles en mode portrait`
-  - `fix: corriger accent manquant dans justification caméra`
-  - `test: ajouter tests accessibilité pour KitaOrb`
-  - `docs: mettre à jour politique de confidentialité`
-- **Corps de PR :** inclure le Dev Agent Record si applicable
-
-### Code review
-
-Chaque PR nécessite au minimum 1 approbation avant merge. Le reviewer vérifie :
-- [ ] Les tests passent (`flutter test`)
-- [ ] L'analyse est clean (`dart analyze --fatal-infos`)
-- [ ] L'Accessibility Tax est appliqué (voir section Accessibilité)
-- [ ] Aucun PII dans les logs
-- [ ] Les ressources sont libérées (`ref.onDispose`, `dispose()`)
+Si `flutter test` passe et `dart analyze` est clean, vous etes prets a contribuer.
 
 ---
 
-## Standards de qualité — OBLIGATOIRES
+## Architecture du projet
 
-### 1. Analyse statique
+Kita suit une architecture **feature-first + Clean Architecture** :
 
-```bash
-dart analyze --fatal-infos lib/
+```
+lib/
+├── core/           # DI, config, erreurs, theme, utilitaires (protege)
+├── features/
+│   ├── ai/         # Router IA, providers, classifier, fallback
+│   ├── io/         # Camera, audio, haptique, localisation, mouvement
+│   ├── memory/     # Base de donnees Drift, vault, collections
+│   ├── plugins/    # Systeme de plugins, sandbox, registry
+│   ├── onboarding/ # Flux d'accueil, detection accessibilite
+│   ├── shell/      # Interface principale (KitaShell, KitaOrb)
+│   └── settings/   # Preferences, profil
+├── shared/         # Widgets partages
+└── platform/       # Code natif bridge (Android/iOS)
 ```
 
-Doit retourner **"No issues found."** sans exception. Les warnings bloquent la PR.
+Chaque feature contient trois couches :
+- **`domain/`** : Entites, interfaces, logique metier pure (pas de dependances externes)
+- **`data/`** : Implementations, sources de donnees, conversions
+- **`presentation/`** : Widgets, state management (Riverpod)
 
-### 2. Tests
+Pour les documents d'architecture complets, voir :
+- [`_bmad-output/planning-artifacts/architecture.md`](_bmad-output/planning-artifacts/architecture.md)
+- [`_bmad-output/planning-artifacts/ux-design-specification.md`](_bmad-output/planning-artifacts/ux-design-specification.md)
 
-```bash
-flutter test
-flutter test --coverage  # pour mesurer la couverture
+---
+
+## Conventions de code
+
+### Nommage
+
+| Element | Convention | Exemple |
+|---------|-----------|---------|
+| Classes | `UpperCamelCase` | `AiRouterImpl` |
+| Fichiers | `snake_case` | `ai_router_impl.dart` |
+| Variables | `lowerCamelCase` | `fallbackChain` |
+| Providers | `lowerCamelCase` + suffixe `Provider` | `aiRouterProvider` |
+| Plugins | ID reverse domain | `com.kita.describe` |
+
+### Gestion des erreurs
+
+```dart
+// Pattern obligatoire : sealed class KitaFailure + Result<T>
+// Jamais de throw non type
+
+// INTERDIT
+throw Exception('quelque chose a rate');
+
+// CORRECT
+return const Result.failure(
+  AIProviderFailure(
+    userMessage: 'Service temporairement indisponible',
+    logMessage: 'Claude API timeout after 30s',
+  ),
+);
 ```
 
-- Couverture minimale : **80%** sur le code ajouté
-- Chaque story doit avoir au moins **1 test d'intégration** avec dépendances réelles (ex: Drift in-memory, pas de mock DB)
-- Les tests vérifient des **comportements**, pas juste que le code compile
+Utilisez `is TimeoutException` (type check) et non `e.toString().contains(...)` (string matching).
 
-### 3. Génération de code
+### Logging
 
-Après modification de fichiers `*.drift`, `*.freezed.dart`, ou providers Riverpod annotés :
-
-```bash
-dart run build_runner build --delete-conflicting-outputs
-```
-
-Ne **jamais commiter** les fichiers générés (`*.g.dart`, `*.freezed.dart`, `*.drift.dart`).
-
-### 4. Zéro PII dans les logs
+- Format : `[Source] Message`
+- **Zero PII dans les logs** : jamais de coordonnees GPS, noms, emails, cles API, tokens.
 
 ```dart
 // INTERDIT
@@ -135,37 +186,78 @@ _log.info('Position acquired successfully');
 _log.info('User profile loaded');
 ```
 
+### State management
+
+- Riverpod 3.0 avec `Notifier`, `AsyncNotifier`, `Mutation` (patterns modernes).
+- Ne pas utiliser `StateProvider` ou `StateNotifierProvider` (legacy).
+- `AsyncValue<T>` pour tous les etats asynchrones.
+
+### Tests
+
+- Chaque PR doit inclure des tests pour le code ajoute/modifie.
+- Au moins **1 test d'integration reel** (pas uniquement des mocks).
+- Les tests verifient des **comportements**, pas juste que le code compile.
+- Utilisez `test()` + `ProviderContainer` pour les tests de state/stream (pas `testWidgets`).
+- Reservez `testWidgets` aux tests necessitant `tester.pumpWidget()` ou `tester.tap()`.
+- Couverture minimale : **80%** sur le code ajoute.
+
+### Linting
+
+Le projet utilise `flutter_lints` avec des regles supplementaires et `riverpod_lint`. Avant de soumettre :
+
+```bash
+dart analyze --fatal-infos
+```
+
+Doit etre **clean** (zero warning, zero info).
+
+### Fichiers generes
+
+Les fichiers `*.g.dart`, `*.freezed.dart` et `*.drift.dart` sont generes et **ne doivent pas etre commites**. Regenerez-les avec :
+
+```bash
+dart run build_runner build --delete-conflicting-outputs
+```
+
 ---
 
-## Accessibilité — Exigence non négociable
+## Regles d'accessibilite
 
-**Standard :** WCAG 2.1 AA+ sur tous les écrans et composants.
+L'accessibilite n'est pas optionnelle dans Kita. C'est la raison d'etre du projet. Toute contribution avec du UI **doit** respecter ces regles. Standard cible : **WCAG 2.1 AA+**.
 
-L'"Accessibility Tax" s'applique à **toute story avec UI** — pas d'exception.
+### Semantics obligatoires
 
-### Checklist Accessibility Tax
+Chaque widget interactif doit etre enveloppe dans un `Semantics` widget avec un label descriptif :
 
 ```dart
-// 1. Semantics wrapper sur chaque widget interactif
 Semantics(
-  label: 'Décrire la scène devant moi',
+  label: 'Decrire la scene devant moi',
   button: true,
   child: GestureDetector(
     onTap: onDescribe,
     child: /* ... */,
   ),
 )
+```
 
-// 2. Touch targets >= 48x48px (56x56px pour actions critiques)
-SizedBox(
-  width: 56,
-  height: 56,
-  child: /* bouton critique */,
-)
+### Contrastes
 
-// 3. Contrastes
-// texte normal : >= 4.5:1
-// texte large / éléments UI : >= 3:1
+- Texte normal : ratio minimum **4.5:1** (WCAG AA)
+- Texte large / elements d'interface : ratio minimum **3:1**
+
+### Zones tactiles
+
+- Taille minimale : **48x48 pixels**
+- Actions critiques : **56x56 pixels**
+
+### Reduction de mouvement
+
+```dart
+// Toujours verifier avant d'animer
+final reduceMotion = MediaQuery.of(context).disableAnimations;
+if (!reduceMotion) {
+  // lancer l'animation
+}
 ```
 
 ### Tests Semantics obligatoires
@@ -179,66 +271,93 @@ testWidgets('MonWidget a un label Semantics descriptif', (tester) async {
 });
 ```
 
-### Réduction de mouvement
+### Principes generaux
 
-```dart
-// Toujours vérifier avant d'animer
-final reduceMotion = MediaQuery.of(context).disableAnimations;
-if (!reduceMotion) {
-  // lancer l'animation
-}
-```
+- Navigation clavier et lecteur d'ecran fonctionnelle
+- Pas de contenu uniquement visuel sans alternative textuelle
+- Textes en francais avec accents corrects (`detectee`, pas `detectee`)
 
 ---
 
-## Architecture
+## Workflow Git
 
-Kita suit une architecture **feature-first + Clean Architecture** :
+### Branches
 
 ```
-lib/
-├── core/           # DI, config, errors, theme, utils (protégé)
-├── features/
-│   ├── ai/         # AI Router, providers, classifier, fallback
-│   ├── io/         # Camera, audio, haptic, location, motion
-│   ├── memory/     # Drift store, vault, collections
-│   ├── plugins/    # Plugin interface, registry, sandbox
-│   ├── onboarding/ # Flow complet, detection accessibilité
-│   ├── shell/      # KitaShell, KitaOrb, KitaInput
-│   └── settings/   # Preferences, profil, forget
-├── shared/         # Widgets partagés, multi_modal/
-└── platform/       # Code natif bridge
+main          <- branche stable, protegee (PRs uniquement)
+develop       <- integration continue
+feature/xxx   <- nouvelles fonctionnalites
+fix/xxx       <- corrections de bugs
 ```
 
-**Règle :** Chaque agent/contributeur ne touche **que** son feature directory.
+| Type | Format | Base | Cible |
+|------|--------|------|-------|
+| Feature | `feature/description-courte` | `develop` | `develop` |
+| Bug fix | `fix/description-courte` | `develop` | `develop` |
+| Hotfix | `hotfix/description-courte` | `main` | `main` + `develop` |
 
-Pour les documents d'architecture complets, voir :
-- [`_bmad-output/planning-artifacts/architecture.md`](_bmad-output/planning-artifacts/architecture.md)
-- [`_bmad-output/planning-artifacts/ux-design-specification.md`](_bmad-output/planning-artifacts/ux-design-specification.md)
+### Processus
+
+```bash
+# 1. Synchronisez votre fork
+git fetch upstream
+git checkout develop
+git merge upstream/develop
+
+# 2. Creez votre branche
+git checkout -b feature/ma-feature
+
+# 3. Developpez (commits atomiques, messages clairs)
+git commit -m "Add scene description retry logic"
+
+# 4. Avant de pousser, verifiez
+dart analyze --fatal-infos
+flutter test
+
+# 5. Poussez et ouvrez une PR vers develop
+git push origin feature/ma-feature
+```
+
+### Commits
+
+- Messages en anglais, au present imperatif : `Add`, `Fix`, `Update`, `Remove`
+- Un commit = un changement logique
+- Titre PR : format conventionnel `type: description courte`
+  - `feat: ajouter detection obstacles en mode portrait`
+  - `fix: corriger accent manquant dans justification camera`
+  - `test: ajouter tests accessibilite pour KitaOrb`
+
+### Merge
+
+Les PR sont **squash-merged** vers `develop`. Ciblez toujours `develop`, jamais `main` directement.
 
 ---
 
-## Gestion des erreurs
+## Processus de review
 
-```dart
-// Pattern obligatoire : sealed class KitaFailure + Result<T>
-// Jamais de throw non typé
+Chaque PR necessite au minimum 1 approbation avant merge. Nous visons une premiere reponse sous **7 jours**.
 
-// INTERDIT
-throw Exception('quelque chose a raté');
+### Checklist automatique
 
-// CORRECT
-return const Result.failure(
-  AIProviderFailure(
-    userMessage: 'Service temporairement indisponible',
-    logMessage: 'Claude API timeout after 30s',
-  ),
-);
-```
+- [ ] `dart analyze --fatal-infos` clean
+- [ ] `flutter test` passe (tous les tests)
+- [ ] Pas de fichiers generes commites (`*.g.dart`, `*.freezed.dart`)
+
+### Review humaine
+
+- [ ] Le code suit les conventions du projet
+- [ ] Les tests couvrent les cas importants
+- [ ] L'accessibilite est respectee (si UI modifie)
+- [ ] Zero PII dans les logs
+- [ ] Les ressources sont correctement disposees (`ref.onDispose`, `dispose()`)
+- [ ] Pas de race conditions (guards sur callbacks haute frequence)
+- [ ] Exception handling par type check (`is`), pas string matching
+
+Les PR avec des tests complets et une bonne description sont traitees en priorite.
 
 ---
 
-## Déploiement
+## Deploiement
 
 ### Versioning
 
@@ -246,40 +365,22 @@ return const Result.failure(
 version: {major}.{minor}.{patch}+{build}
 ```
 
-Pattern de release via tags git :
+Les releases sont declenchees par tags git sur `main` :
+
 ```bash
-# Après merge dans main
 git tag v1.0.0
 git push origin v1.0.0
-# → déclenche automatiquement les workflows build-android et build-ios
 ```
-
-Pour incrémenter la version :
-```bash
-bundle exec fastlane bump_version type:patch  # ou minor/major
-```
-
-### Fastlane
-
-```bash
-# Beta Android (Play Store internal testing)
-bundle exec fastlane android beta_android
-
-# Beta iOS (TestFlight)
-bundle exec fastlane ios beta_ios
-```
-
-Voir [`fastlane/README.md`](fastlane/README.md) pour les prérequis détaillés.
 
 ---
 
 ## Questions et support
 
-- **Issues GitHub :** [Signaler un bug ou proposer une feature](https://github.com/[org]/kita/issues)
-- **Discussions :** [Forum de la communauté](https://github.com/[org]/kita/discussions)
-- **Accessibilité :** Pour les questions liées à l'accessibilité, ouvrir une issue avec le tag `accessibility`
-- **RGPD :** privacy@kita.app
+- **Issues GitHub :** pour signaler un bug ou proposer une feature
+- **Discussions GitHub :** pour les questions generales
+- **Label `accessibility` :** pour les questions liees a l'accessibilite
+- **Label `good first issue` :** pour les nouveaux contributeurs
 
 ---
 
-*Kita est développé avec passion pour les personnes en situation de handicap. Chaque ligne de code doit servir Marie.*
+*Kita est developpe avec passion pour les personnes en situation de handicap. Chaque ligne de code doit servir Marie.*

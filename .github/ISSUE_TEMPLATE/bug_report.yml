@@ -1,0 +1,134 @@
+name: "Rapport de bug"
+description: "Signaler un bug pour nous aider a ameliorer Kita"
+title: "[Bug] "
+labels: ["bug", "triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Merci de prendre le temps de signaler ce bug. Veuillez remplir le formulaire ci-dessous
+        avec le plus de details possible pour nous aider a reproduire et corriger le probleme.
+
+  - type: checkboxes
+    id: existing-search
+    attributes:
+      label: "Verification prealable"
+      options:
+        - label: "J'ai recherche dans les issues existantes et ce bug n'a pas encore ete signale"
+          required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: "Description du bug"
+      description: "Une description claire et concise du bug."
+      placeholder: "Decrivez le probleme que vous avez rencontre..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: "Etapes pour reproduire"
+      description: "Les etapes pour reproduire le comportement."
+      placeholder: |
+        1. Ouvrir l'application...
+        2. Naviguer vers...
+        3. Effectuer l'action...
+        4. Observer l'erreur...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: "Comportement attendu"
+      description: "Ce que vous vous attendiez a voir se produire."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: "Comportement observe"
+      description: "Ce qui s'est reellement passe."
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: "Appareil"
+      description: "Modele de l'appareil utilise."
+      placeholder: "ex: Pixel 8, Samsung Galaxy S24, iPhone 15"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: "Systeme d'exploitation"
+      options:
+        - "Android 12"
+        - "Android 13"
+        - "Android 14"
+        - "Android 15"
+        - "iOS 16"
+        - "iOS 17"
+        - "iOS 18"
+    validations:
+      required: true
+
+  - type: input
+    id: kita-version
+    attributes:
+      label: "Version de Kita"
+      description: "Numero de version de l'application (visible dans Parametres > A propos)."
+      placeholder: "ex: 1.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: assistive-technology
+    attributes:
+      label: "Technologie d'assistance utilisee"
+      description: "Selectionnez les technologies d'assistance actives lors du bug."
+      multiple: true
+      options:
+        - "Aucune"
+        - "TalkBack (Android)"
+        - "VoiceOver (iOS)"
+        - "Switch Access"
+        - "Voice Control (iOS)"
+        - "Voice Access (Android)"
+        - "Braille display"
+        - "Autre (preciser dans les details)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: "Severite"
+      description: "Evaluez l'impact du bug."
+      options:
+        - "Critique - Bloque l'accessibilite (lecteur d'ecran, navigation vocale)"
+        - "Haute - Fonctionnalite principale non utilisable"
+        - "Moyenne - Fonctionnalite degradee mais contournable"
+        - "Basse - Probleme mineur ou cosmetique"
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots-logs
+    attributes:
+      label: "Captures d'ecran / Logs"
+      description: "Ajoutez des captures d'ecran ou des logs pertinents si possible."
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: "Contexte supplementaire"
+      description: "Toute autre information utile pour comprendre le probleme."

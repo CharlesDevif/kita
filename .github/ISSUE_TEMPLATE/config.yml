@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Documentation
+  - name: "Documentation"
     url: https://github.com/kita-app/kita/wiki
-    about: Check the documentation before opening an issue
+    about: "Consultez la documentation avant d'ouvrir une issue"
+  - name: "Discussions"
+    url: https://github.com/kita-app/kita/discussions
+    about: "Posez vos questions et partagez vos idees dans les discussions"
