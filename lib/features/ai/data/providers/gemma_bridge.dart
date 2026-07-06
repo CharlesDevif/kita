@@ -4,6 +4,9 @@ import 'dart:typed_data';
 import 'package:flutter_gemma/flutter_gemma.dart';
 
 import '../../../../core/utils/logger.dart';
+import '../../../../core/utils/stream_timeout.dart';
+import 'gemma_failure.dart';
+import 'gemma_model_locator.dart';
 
 /// Status of the Gemma model on device.
 enum GemmaModelStatus {
@@ -85,19 +88,22 @@ abstract interface class GemmaBridge {
 
 /// Real implementation using flutter_gemma 0.12.x.
 ///
-/// Loads a Gemma3n E2B model from Flutter assets. The model must be
-/// pre-installed at `assets/models/` and declared in pubspec.yaml.
+/// Loads a Gemma3n E2B model from a file on the device (via
+/// [GemmaModelLocator]) — not bundled as a Flutter asset. The model is
+/// pushed once to external storage and located at runtime.
 ///
 /// Uses GPU backend with CPU fallback. Creates separate chat sessions
 /// for text-only and vision requests.
 class GemmaBridgeImpl implements GemmaBridge {
   GemmaBridgeImpl({
-    this.modelAssetPath = 'assets/models/gemma-3n-E2B-it-int4.litertlm',
-  });
+    GemmaModelLocator? locator,
+    this.inferenceTimeout = const Duration(seconds: 30),
+  }) : _locator = locator ?? GemmaModelLocator();
 
   static final _log = KitaLogger('AI.Gemma');
 
-  final String modelAssetPath;
+  final GemmaModelLocator _locator;
+  final Duration inferenceTimeout;
 
   /// Guard against concurrent inference calls.
   bool _processing = false;
@@ -213,11 +219,15 @@ class GemmaBridgeImpl implements GemmaBridge {
 
       // generateChatResponseAsync returns Stream<ModelResponse>.
       // Each TextResponse contains a single token.
-      await for (final response in chat.generateChatResponseAsync()) {
-        if (response is TextResponse) {
-          yield response.token;
-        }
-      }
+      final tokens = chat
+          .generateChatResponseAsync()
+          .where((r) => r is TextResponse)
+          .map((r) => (r as TextResponse).token)
+          .withInferenceTimeout(inferenceTimeout);
+      yield* tokens;
+    } on Object catch (e, stack) {
+      _log.error('Gemma completeStream failed', error: e, stackTrace: stack);
+      throw gemmaFailure(e, stackTrace: stack);
     } finally {
       _processing = false;
     }
@@ -289,12 +299,21 @@ class GemmaBridgeImpl implements GemmaBridge {
       ));
 
       // Stream token-by-token for low-latency TTS.
-      await for (final response in chat.generateChatResponseAsync()) {
-        if (response is TextResponse) {
-          yield response.token;
-        }
-      }
+      final tokens = chat
+          .generateChatResponseAsync()
+          .where((r) => r is TextResponse)
+          .map((r) => (r as TextResponse).token)
+          .withInferenceTimeout(inferenceTimeout);
+      yield* tokens;
+    } on Object catch (e, stack) {
+      _log.error('Gemma describeImageStream failed', error: e, stackTrace: stack);
+      throw gemmaFailure(e, stackTrace: stack);
     } finally {
+      // Pas de session vision persistante (mémoire #348) : fermer et
+      // remettre à null pour que la prochaine description recrée une
+      // session native fraîche et libère la précédente au plus tôt.
+      await _visionModel?.close();
+      _visionModel = null;
       _processing = false;
     }
   }
@@ -318,20 +337,29 @@ class GemmaBridgeImpl implements GemmaBridge {
   Future<void> _ensureInitialized() async {
     if (_initialized) return;
 
-    _log.info('Initializing Gemma model from assets');
+    _log.info('Initializing Gemma model from device file');
     _status = GemmaModelStatus.loading;
 
     try {
+      final path = await _locator.locate();
+      if (path == null) {
+        _status = GemmaModelStatus.error;
+        throw gemmaFailure(
+          StateError('model file not found'),
+          userMessage:
+              "Le modèle IA est introuvable sur l'appareil. Voir l'installation.",
+        );
+      }
+
       await FlutterGemma.initialize();
 
-      // Install from asset if not already installed.
-      final installed = await FlutterGemma.isModelInstalled(modelAssetPath);
+      final installed = await FlutterGemma.isModelInstalled(path);
       if (!installed) {
-        _log.info('Installing Gemma model from asset');
+        _log.info('Installing Gemma model from device file');
         await FlutterGemma.installModel(
           modelType: ModelType.gemmaIt,
-          fileType: ModelFileType.task,
-        ).fromAsset(modelAssetPath).install();
+          fileType: ModelFileType.task, // couvre .task ET .litertlm en 0.12.4
+        ).fromFile(path).install();
       }
 
       _textModel = await FlutterGemma.getActiveModel(
@@ -342,7 +370,7 @@ class GemmaBridgeImpl implements GemmaBridge {
       _initialized = true;
       _status = GemmaModelStatus.ready;
       _log.info('Gemma model ready');
-    } on Exception catch (e, stack) {
+    } on Object catch (e, stack) {
       _log.error('Gemma initialization failed', error: e, stackTrace: stack);
       _status = GemmaModelStatus.error;
       rethrow;
