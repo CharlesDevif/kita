@@ -44,5 +44,14 @@ void main() {
       );
       expect(await locator.locate(), isNull);
     });
+
+    test('expectedPath throws StateError when external dir is unavailable',
+        () async {
+      final locator = GemmaModelLocator(
+        externalDirResolver: () async => null,
+        modelFileName: 'model.litertlm',
+      );
+      expect(locator.expectedPath, throwsA(isA<StateError>()));
+    });
   });
 }

@@ -32,6 +32,6 @@ class GemmaModelLocator {
     final dir = await _externalDirResolver();
     if (dir == null) return null;
     final path = '${dir.path}/models/$modelFileName';
-    return File(path).existsSync() ? path : null;
+    return await File(path).exists() ? path : null;
   }
 }
