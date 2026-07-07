@@ -1,0 +1,266 @@
+import 'dart:async';
+
+import 'package:drift/native.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:sqlite3/sqlite3.dart' as sql;
+
+import 'package:kita/core/data/database.dart';
+import 'package:kita/core/errors/result.dart';
+import 'package:kita/features/memory/data/daos/consent_dao.dart';
+import 'package:kita/features/memory/data/daos/episode_dao.dart';
+import 'package:kita/features/memory/data/daos/person_dao.dart';
+import 'package:kita/features/memory/data/daos/plugin_data_dao.dart';
+import 'package:kita/features/memory/data/daos/preference_dao.dart';
+import 'package:kita/features/memory/data/daos/profile_dao.dart';
+import 'package:kita/features/memory/data/memory_vault_impl.dart';
+import 'package:kita/features/memory/di/providers.dart';
+import 'package:kita/features/memory/domain/episode.dart';
+import 'package:kita/features/memory/domain/forget_request.dart';
+import 'package:kita/features/memory/domain/memory_vault.dart';
+import 'package:kita/features/settings/presentation/forget_screen.dart';
+
+/// Fake vault whose erasure "succeeds" but whose audit reports residual data,
+/// to exercise the honest-failure path without a contrived real DB state.
+class _AuditFailsVault implements MemoryVault {
+  @override
+  Future<Result<void>> forget(ForgetRequest request) async =>
+      const Result.success(null);
+
+  @override
+  Future<Result<bool>> auditForget(ForgetRequest request) async =>
+      const Result.success(false);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      super.noSuchMethod(invocation);
+}
+
+void main() {
+  late KitaDatabase db;
+  late MemoryVaultImpl vault;
+  late ConsentDao consentDao;
+
+  setUp(() {
+    final rawDb = sql.sqlite3.openInMemory();
+    db = KitaDatabase(NativeDatabase.opened(rawDb));
+
+    consentDao = ConsentDao(db);
+    vault = MemoryVaultImpl(
+      episodeDao: EpisodeDao(db),
+      preferenceDao: PreferenceDao(db),
+      personDao: PersonDao(db),
+      profileDao: ProfileDao(db),
+      pluginDataDao: PluginDataDao(db),
+      consentDao: consentDao,
+    );
+  });
+
+  tearDown(() async {
+    await db.close();
+  });
+
+  /// Grants data_storage consent for a domain scope.
+  Future<void> grantConsentFor(String scope) async {
+    await consentDao.insert(
+      consentType: 'data_storage',
+      scope: scope,
+      granted: true,
+    );
+  }
+
+  /// Seeds one episode and one preference so there is data to erase.
+  Future<void> seedData() async {
+    await grantConsentFor('episodic');
+    await grantConsentFor('semantic');
+    await vault.saveEpisode(KitaEpisode(
+      id: 0,
+      source: 'camera',
+      eventType: 'describe',
+      summary: 'Une scène de parc',
+      importanceScore: 0.5,
+      isPinned: false,
+      createdAt: DateTime.now(),
+    ));
+    await vault.setPreference(
+      key: 'theme',
+      value: 'dark',
+      category: 'display',
+      source: 'user',
+    );
+  }
+
+  /// Pumps the ForgetScreen with the real [vault] injected.
+  ///
+  /// When [vaultOverride] is provided it replaces the default resolved-value
+  /// override (used to exercise the loading state).
+  Future<void> pumpScreen(
+    WidgetTester tester, {
+    FutureOr<MemoryVault> Function(Ref ref)? vaultOverride,
+  }) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          memoryVaultProvider.overrideWith(
+            vaultOverride ?? (ref) => vault,
+          ),
+        ],
+        child: const MaterialApp(home: ForgetScreen()),
+      ),
+    );
+  }
+
+  group('ForgetScreen — intégration Drift réelle', () {
+    testWidgets('Tout effacer supprime toutes les données et vérifie',
+        (tester) async {
+      await seedData();
+      await pumpScreen(tester);
+      await tester.pumpAndSettle();
+
+      // Double-step: sélection puis confirmation.
+      await tester.tap(find.byKey(const Key('forget_everything')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('forget_confirm')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('forget_confirm')));
+      await tester.pumpAndSettle();
+
+      // Message de succès vérifié affiché.
+      expect(find.text('Données effacées et vérifiées.'), findsOneWidget);
+
+      // La base est réellement vide.
+      final known = (await vault.whatDoYouKnow()).getOrNull()!;
+      expect(known, isEmpty);
+
+      // L'audit confirme l'effacement.
+      final audit = (await vault
+              .auditForget(ForgetRequest.everything(confirmation: true)))
+          .getOrNull();
+      expect(audit, isTrue);
+    });
+
+    testWidgets('Effacer une catégorie ne supprime que ce domaine',
+        (tester) async {
+      await seedData();
+      await pumpScreen(tester);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('forget_domain')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('forget_domain_episodic')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('forget_confirm')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('forget_confirm')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Données effacées et vérifiées.'), findsOneWidget);
+
+      // Les épisodes sont partis...
+      final episodes = (await vault.getEpisodes()).getOrNull()!;
+      expect(episodes, isEmpty);
+
+      // ...mais les préférences subsistent.
+      final pref = (await vault.getPreference('theme')).getOrNull();
+      expect(pref, equals('dark'));
+    });
+
+    testWidgets('Annuler la confirmation ne supprime rien', (tester) async {
+      await seedData();
+      await pumpScreen(tester);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('forget_everything')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('forget_cancel')));
+      await tester.pumpAndSettle();
+
+      // Retour au menu.
+      expect(find.byKey(const Key('forget_everything')), findsOneWidget);
+
+      // Les données sont intactes.
+      final episodes = (await vault.getEpisodes()).getOrNull()!;
+      expect(episodes, hasLength(1));
+    });
+  });
+
+  group('ForgetScreen — états', () {
+    testWidgets('affiche le chargement tant que le vault n\'est pas prêt',
+        (tester) async {
+      await pumpScreen(
+        tester,
+        vaultOverride: (ref) => Future<MemoryVault>.delayed(
+          const Duration(milliseconds: 300),
+          () => vault,
+        ),
+      );
+
+      // Premier frame : le vault est encore en cours de résolution.
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('Chargement…'), findsOneWidget);
+
+      // Une fois résolu, le menu apparaît.
+      await tester.pumpAndSettle(const Duration(milliseconds: 400));
+      expect(find.byKey(const Key('forget_everything')), findsOneWidget);
+    });
+
+    testWidgets('affiche un échec honnête si des données subsistent',
+        (tester) async {
+      await pumpScreen(tester, vaultOverride: (ref) => _AuditFailsVault());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('forget_everything')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('forget_confirm')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Données effacées et vérifiées.'), findsNothing);
+      expect(find.textContaining('Effacement incomplet'), findsOneWidget);
+    });
+  });
+
+  group('ForgetScreen — accessibilité', () {
+    testWidgets('les options ont des labels sémantiques descriptifs',
+        (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpScreen(tester);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.bySemanticsLabel(RegExp('Tout effacer')),
+        findsOneWidget,
+      );
+      expect(
+        find.bySemanticsLabel(RegExp('Effacer une catégorie')),
+        findsOneWidget,
+      );
+
+      handle.dispose();
+    });
+
+    testWidgets('le bouton Tout effacer respecte la cible tactile critique',
+        (tester) async {
+      await pumpScreen(tester);
+      await tester.pumpAndSettle();
+
+      final size = tester.getSize(find.byKey(const Key('forget_everything')));
+      expect(size.height, greaterThanOrEqualTo(56));
+    });
+
+    testWidgets('le bouton de confirmation respecte la cible tactile critique',
+        (tester) async {
+      await pumpScreen(tester);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('forget_everything')));
+      await tester.pumpAndSettle();
+
+      final size = tester.getSize(find.byKey(const Key('forget_confirm')));
+      expect(size.height, greaterThanOrEqualTo(56));
+    });
+  });
+}

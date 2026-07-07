@@ -177,6 +177,25 @@ void main() {
       expect(count, equals(1));
     });
 
+    test('upsert propagates a typed failure when the insert path fails',
+        () async {
+      // Force every INSERT on plugin_data to abort at the SQL level.
+      await db.customStatement(
+        'CREATE TRIGGER fail_plugin_insert BEFORE INSERT ON plugin_data '
+        "BEGIN SELECT RAISE(ABORT, 'insert blocked'); END;",
+      );
+
+      // No existing row -> upsert takes the insert branch, which now fails.
+      final result = await dao.upsert(
+        pluginId: 'com.kita.describe',
+        namespace: 'settings',
+        key: 'model',
+        value: 'yolo-v8',
+      );
+
+      expect(result.isFailure, isTrue);
+    });
+
     test('deleteByPlugin removes all entries for a plugin', () async {
       await dao.insert(
         pluginId: 'com.kita.describe',

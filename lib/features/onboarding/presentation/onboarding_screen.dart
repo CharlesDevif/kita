@@ -9,6 +9,10 @@ import '../../../core/theme/accessibility_tokens.dart';
 import '../../../core/utils/logger.dart';
 import '../../../shared/multi_modal/profile_adapter_impl.dart';
 import '../../../shared/multi_modal/profile_adapter_provider.dart';
+import '../../ai/data/providers/claude_provider.dart';
+import '../../ai/data/providers/openai_provider.dart';
+import '../../memory/di/providers.dart';
+import '../../orchestration/di/providers.dart';
 import '../../io/data/providers/stt_providers.dart';
 import '../../io/data/providers/tts_providers.dart';
 import '../../io/domain/speech_event.dart';
@@ -753,6 +757,22 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           _log.info('Provider mode selected: ${mode.name}');
           final notifier = ref.read(onboardingNotifierProvider.notifier);
           notifier.completeOnboarding();
+        },
+        // Validate the key against the real provider API before accepting it,
+        // so Marie isn't told "success" for a bad key.
+        onValidateKey: (provider, key) async {
+          final probe = provider == 'anthropic'
+              ? ClaudeProvider(apiKey: key)
+              : OpenAIProvider(apiKey: key);
+          final result = await probe.validateApiKey(key);
+          return result.isSuccess;
+        },
+        // Persist the validated key in the encrypted secure vault and hot-load
+        // the matching cloud provider into the live AI router.
+        onStoreKey: (provider, key) async {
+          final repo = await ref.read(preferencesRepositoryProvider.future);
+          await repo.setApiKey(provider, key);
+          ref.invalidate(cloudProvidersInitProvider);
         },
       );
     }

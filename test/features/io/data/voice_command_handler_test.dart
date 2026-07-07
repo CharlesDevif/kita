@@ -90,7 +90,7 @@ void main() {
         });
 
         test('"d\u2019écran" -> describe (curly apostrophe)', () {
-          final result = VoiceCommandHandler.recognize("d\u2019écran");
+          final result = VoiceCommandHandler.recognize('d\u2019écran');
           expect(result.isSuccess, isTrue);
           expect(result.getOrNull(), equals(VoiceCommand.describe));
         });

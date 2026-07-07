@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart' as sql;
 
 import 'package:kita/core/data/database.dart';
-import 'package:kita/core/errors/result.dart';
 import 'package:kita/features/memory/data/daos/consent_dao.dart';
 import 'package:kita/features/memory/data/daos/episode_dao.dart';
 import 'package:kita/features/memory/data/daos/person_dao.dart';
@@ -181,6 +180,33 @@ void main() {
       final id = insertResult.getOrNull()!;
 
       final revokeResult = await vault.revokeConsent(id);
+      expect(revokeResult.isSuccess, isTrue);
+
+      final has = (await vault.hasConsent(
+        consentType: 'data_storage',
+        scope: 'episodic',
+      ))
+          .getOrNull()!;
+      expect(has, isFalse);
+    });
+
+    test('revokeConsent revokes ALL active rows for the same type and scope',
+        () async {
+      // grantConsent inserts a fresh row each call, so a consent can have
+      // several active rows. Revoking must disable all of them.
+      final id1 = (await consentDao.insert(
+        consentType: 'data_storage',
+        scope: 'episodic',
+        granted: true,
+      ))
+          .getOrNull()!;
+      await consentDao.insert(
+        consentType: 'data_storage',
+        scope: 'episodic',
+        granted: true,
+      );
+
+      final revokeResult = await vault.revokeConsent(id1);
       expect(revokeResult.isSuccess, isTrue);
 
       final has = (await vault.hasConsent(
@@ -379,6 +405,59 @@ void main() {
       final remaining = (await vault.pluginDataDao.getAll()).getOrNull()!;
       expect(remaining, hasLength(1));
       expect(remaining.first.pluginId, equals('com.kita.alert'));
+    });
+  });
+
+  group('MemoryVaultImpl — Audit robustness', () {
+    test('auditForget everything does not compensate a failed count', () async {
+      await grantConsentFor('episodic');
+      await vault.saveEpisode(KitaEpisode(
+        id: 0,
+        source: 'test',
+        eventType: 'test',
+        summary: 'Residual episode',
+        importanceScore: 0.5,
+        isPinned: false,
+        createdAt: DateTime.now(),
+      ));
+
+      // Break the consent_log count. With the old sentinel logic the -1 would
+      // cancel the +1 residual episode and wrongly report "everything erased".
+      await db.customStatement('DROP TABLE consent_log');
+
+      final audit = await vault.auditForget(
+        ForgetRequest.everything(confirmation: true),
+      );
+
+      // A failed count must never let the audit claim success.
+      expect(audit.isFailure, isTrue);
+    });
+
+    test('auditForget plugin fails when the residual query errors', () async {
+      await vault.pluginDataDao.insert(
+        pluginId: 'com.kita.describe',
+        namespace: 'settings',
+        key: 'model',
+        value: 'yolo-v8',
+      );
+
+      // Break the residual query: audit must not claim "erased" without proof.
+      await db.customStatement('DROP TABLE plugin_data');
+
+      final audit = await vault.auditForget(
+        ForgetRequest.plugin('com.kita.describe', confirmation: true),
+      );
+      expect(audit.isFailure, isTrue);
+    });
+
+    test('auditForget olderThan fails when the residual query errors', () async {
+      // Break the residual query used to verify olderThan erasure.
+      await db.customStatement('DROP TABLE episodes');
+
+      final audit = await vault.auditForget(
+        ForgetRequest.olderThan(DateTime.now(), confirmation: true),
+      );
+      expect(audit.isFailure, isTrue);
     });
   });
 

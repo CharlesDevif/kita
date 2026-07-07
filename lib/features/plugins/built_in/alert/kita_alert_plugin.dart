@@ -130,7 +130,7 @@ class KitaAlertPlugin implements KitaAgent {
   Future<Result<AgentOutput>> handleInput(AgentInput input) async {
     if (_terminated || _context == null) {
       return const Result.failure(PluginFailure(
-        userMessage: 'Le plugin Alert n est pas actif.',
+        userMessage: "Le plugin Alert n'est pas actif.",
         logMessage: 'KitaAlertPlugin: handleInput called while inactive',
         pluginId: 'com.kita.alert',
       ));
@@ -279,7 +279,7 @@ class KitaAlertPlugin implements KitaAgent {
     final context = _context;
     if (context == null || _terminated) {
       return const Result.failure(PluginFailure(
-        userMessage: 'Le plugin Alert n est pas actif.',
+        userMessage: "Le plugin Alert n'est pas actif.",
         logMessage: 'KitaAlertPlugin: describe obstacle called while inactive',
         pluginId: 'com.kita.alert',
       ));

@@ -136,6 +136,36 @@ class ConsentDao {
     }
   }
 
+  /// Revokes every active row matching [consentType]/[scope].
+  ///
+  /// Consent can be granted multiple times (one row per grant), so revoking a
+  /// single row would leave other grants active. Returns the number of rows
+  /// revoked.
+  Future<Result<int>> revokeAllActive({
+    required String consentType,
+    required String scope,
+  }) async {
+    try {
+      final count = await (_db.update(_db.consentLog)
+            ..where((t) =>
+                t.consentType.equals(consentType) &
+                t.scope.equals(scope) &
+                t.granted.equals(true) &
+                t.revokedAt.isNull()))
+          .write(db.ConsentLogCompanion(
+            revokedAt: Value(DateTime.now()),
+            operation: const Value('revoke'),
+          ));
+      _log.info('Revoked $count active consent row(s)');
+      return Result.success(count);
+    } catch (e, stack) {
+      _log.error('Failed to revoke active consents',
+          error: e, stackTrace: stack);
+      return Result.failure(
+          StorageFailure.databaseError('revoke active consents'));
+    }
+  }
+
   Future<Result<int>> deleteAll() async {
     try {
       final count = await _db.delete(_db.consentLog).go();

@@ -202,7 +202,7 @@ void main() {
 
       test('low battery config sets camera OFF for all motion states',
           () async {
-        final lowConfig = FpsConfig.lowBattery;
+        const lowConfig = FpsConfig.lowBattery;
 
         expect(lowConfig.fpsForState(MotionState.immobile), equals(0));
         expect(lowConfig.fpsForState(MotionState.walking), equals(0));

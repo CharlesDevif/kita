@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../../core/data/database.dart' as db;
 import '../../../core/errors/kita_failure.dart';
 import '../../../core/errors/result.dart';
 import '../../../core/utils/logger.dart';
@@ -31,6 +32,8 @@ class MemoryVaultImpl implements MemoryVault {
     required this.profileDao,
     required this.pluginDataDao,
     required this.consentDao,
+    this.database,
+    this.onPurgeExternal,
   });
 
   final EpisodeDao episodeDao;
@@ -39,6 +42,18 @@ class MemoryVaultImpl implements MemoryVault {
   final ProfileDao profileDao;
   final PluginDataDao pluginDataDao;
   final ConsentDao consentDao;
+
+  /// Shared Drift database, used to run [forget] deletes in a single atomic
+  /// transaction. When null, deletes run sequentially (still correct, but not
+  /// atomic).
+  final db.KitaDatabase? database;
+
+  /// Optional hook invoked by `forget(everything)` after the local tables are
+  /// cleared, to purge data owned by other features that this feature must not
+  /// depend on directly — namely the AI `request_cache` table (plaintext
+  /// prompts/responses) and the secure key vault (API keys). Wiring is provided
+  /// by DI to avoid a memory->ai or memory->secure-storage dependency.
+  final Future<void> Function()? onPurgeExternal;
 
   /// Consent type constant for data storage operations.
   static const _consentDataStorage = 'data_storage';
@@ -162,9 +177,30 @@ class MemoryVaultImpl implements MemoryVault {
 
   @override
   Future<Result<void>> revokeConsent(int consentId) async {
-    final result = await consentDao.revoke(consentId);
-    return result.map((_) {
-      _log.info('Consent revoked');
+    // Acquire the same lock as storage operations so a revoke cannot race with
+    // an in-flight consent-guarded write (TOCTOU).
+    return _withLock(() async {
+      final entryResult = await consentDao.getById(consentId);
+      if (entryResult case Failure<ConsentEntry?>(:final failure)) {
+        return Result.failure(failure);
+      }
+      final entry = entryResult.getOrNull();
+      if (entry == null) {
+        _log.warning('Revoke consent: no consent found for the given id');
+        return const Result.failure(StorageFailure(
+          userMessage: 'Ce consentement est introuvable.',
+          logMessage: 'Revoke consent: id not found',
+        ));
+      }
+      // grantConsent inserts a new row per grant, so revoke ALL active rows for
+      // this (type, scope) — otherwise a multi-granted consent stays active.
+      final result = await consentDao.revokeAllActive(
+        consentType: entry.consentType,
+        scope: entry.scope,
+      );
+      return result.map((_) {
+        _log.info('Consent revoked for ${entry.consentType}/${entry.scope}');
+      });
     });
   }
 
@@ -224,7 +260,7 @@ class MemoryVaultImpl implements MemoryVault {
   Future<Result<void>> forget(ForgetRequest request) async {
     if (!request.confirmation) {
       return const Result.failure(StorageFailure(
-        userMessage: 'Confirmation requise pour effacer les donnees.',
+        userMessage: 'Confirmation requise pour effacer les données.',
         logMessage: 'Forget request rejected: confirmation=false',
       ));
     }
@@ -232,19 +268,27 @@ class MemoryVaultImpl implements MemoryVault {
     try {
       switch (request.scope) {
         case ForgetScope.everything:
-          await episodeDao.deleteAll();
-          await preferenceDao.deleteAll();
-          await personDao.deleteAll();
-          await profileDao.deleteAll();
-          await pluginDataDao.deleteAll();
-          await consentDao.deleteAll();
+          final localDb = database;
+          if (localDb != null) {
+            await localDb.transaction(_deleteEverything);
+          } else {
+            await _deleteEverything();
+          }
+          // Purge data owned by other features (AI request_cache, secure keys)
+          // via the injected hook. Runs after the local commit; a failure here
+          // makes forget report failure so the caller knows the purge was
+          // incomplete.
+          final purge = onPurgeExternal;
+          if (purge != null) {
+            await purge();
+          }
           _log.info('All data deleted (forget everything)');
 
         case ForgetScope.domain:
           final domain = request.domain;
           if (domain == null) {
             return const Result.failure(StorageFailure(
-              userMessage: 'Domaine non specifie.',
+              userMessage: 'Domaine non spécifié.',
               logMessage: 'Forget domain request without domain specified',
             ));
           }
@@ -255,7 +299,7 @@ class MemoryVaultImpl implements MemoryVault {
           final pluginId = request.pluginId;
           if (pluginId == null) {
             return const Result.failure(StorageFailure(
-              userMessage: 'Plugin non specifie.',
+              userMessage: 'Plugin non spécifié.',
               logMessage: 'Forget plugin request without pluginId specified',
             ));
           }
@@ -266,7 +310,7 @@ class MemoryVaultImpl implements MemoryVault {
           final before = request.before;
           if (before == null) {
             return const Result.failure(StorageFailure(
-              userMessage: 'Date non specifiee.',
+              userMessage: 'Date non spécifiée.',
               logMessage: 'Forget olderThan request without date',
             ));
           }
@@ -284,15 +328,59 @@ class MemoryVaultImpl implements MemoryVault {
       }
 
       return const Result.success(null);
+    } on _ForgetAborted catch (aborted) {
+      // A delete inside the transaction failed; the transaction was rolled
+      // back so no partial deletion happened. Surface the typed failure.
+      _log.error('Forget rolled back: ${aborted.failure.logMessage}');
+      return Result.failure(aborted.failure);
     } catch (e, stack) {
       _log.error('Forget operation failed', error: e, stackTrace: stack);
       return Result.failure(StorageFailure.databaseError('forget'));
     }
   }
 
+  /// Clears every persisted table. Any DAO failure throws [_ForgetAborted] so
+  /// that, when run inside a transaction, the whole delete is rolled back
+  /// (DAOs swallow their own exceptions, so a thrown marker is required to
+  /// trigger the rollback).
+  Future<void> _deleteEverything() async {
+    final results = <Result<int>>[
+      await episodeDao.deleteAll(),
+      await preferenceDao.deleteAll(),
+      await personDao.deleteAll(),
+      await profileDao.deleteAll(),
+      await pluginDataDao.deleteAll(),
+      await consentDao.deleteAll(),
+    ];
+    for (final result in results) {
+      if (result case Failure<int>(:final failure)) {
+        throw _ForgetAborted(failure);
+      }
+    }
+  }
+
   // --- Private helpers ---
 
-  /// Atomically checks consent and executes [action] under a lock.
+  /// Serializes [action] against every other consent-guarded operation.
+  ///
+  /// Both storage (check-then-write) and [revokeConsent] acquire this lock so
+  /// a revoke cannot interleave with an in-flight write (TOCTOU).
+  Future<Result<T>> _withLock<T>(Future<Result<T>> Function() action) async {
+    // Wait for any in-flight consent-guarded operation to complete.
+    while (_consentLock != null) {
+      await _consentLock!.future;
+    }
+    _consentLock = Completer<void>();
+    try {
+      return await action();
+    } finally {
+      final lock = _consentLock;
+      _consentLock = null;
+      lock?.complete();
+    }
+  }
+
+  /// Atomically checks consent and executes [action] under the shared lock.
   ///
   /// Prevents TOCTOU race where consent could be revoked between the check
   /// and the storage operation.
@@ -301,12 +389,7 @@ class MemoryVaultImpl implements MemoryVault {
     required String scope,
     required Future<Result<T>> Function() action,
   }) async {
-    // Wait for any in-flight consent-guarded operation to complete.
-    while (_consentLock != null) {
-      await _consentLock!.future;
-    }
-    _consentLock = Completer<void>();
-    try {
+    return _withLock(() async {
       final consentResult = await _requireConsent(
         consentType: consentType,
         scope: scope,
@@ -315,11 +398,7 @@ class MemoryVaultImpl implements MemoryVault {
         return Result.failure((consentResult as Failure).failure);
       }
       return await action();
-    } finally {
-      final lock = _consentLock;
-      _consentLock = null;
-      lock?.complete();
-    }
+    });
   }
 
   Future<Result<void>> _requireConsent({
@@ -334,7 +413,7 @@ class MemoryVaultImpl implements MemoryVault {
     if (!hasConsent) {
       _log.warning('Storage refused: no consent for $consentType/$scope');
       return const Result.failure(StorageFailure(
-        userMessage: 'Consentement requis pour stocker ces donnees.',
+        userMessage: 'Consentement requis pour stocker ces données.',
         logMessage: 'Storage refused: missing consent',
       ));
     }
@@ -348,36 +427,57 @@ class MemoryVaultImpl implements MemoryVault {
     try {
       switch (request.scope) {
         case ForgetScope.everything:
-          final episodeCount = (await episodeDao.count()).getOrElse((_) => -1);
-          final prefCount = (await preferenceDao.count()).getOrElse((_) => -1);
-          final personCount = (await personDao.count()).getOrElse((_) => -1);
-          final profileCount = (await profileDao.count()).getOrElse((_) => -1);
-          final pluginCount =
-              (await pluginDataDao.count()).getOrElse((_) => -1);
-          final consentCount = (await consentDao.count()).getOrElse((_) => -1);
-          final total = episodeCount +
-              prefCount +
-              personCount +
-              profileCount +
-              pluginCount +
-              consentCount;
+          final counts = <Result<int>>[
+            await episodeDao.count(),
+            await preferenceDao.count(),
+            await personDao.count(),
+            await profileDao.count(),
+            await pluginDataDao.count(),
+            await consentDao.count(),
+          ];
+          var total = 0;
+          for (final count in counts) {
+            // A failed count must never be compensated by another table's
+            // count: fail the audit instead of silently reporting success.
+            if (count case Failure<int>(:final failure)) {
+              _log.warning('Audit forget everything: a table count failed');
+              return Result.failure(failure);
+            }
+            total += count.getOrElse((_) => 0);
+          }
           _log.info('Audit forget everything: $total remaining rows');
           return Result.success(total == 0);
 
         case ForgetScope.domain:
-          final count = await _countDomain(request.domain!);
+          final countResult = await _countDomain(request.domain!);
+          if (countResult case Failure<int>(:final failure)) {
+            _log.warning('Audit forget domain: count failed');
+            return Result.failure(failure);
+          }
+          final count = countResult.getOrElse((_) => 0);
           _log.info('Audit forget domain: $count remaining rows');
           return Result.success(count == 0);
 
         case ForgetScope.plugin:
-          final entries =
-              (await pluginDataDao.getByPlugin(request.pluginId!)).getOrElse((_) => []);
+          // A failed residual query must fail the audit, never claim success.
+          final entriesResult =
+              await pluginDataDao.getByPlugin(request.pluginId!);
+          if (entriesResult.isFailure) {
+            _log.warning('Audit forget plugin: residual query failed');
+            return Result.failure((entriesResult as Failure).failure);
+          }
+          final entries = entriesResult.getOrNull()!;
           _log.info('Audit forget plugin: ${entries.length} remaining rows');
           return Result.success(entries.isEmpty);
 
         case ForgetScope.olderThan:
-          final remaining =
-              (await episodeDao.getExpiredBefore(request.before!)).getOrElse((_) => []);
+          final remainingResult =
+              await episodeDao.getExpiredBefore(request.before!);
+          if (remainingResult.isFailure) {
+            _log.warning('Audit forget olderThan: residual query failed');
+            return Result.failure((remainingResult as Failure).failure);
+          }
+          final remaining = remainingResult.getOrNull()!;
           _log.info('Audit forget olderThan: ${remaining.length} remaining rows');
           return Result.success(remaining.isEmpty);
 
@@ -414,16 +514,26 @@ class MemoryVaultImpl implements MemoryVault {
     }
   }
 
-  Future<int> _countDomain(MemoryDomain domain) async {
+  Future<Result<int>> _countDomain(MemoryDomain domain) async {
     switch (domain) {
       case MemoryDomain.episodic:
-        return (await episodeDao.count()).getOrElse((_) => -1);
+        return episodeDao.count();
       case MemoryDomain.semantic:
-        return (await preferenceDao.count()).getOrElse((_) => -1);
+        return preferenceDao.count();
       case MemoryDomain.relational:
-        return (await personDao.count()).getOrElse((_) => -1);
+        return personDao.count();
       case MemoryDomain.working:
-        return 0;
+        // Working memory is RAM-only; there is nothing persisted to count.
+        return const Result.success(0);
     }
   }
+}
+
+/// Internal marker thrown to abort (and roll back) a `forget(everything)`
+/// transaction when a DAO delete reports a failure. Carries the typed failure
+/// so it can be surfaced to the caller.
+class _ForgetAborted implements Exception {
+  const _ForgetAborted(this.failure);
+
+  final KitaFailure failure;
 }

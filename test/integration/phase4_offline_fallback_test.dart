@@ -25,7 +25,6 @@ class _ConfigurableMockProvider implements AIProvider {
   _ConfigurableMockProvider({
     required this.id,
     required this.tier,
-    this.isAvailable = true,
     String? responseContent,
   }) : responseContent = responseContent ?? 'Response from provider';
 
@@ -39,7 +38,7 @@ class _ConfigurableMockProvider implements AIProvider {
   final ProviderTier tier;
 
   @override
-  bool isAvailable;
+  bool isAvailable = true;
 
   String responseContent;
 

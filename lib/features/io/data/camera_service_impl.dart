@@ -54,7 +54,7 @@ class CameraServiceImpl implements CameraService {
           _log.warning('No cameras available on device');
           return const Result.failure(
             PermissionFailure(
-              userMessage: 'Aucune camera disponible.',
+              userMessage: 'Aucune caméra disponible.',
               logMessage: 'No cameras found on device',
               permission: 'camera',
             ),
@@ -254,7 +254,7 @@ class CameraServiceImpl implements CameraService {
       case 'CameraAccessDeniedWithoutPrompt':
       case 'CameraAccessRestricted':
         return PermissionFailure(
-          userMessage: 'Permission camera refusee. Activez-la dans les reglages.',
+          userMessage: 'Permission caméra refusée. Activez-la dans les réglages.',
           logMessage: 'Camera permission denied: ${e.code}',
           permission: 'camera',
           cause: e,
@@ -262,7 +262,7 @@ class CameraServiceImpl implements CameraService {
         );
       case 'CameraNotFound':
         return PermissionFailure(
-          userMessage: 'Camera non trouvee sur cet appareil.',
+          userMessage: 'Caméra non trouvée sur cet appareil.',
           logMessage: 'Camera not found: ${e.code}',
           permission: 'camera',
           cause: e,

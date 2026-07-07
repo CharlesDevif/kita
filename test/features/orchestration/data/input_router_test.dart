@@ -458,9 +458,10 @@ void main() {
         await router.route(input);
 
         expect(describeAgent.receivedInputs, hasLength(1));
+        // Le routeur transmet la forme canonique accentuée, pas le transcript brut.
         expect(
           describeAgent.receivedInputs.first.command,
-          'plus de details',
+          'plus de détails',
         );
       });
 
@@ -477,7 +478,7 @@ void main() {
         await router.route(input);
 
         expect(describeAgent.receivedInputs, hasLength(1));
-        expect(describeAgent.receivedInputs.first.command, 'repete');
+        expect(describeAgent.receivedInputs.first.command, 'répète');
       });
 
       test('"merci" routes to focused agent', () async {

@@ -382,7 +382,7 @@ void main() {
       expect(result.isFailure, isTrue);
       final failure = (result as Failure).failure;
       expect(failure, isA<AIProviderFailure>());
-      expect(failure.userMessage, contains('echouee'));
+      expect(failure.userMessage, contains('échouée'));
     });
 
     test('vision includes latency in response meta', () async {

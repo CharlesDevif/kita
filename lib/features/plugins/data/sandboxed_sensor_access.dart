@@ -33,7 +33,7 @@ class SandboxedSensorAccess implements SensorAccess {
     if (!allowedPermissions.contains('camera')) {
       _log.warning('Plugin $pluginId denied camera access');
       return Result.failure(PermissionFailure(
-        userMessage: "Le plugin n'a pas la permission camera.",
+        userMessage: "Le plugin n'a pas la permission caméra.",
         logMessage: 'Plugin $pluginId tried camera without permission',
         permission: 'camera',
       ));

@@ -197,7 +197,7 @@ void main() {
       for (int i = 0; i < bgra.length; i++) {
         bgra[i] = 200;
       }
-      final small = const FramePreprocessor(inputSize: 4);
+      const small = FramePreprocessor(inputSize: 4);
       final frame = ImageData(
         bytes: bgra,
         mimeType: 'image/bgra8888',
@@ -220,7 +220,7 @@ void main() {
       for (int i = 0; i < bgra.length; i++) {
         bgra[i] = 128;
       }
-      final small = const FramePreprocessor(inputSize: 4);
+      const small = FramePreprocessor(inputSize: 4);
       final frame = ImageData(
         bytes: bgra,
         mimeType: 'image/bgra8888',
@@ -243,7 +243,7 @@ void main() {
 
     test('throws ArgumentError when buffer is too small', () {
       final bgra = Uint8List(4 * 4 * 4);
-      final small = const FramePreprocessor(inputSize: 4);
+      const small = FramePreprocessor(inputSize: 4);
       final frame = ImageData(
         bytes: bgra,
         mimeType: 'image/bgra8888',

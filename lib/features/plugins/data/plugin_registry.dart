@@ -33,7 +33,7 @@ class PluginRegistryImpl implements PluginRegistryService {
     if (_plugins.containsKey(id)) {
       _log.warning('Plugin $id already registered');
       return Result.failure(PluginFailure(
-        userMessage: 'Ce plugin est deja enregistre.',
+        userMessage: 'Ce plugin est déjà enregistré.',
         logMessage: 'Plugin $id already registered',
         pluginId: id,
       ));
@@ -83,7 +83,7 @@ class PluginRegistryImpl implements PluginRegistryService {
       _log.error('Plugin $pluginId crashed during activation',
           error: e, stackTrace: stack);
       return Result.failure(PluginFailure(
-        userMessage: "Le plugin n'a pas pu demarrer.",
+        userMessage: "Le plugin n'a pas pu démarrer.",
         logMessage: 'Plugin $pluginId crashed during activation: $e',
         pluginId: pluginId,
         cause: e,

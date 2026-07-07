@@ -138,13 +138,13 @@ class PluginDataDao {
         _log.debug('Plugin data updated');
         return const Result.success(true);
       } else {
-        await insert(
+        final insertResult = await insert(
           pluginId: pluginId,
           namespace: namespace,
           key: key,
           value: value,
         );
-        return const Result.success(true);
+        return insertResult.map((_) => true);
       }
     } catch (e, stack) {
       _log.error('Failed to upsert plugin data', error: e, stackTrace: stack);

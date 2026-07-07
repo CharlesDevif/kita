@@ -69,7 +69,7 @@ class ObstacleDetector {
     } catch (e, stack) {
       _log.error('Failed to load model', error: e, stackTrace: stack);
       return Result.failure(AIProviderFailure(
-        userMessage: 'Le modele de detection est indisponible.',
+        userMessage: 'Le modèle de détection est indisponible.',
         logMessage: 'ObstacleDetector init failed: $e',
         providerId: 'tflite-yolo',
         cause: e,
@@ -85,7 +85,7 @@ class ObstacleDetector {
   Future<Result<List<Detection>>> detect(ImageData frame) async {
     if (!_initialized || _isolateInterpreter == null) {
       return const Result.failure(AIProviderFailure(
-        userMessage: 'Le detecteur n est pas initialise.',
+        userMessage: "Le détecteur n'est pas initialisé.",
         logMessage: 'ObstacleDetector.detect called before initialize',
         providerId: 'tflite-yolo',
       ));
@@ -135,7 +135,7 @@ class ObstacleDetector {
     } catch (e, stack) {
       _log.error('Inference failed', error: e, stackTrace: stack);
       return Result.failure(AIProviderFailure(
-        userMessage: 'La detection a echoue.',
+        userMessage: 'La détection a échoué.',
         logMessage: 'ObstacleDetector inference error: $e',
         providerId: 'tflite-yolo',
         cause: e,

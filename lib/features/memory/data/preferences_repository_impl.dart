@@ -10,7 +10,13 @@ import 'memory_vault_impl.dart';
 final _log = KitaLogger('Memory');
 
 /// API key storage key prefix. Keys stored as "api_key_{providerId}".
-const _apiKeyPrefix = 'api_key_';
+///
+/// Public so the forget(everything) purge (wired in memory/di/providers.dart)
+/// can target the same secure-storage keys this repository writes.
+const apiKeyStoragePrefix = 'api_key_';
+
+/// Backward-compatible private alias used throughout this file.
+const _apiKeyPrefix = apiKeyStoragePrefix;
 
 /// Implementation of [PreferencesRepository] combining ProfileDao,
 /// PreferenceDao (via MemoryVault for consent), and SecureKeyVault.

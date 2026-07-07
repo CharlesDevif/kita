@@ -2,6 +2,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../core/di/database_provider.dart';
+import '../../ai/data/response_cache.dart';
 import '../data/auto_cleanup_service.dart';
 import '../data/daos/consent_dao.dart';
 import '../data/daos/episode_dao.dart';
@@ -23,6 +24,7 @@ part 'providers.g.dart';
 @Riverpod(keepAlive: true)
 Future<MemoryVault> memoryVault(Ref ref) async {
   final db = await ref.watch(kitaDatabaseProvider.future);
+  final keyVault = ref.watch(secureKeyVaultProvider);
   return MemoryVaultImpl(
     episodeDao: EpisodeDao(db),
     preferenceDao: PreferenceDao(db),
@@ -30,6 +32,17 @@ Future<MemoryVault> memoryVault(Ref ref) async {
     profileDao: ProfileDao(db),
     pluginDataDao: PluginDataDao(db),
     consentDao: ConsentDao(db),
+    // Shared db enables atomic (transactional) forget-everything deletes.
+    database: db,
+    // Leader-wired cross-feature purge for forget(everything): clears the AI
+    // request cache (prompts/responses stored in clear text) and the stored
+    // cloud API keys. It deliberately does NOT call keyVault.deleteAll(),
+    // which would also wipe the database encryption key and brick the vault.
+    onPurgeExternal: () async {
+      await ResponseCache(database: db).clear();
+      await keyVault.delete('${apiKeyStoragePrefix}anthropic');
+      await keyVault.delete('${apiKeyStoragePrefix}openai');
+    },
   );
 }
 

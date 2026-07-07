@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kita/core/errors/kita_failure.dart';
 import 'package:kita/core/errors/result.dart';

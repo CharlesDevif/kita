@@ -198,7 +198,7 @@ class _KitaShellState extends ConsumerState<KitaShell>
 
     return Semantics(
       container: true,
-      label: 'Ecran principal Kita',
+      label: 'Écran principal Kita',
       child: Scaffold(
         backgroundColor: const Color(0xFF1A1A2E),
         body: SafeArea(

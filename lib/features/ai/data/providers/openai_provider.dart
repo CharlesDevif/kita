@@ -201,7 +201,7 @@ class OpenAIProvider implements AIProvider {
     } on Exception catch (e, stack) {
       _log.warning('API key validation failed', error: e, stackTrace: stack);
       return Result.failure(NetworkFailure(
-        userMessage: 'Impossible de verifier la cle API.',
+        userMessage: 'Impossible de vérifier la clé API.',
         logMessage: 'OpenAI API key validation error: $e',
         cause: e,
         stackTrace: stack,
@@ -286,7 +286,7 @@ class OpenAIProvider implements AIProvider {
     } catch (e, stack) {
       _log.error('Failed to parse response', error: e, stackTrace: stack);
       return Result.failure(AIProviderFailure(
-        userMessage: 'Reponse du service OpenAI invalide.',
+        userMessage: 'Réponse du service OpenAI invalide.',
         logMessage: 'OpenAI response parse error: $e',
         providerId: id,
         cause: e,
@@ -344,7 +344,7 @@ class OpenAIProvider implements AIProvider {
     } catch (e, stack) {
       _log.error('Failed to parse tool response', error: e, stackTrace: stack);
       return Result.failure(AIProviderFailure(
-        userMessage: 'Reponse du service OpenAI invalide.',
+        userMessage: 'Réponse du service OpenAI invalide.',
         logMessage: 'OpenAI tool response parse error: $e',
         providerId: id,
         cause: e,

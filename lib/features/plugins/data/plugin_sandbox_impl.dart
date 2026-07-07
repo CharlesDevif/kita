@@ -80,7 +80,7 @@ class PluginSandboxImpl implements PluginSandbox {
         stackTrace: stack,
       );
       return Result.failure(PluginFailure(
-        userMessage: 'Le plugin a rencontre une erreur.',
+        userMessage: 'Le plugin a rencontré une erreur.',
         logMessage: 'Plugin ${manifest.id} crashed: $e',
         pluginId: manifest.id,
         cause: e,
@@ -103,7 +103,7 @@ class PluginSandboxImpl implements PluginSandbox {
           'Plugin ${manifest.id} declares unknown permission: $perm',
         );
         return Result.failure(PluginFailure(
-          userMessage: 'Le plugin declare une permission inconnue.',
+          userMessage: 'Le plugin déclare une permission inconnue.',
           logMessage:
               'Plugin ${manifest.id} declares unknown permission: $perm',
           pluginId: manifest.id,
@@ -119,7 +119,7 @@ class PluginSandboxImpl implements PluginSandbox {
         'Plugin ${manifest.id} requests memory without permission',
       );
       return Result.failure(PluginFailure(
-        userMessage: "Le plugin n'a pas la permission memoire.",
+        userMessage: "Le plugin n'a pas la permission mémoire.",
         logMessage:
             'Plugin ${manifest.id} requests memory without permission',
         pluginId: manifest.id,

@@ -15,7 +15,7 @@ void main() {
   group('transpose', () {
     test('transposes [1][84][8400] to [8400][84]', () {
       // Create a small test: [1][3][2] -> [2][3]
-      final small = const DetectionPostprocessor(inputSize: 4.0);
+      const small = DetectionPostprocessor(inputSize: 4.0);
       final raw = [
         [
           [1.0, 4.0], // field 0: values for predictions 0 and 1
@@ -35,7 +35,7 @@ void main() {
 
   group('postprocess', () {
     /// Create a raw output tensor [1][84][8400] with one detection at index 0.
-    List<List<List<double>>> _createRawOutput({
+    List<List<List<double>>> createRawOutput({
       double cx = 320.0,
       double cy = 320.0,
       double w = 100.0,
@@ -64,7 +64,7 @@ void main() {
     }
 
     test('detects single high-confidence object', () {
-      final raw = _createRawOutput(score: 0.95, classId: 0);
+      final raw = createRawOutput(score: 0.95, classId: 0);
       final detections = postprocessor.postprocess(raw);
 
       expect(detections.length, 1);
@@ -73,14 +73,14 @@ void main() {
     });
 
     test('filters out low confidence detections', () {
-      final raw = _createRawOutput(score: 0.5); // Below 0.80 threshold
+      final raw = createRawOutput(score: 0.5); // Below 0.80 threshold
       final detections = postprocessor.postprocess(raw);
 
       expect(detections, isEmpty);
     });
 
     test('filters detections at exactly the threshold', () {
-      final raw = _createRawOutput(score: 0.80);
+      final raw = createRawOutput(score: 0.80);
       final detections = postprocessor.postprocess(raw);
 
       // 0.80 == threshold, not strictly greater
@@ -88,14 +88,14 @@ void main() {
     });
 
     test('accepts detections just above threshold', () {
-      final raw = _createRawOutput(score: 0.81);
+      final raw = createRawOutput(score: 0.81);
       final detections = postprocessor.postprocess(raw);
 
       expect(detections.length, 1);
     });
 
     test('maps class ID to COCO label', () {
-      final raw = _createRawOutput(classId: 2, score: 0.9);
+      final raw = createRawOutput(classId: 2, score: 0.9);
       final detections = postprocessor.postprocess(raw);
 
       expect(detections.length, 1);
@@ -103,7 +103,7 @@ void main() {
     });
 
     test('estimates distance for known objects', () {
-      final raw = _createRawOutput(
+      final raw = createRawOutput(
         classId: 0, // person
         score: 0.95,
         h: 200.0, // Roughly 1/3 of image height
@@ -128,7 +128,7 @@ void main() {
 
     test('handles different class IDs correctly', () {
       // Put score on class 7 (truck)
-      final raw = _createRawOutput(classId: 7, score: 0.92);
+      final raw = createRawOutput(classId: 7, score: 0.92);
       final detections = postprocessor.postprocess(raw);
 
       expect(detections.length, 1);
@@ -224,7 +224,7 @@ void main() {
 
   group('custom thresholds', () {
     test('uses custom confidence threshold', () {
-      final lenient = const DetectionPostprocessor(
+      const lenient = DetectionPostprocessor(
         confidenceThreshold: 0.5,
       );
 

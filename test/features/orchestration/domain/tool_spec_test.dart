@@ -139,7 +139,7 @@ void main() {
         final prompt = KitaTools.describe.toGemmaPrompt();
 
         expect(prompt, contains('Outil "describe"'));
-        expect(prompt, contains('Parametres:'));
+        expect(prompt, contains('Paramètres:'));
         expect(prompt, contains('detail_level'));
         expect(prompt, contains('(string)'));
         expect(prompt, contains('(optionnel)'));
@@ -151,7 +151,7 @@ void main() {
         final prompt = KitaTools.alert.toGemmaPrompt();
 
         expect(prompt, contains('Outil "alert"'));
-        expect(prompt, contains('Parametres:'));
+        expect(prompt, contains('Paramètres:'));
         expect(prompt, contains('action'));
         expect(prompt, contains('(obligatoire)'));
         expect(prompt, contains('start'));

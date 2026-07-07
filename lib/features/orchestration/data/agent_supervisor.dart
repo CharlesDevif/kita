@@ -107,7 +107,7 @@ class AgentSupervisor {
     if (_agents.containsKey(agentId)) {
       _log.warning('Agent $agentId already active');
       return Result.failure(PluginFailure(
-        userMessage: "L'agent est deja actif.",
+        userMessage: "L'agent est déjà actif.",
         logMessage: 'Agent $agentId already active',
         pluginId: agentId,
       ));
@@ -166,7 +166,7 @@ class AgentSupervisor {
       _bus.unsubscribe(agentId);
       await _busSubscriptions.remove(agentId)?.cancel();
       return Result.failure(PluginFailure(
-        userMessage: "L'agent n'a pas pu demarrer.",
+        userMessage: "L'agent n'a pas pu démarrer.",
         logMessage: 'Agent $agentId crashed during spawn: $e',
         pluginId: agentId,
         cause: e,

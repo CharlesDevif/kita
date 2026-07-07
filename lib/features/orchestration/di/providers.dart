@@ -3,9 +3,12 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../ai/data/ai_router_impl.dart';
+import '../../ai/data/providers/claude_provider.dart';
 import '../../ai/data/providers/gemma_bridge.dart';
 import '../../ai/data/providers/local_provider.dart';
+import '../../ai/data/providers/openai_provider.dart';
 import '../../ai/data/request_classifier_impl.dart';
+import '../../memory/di/providers.dart';
 import '../../ai/domain/ai_router.dart';
 import '../../ai/domain/request_classifier.dart';
 import '../../io/data/providers/camera_providers.dart';
@@ -79,6 +82,33 @@ final aiRouterProvider = Provider<AIRouter>((ref) {
     classifier: classifier,
     providers: [LocalProvider(gemmaBridge: gemmaBridge)],
   );
+});
+
+/// Registers cloud AI providers (Claude, OpenAI) from stored API keys.
+///
+/// The app is local-first: [aiRouterProvider] boots with only the local
+/// provider. This future reads any API keys the user configured (during
+/// onboarding or in settings) and registers the matching cloud providers on
+/// the live router, so the fallback chain's cloud tiers become reachable
+/// without an app restart. It is a no-op when no key is stored.
+///
+/// Kick it off at app boot (see [KitaShell.initState]) and invalidate it
+/// after storing a new key to pick it up immediately.
+final cloudProvidersInitProvider = FutureProvider<void>((ref) async {
+  final router = ref.watch(aiRouterProvider);
+  if (router is! AIRouterImpl) return;
+
+  final repo = await ref.watch(preferencesRepositoryProvider.future);
+
+  final anthropicKey = (await repo.getApiKey('anthropic')).getOrNull();
+  if (anthropicKey != null && anthropicKey.isNotEmpty) {
+    router.registerProvider(ClaudeProvider(apiKey: anthropicKey));
+  }
+
+  final openaiKey = (await repo.getApiKey('openai')).getOrNull();
+  if (openaiKey != null && openaiKey.isNotEmpty) {
+    router.registerProvider(OpenAIProvider(apiKey: openaiKey));
+  }
 });
 
 /// The [PluginSandboxImpl] for building sandboxed [AgentContext]s.

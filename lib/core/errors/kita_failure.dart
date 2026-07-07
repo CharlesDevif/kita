@@ -38,7 +38,7 @@ final class NetworkFailure extends KitaFailure {
   });
 
   factory NetworkFailure.timeout({String? endpoint}) => NetworkFailure(
-        userMessage: 'La connexion a expire. Verifiez votre reseau.',
+        userMessage: 'La connexion a expiré. Vérifiez votre réseau.',
         logMessage:
             'Network timeout${endpoint != null ? ' on $endpoint' : ''}',
       );
@@ -61,14 +61,14 @@ final class AIProviderFailure extends KitaFailure {
 
   factory AIProviderFailure.rateLimited(String providerId) =>
       AIProviderFailure(
-        userMessage: 'Le service IA est temporairement surcharge.',
+        userMessage: 'Le service IA est temporairement surchargé.',
         logMessage: 'Rate limited by provider $providerId',
         providerId: providerId,
       );
 
   factory AIProviderFailure.invalidApiKey(String providerId) =>
       AIProviderFailure(
-        userMessage: 'La cle API est invalide. Verifiez dans les reglages.',
+        userMessage: 'La clé API est invalide. Vérifiez dans les réglages.',
         logMessage: 'Invalid API key for provider $providerId',
         providerId: providerId,
       );
@@ -78,7 +78,7 @@ final class AIProviderFailure extends KitaFailure {
     String model,
   ) =>
       AIProviderFailure(
-        userMessage: 'Le modele IA est indisponible.',
+        userMessage: 'Le modèle IA est indisponible.',
         logMessage: 'Model $model unavailable on provider $providerId',
         providerId: providerId,
       );
@@ -101,13 +101,13 @@ final class PluginFailure extends KitaFailure {
     String permission,
   ) =>
       PluginFailure(
-        userMessage: 'Le plugin a tente un acces non autorise.',
+        userMessage: 'Le plugin a tenté un accès non autorisé.',
         logMessage: 'Sandbox violation: plugin $pluginId tried $permission',
         pluginId: pluginId,
       );
 
   factory PluginFailure.timeout(String pluginId) => PluginFailure(
-        userMessage: "Le plugin n'a pas repondu a temps.",
+        userMessage: "Le plugin n'a pas répondu à temps.",
         logMessage: 'Plugin $pluginId timed out',
         pluginId: pluginId,
       );
@@ -131,7 +131,7 @@ final class StorageFailure extends KitaFailure {
 
   factory StorageFailure.secureStorageError(String operation) =>
       StorageFailure(
-        userMessage: "Erreur d'acces au stockage securise.",
+        userMessage: "Erreur d'accès au stockage sécurisé.",
         logMessage: 'Secure storage error during $operation',
       );
 }
@@ -147,14 +147,14 @@ final class PermissionFailure extends KitaFailure {
   });
 
   factory PermissionFailure.denied(String permission) => PermissionFailure(
-        userMessage: 'Permission refusee. Activez-la dans les reglages.',
+        userMessage: 'Permission refusée. Activez-la dans les réglages.',
         logMessage: 'Permission denied: $permission',
         permission: permission,
       );
 
   factory PermissionFailure.permanentlyDenied(String permission) =>
       PermissionFailure(
-        userMessage: 'Permission bloquee. Allez dans les reglages systeme.',
+        userMessage: 'Permission bloquée. Allez dans les réglages système.',
         logMessage: 'Permission permanently denied: $permission',
         permission: permission,
       );

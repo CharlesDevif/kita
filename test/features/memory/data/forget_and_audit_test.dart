@@ -39,6 +39,7 @@ void main() {
       profileDao: profileDao,
       pluginDataDao: pluginDataDao,
       consentDao: consentDao,
+      database: db,
     );
   });
 
@@ -294,7 +295,7 @@ void main() {
     test('erases episodes older than the specified date', () async {
       await grantConsentFor('episodic');
 
-      // Insert an episode with a past expiry date
+      // Insert an episode with a past expiry date -> must be erased.
       final oldDate = DateTime.now().subtract(const Duration(days: 30));
       await episodeDao.insert(
         source: 'camera',
@@ -305,7 +306,8 @@ void main() {
         expiresAt: oldDate,
       );
 
-      // Insert an episode with no expiry (should survive)
+      // Insert a recent episode with no expiry (created now) -> must survive a
+      // cutoff placed in the past.
       await episodeDao.insert(
         source: 'camera',
         eventType: 'describe',
@@ -314,14 +316,16 @@ void main() {
         isPinned: false,
       );
 
+      final cutoff = DateTime.now().subtract(const Duration(days: 15));
       final result = await vault.forget(
-        ForgetRequest.olderThan(DateTime.now(), confirmation: true),
+        ForgetRequest.olderThan(cutoff, confirmation: true),
       );
       expect(result.isSuccess, isTrue);
 
       final episodes = (await vault.getEpisodes()).getOrNull()!;
-      // Only the non-expired episode should remain
-      expect(episodes.every((e) => e.summary != 'Old scene'), isTrue);
+      // Old episode erased, recent no-expiry episode preserved.
+      expect(episodes, hasLength(1));
+      expect(episodes.first.summary, equals('Recent scene'));
     });
 
     test('auditForget confirms 0 residual for olderThan', () async {
@@ -518,6 +522,119 @@ void main() {
       expect(data[MemoryDomain.episodic]!.first, contains('A park scene'));
       expect(data[MemoryDomain.semantic]!.first, contains('theme'));
       expect(data[MemoryDomain.relational]!.first, equals('Sophie'));
+    });
+  });
+
+  // ===== Forget everything atomicity + external purge hook =====
+
+  MemoryVaultImpl buildVault({Future<void> Function()? onPurgeExternal}) {
+    return MemoryVaultImpl(
+      episodeDao: EpisodeDao(db),
+      preferenceDao: PreferenceDao(db),
+      personDao: PersonDao(db),
+      profileDao: ProfileDao(db),
+      pluginDataDao: PluginDataDao(db),
+      consentDao: ConsentDao(db),
+      database: db,
+      onPurgeExternal: onPurgeExternal,
+    );
+  }
+
+  group('Forget everything — atomicity', () {
+    test('rolls back every delete when one table fails mid-transaction',
+        () async {
+      await seedAllDomains();
+
+      // Make the plugin_data delete fail inside the transaction.
+      await db.customStatement('DROP TABLE plugin_data');
+
+      final result = await vault.forget(
+        ForgetRequest.everything(confirmation: true),
+      );
+      expect(result.isFailure, isTrue);
+
+      // Transaction rolled back: earlier deletes were undone.
+      expect((await vault.getEpisodes()).getOrNull(), hasLength(1));
+      expect((await vault.getPreferences()).getOrNull(), hasLength(1));
+      expect((await vault.getPersons()).getOrNull(), hasLength(1));
+    });
+  });
+
+  group('Forget everything — external purge hook', () {
+    test('invokes onPurgeExternal after clearing local tables', () async {
+      var purged = false;
+      final vaultWithHook = buildVault(
+        onPurgeExternal: () async {
+          purged = true;
+        },
+      );
+      await seedAllDomains();
+
+      final result = await vaultWithHook.forget(
+        ForgetRequest.everything(confirmation: true),
+      );
+      expect(result.isSuccess, isTrue);
+      expect(purged, isTrue);
+
+      final data = (await vaultWithHook.whatDoYouKnow()).getOrNull()!;
+      expect(data, isEmpty);
+    });
+
+    test('reports failure when onPurgeExternal throws', () async {
+      final vaultWithBadHook = buildVault(
+        onPurgeExternal: () async {
+          throw Exception('external purge failed');
+        },
+      );
+      await seedAllDomains();
+
+      final result = await vaultWithBadHook.forget(
+        ForgetRequest.everything(confirmation: true),
+      );
+      expect(result.isFailure, isTrue);
+    });
+  });
+
+  // ===== Consent lock serialization (TOCTOU) =====
+
+  group('Consent lock — revoke serializes with storage', () {
+    test('concurrent saveEpisode + revokeConsent do not deadlock and stay '
+        'consistent', () async {
+      final consentId = (await consentDao.insert(
+        consentType: 'data_storage',
+        scope: 'episodic',
+        granted: true,
+      ))
+          .getOrNull()!;
+
+      final episode = KitaEpisode(
+        id: 0,
+        source: 'camera',
+        eventType: 'describe',
+        summary: 'Concurrent scene',
+        importanceScore: 0.5,
+        isPinned: false,
+        createdAt: DateTime.now(),
+      );
+
+      // saveEpisode is invoked first, so it acquires the shared lock first and
+      // runs to completion before the revoke proceeds (no interleaving).
+      final results = await Future.wait([
+        vault.saveEpisode(episode),
+        vault.revokeConsent(consentId),
+      ]);
+
+      expect(results[0].isSuccess, isTrue);
+      expect(results[1].isSuccess, isTrue);
+      expect((await vault.getEpisodes()).getOrNull(), hasLength(1));
+      expect(
+        (await vault.hasConsent(
+          consentType: 'data_storage',
+          scope: 'episodic',
+        ))
+            .getOrNull(),
+        isFalse,
+      );
     });
   });
 }

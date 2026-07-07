@@ -167,7 +167,7 @@ void main() {
     group('standard priority — full cascade', () {
       test('succeeds on first provider (cloud-powerful)', () async {
         final chain = makeChain();
-        final request = const AIRequest(
+        const request = AIRequest(
           prompt: 'describe this',
           priority: RequestPriority.standard,
         );
@@ -185,7 +185,7 @@ void main() {
       test('falls back to cloud-fast when cloud-powerful fails', () async {
         cloudPowerful.shouldFail = true;
         final chain = makeChain();
-        final request = const AIRequest(
+        const request = AIRequest(
           prompt: 'describe this',
           priority: RequestPriority.standard,
         );
@@ -203,7 +203,7 @@ void main() {
         cloudPowerful.shouldFail = true;
         cloudFast.shouldFail = true;
         final chain = makeChain();
-        final request = const AIRequest(
+        const request = AIRequest(
           prompt: 'describe this',
           priority: RequestPriority.standard,
         );
@@ -220,7 +220,7 @@ void main() {
         cloudFast.shouldFail = true;
         localProvider.shouldFail = true;
         final chain = makeChain();
-        final request = const AIRequest(
+        const request = AIRequest(
           prompt: 'describe this',
           priority: RequestPriority.standard,
         );
@@ -238,7 +238,7 @@ void main() {
     group('critical priority — local only', () {
       test('skips cloud and goes directly to local', () async {
         final chain = makeChain();
-        final request = const AIRequest(
+        const request = AIRequest(
           prompt: 'obstacle ahead',
           priority: RequestPriority.critical,
         );
@@ -256,7 +256,7 @@ void main() {
       test('returns brute alert if local fails on critical', () async {
         localProvider.shouldFail = true;
         final chain = makeChain();
-        final request = const AIRequest(
+        const request = AIRequest(
           prompt: 'danger',
           priority: RequestPriority.critical,
         );
@@ -277,7 +277,7 @@ void main() {
         cloudFast.shouldFail = true;
         cloudPowerful.shouldFail = true;
         final chain = makeChain();
-        final request = const AIRequest(
+        const request = AIRequest(
           prompt: 'decris ca',
           priority: RequestPriority.urgent,
         );
@@ -297,7 +297,7 @@ void main() {
       test('catches provider exceptions and continues fallback', () async {
         cloudPowerful.shouldThrow = true;
         final chain = makeChain();
-        final request = const AIRequest(
+        const request = AIRequest(
           prompt: 'test',
           priority: RequestPriority.standard,
         );
@@ -312,7 +312,7 @@ void main() {
       test('skips unavailable providers', () async {
         cloudPowerful.isAvailable = false;
         final chain = makeChain();
-        final request = const AIRequest(
+        const request = AIRequest(
           prompt: 'test',
           priority: RequestPriority.standard,
         );
@@ -474,7 +474,7 @@ void main() {
     group('never-fail guarantee', () {
       test('brute alert is ALWAYS Success even with no providers', () async {
         final chain = FallbackChain(providers: []);
-        final request = const AIRequest(
+        const request = AIRequest(
           prompt: 'help',
           priority: RequestPriority.critical,
         );
@@ -491,7 +491,7 @@ void main() {
         cloudFast.shouldThrow = true;
         localProvider.shouldThrow = true;
         final chain = makeChain();
-        final request = const AIRequest(
+        const request = AIRequest(
           prompt: 'describe',
           priority: RequestPriority.standard,
         );

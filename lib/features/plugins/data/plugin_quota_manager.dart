@@ -33,7 +33,7 @@ class PluginQuotaManager {
       _log.warning('Quota exceeded for plugin $pluginId '
           '(${history.length}/$maxCallsPerMinute calls/min)');
       return Result.failure(PluginFailure(
-        userMessage: 'Le plugin a depasse son quota de requetes.',
+        userMessage: 'Le plugin a dépassé son quota de requêtes.',
         logMessage: 'Quota exceeded for plugin $pluginId: '
             '${history.length}/$maxCallsPerMinute calls/min',
         pluginId: pluginId,

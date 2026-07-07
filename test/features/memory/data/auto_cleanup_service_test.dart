@@ -37,7 +37,7 @@ void main() {
     final createdAt = DateTime.now().subtract(Duration(days: daysAgo));
     final iso = createdAt.toIso8601String();
     await db.customStatement(
-      "INSERT INTO episodes (source, event_type, summary, importance_score, is_pinned, created_at, expires_at)"
+      'INSERT INTO episodes (source, event_type, summary, importance_score, is_pinned, created_at, expires_at)'
       " VALUES ('test', 'test', '$summary', 0.5, ${isPinned ? 1 : 0}, '$iso', '$iso')",
     );
     final result = await db.customSelect(

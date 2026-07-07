@@ -93,11 +93,20 @@ class EpisodeDao {
     }
   }
 
+  /// Retention predicate: an episode is expired at [cutoff] when it is not
+  /// pinned AND either its explicit `expires_at` is in the past, or it has no
+  /// `expires_at` and was created before [cutoff]. This ensures episodes
+  /// without an expiry date are still subject to the retention window.
+  Expression<bool> _expiredPredicate(db.Episodes t, DateTime cutoff) {
+    return t.isPinned.equals(false) &
+        (t.expiresAt.isSmallerThanValue(cutoff) |
+            (t.expiresAt.isNull() & t.createdAt.isSmallerThanValue(cutoff)));
+  }
+
   Future<Result<List<KitaEpisode>>> getExpiredBefore(DateTime cutoff) async {
     try {
       final rows = await (_db.select(_db.episodes)
-            ..where(
-                (t) => t.isPinned.equals(false) & t.createdAt.isSmallerThanValue(cutoff)))
+            ..where((t) => _expiredPredicate(t, cutoff)))
           .get();
       return Result.success(rows.map(_toDomain).toList());
     } catch (e, stack) {
@@ -133,8 +142,7 @@ class EpisodeDao {
   Future<Result<int>> deleteExpiredBefore(DateTime cutoff) async {
     try {
       final count = await (_db.delete(_db.episodes)
-            ..where(
-                (t) => t.isPinned.equals(false) & t.expiresAt.isSmallerThanValue(cutoff)))
+            ..where((t) => _expiredPredicate(t, cutoff)))
           .go();
       _log.info('Cleaned up $count expired episode(s)');
       return Result.success(count);

@@ -5,14 +5,14 @@ import 'package:kita/features/plugins/data/plugin_quota_manager.dart';
 
 void main() {
   group('PluginQuotaManager', () {
-    late DateTime _now;
+    late DateTime now;
     late PluginQuotaManager manager;
 
     setUp(() {
-      _now = DateTime(2026, 1, 1, 12, 0, 0);
+      now = DateTime(2026, 1, 1, 12, 0, 0);
       manager = PluginQuotaManager(
         maxCallsPerMinute: 3,
-        clock: () => _now,
+        clock: () => now,
       );
     });
 
@@ -39,7 +39,7 @@ void main() {
       manager.recordCall('com.kita.test');
 
       // Advance time past the 1-minute window
-      _now = _now.add(const Duration(minutes: 1, seconds: 1));
+      now = now.add(const Duration(minutes: 1, seconds: 1));
 
       final result = manager.checkQuota('com.kita.test');
       expect(result.isSuccess, isTrue);
@@ -75,7 +75,7 @@ void main() {
       manager.recordCall('com.kita.test');
       expect(manager.remainingCalls('com.kita.test'), equals(1));
 
-      _now = _now.add(const Duration(minutes: 1, seconds: 1));
+      now = now.add(const Duration(minutes: 1, seconds: 1));
       expect(manager.remainingCalls('com.kita.test'), equals(3));
     });
 
@@ -104,7 +104,7 @@ void main() {
     });
 
     test('uses Limits.maxPluginApiCallsPerMinute as default', () {
-      final defaultManager = PluginQuotaManager(clock: () => _now);
+      final defaultManager = PluginQuotaManager(clock: () => now);
       // Default is 10 calls/min from Limits
       for (var i = 0; i < 10; i++) {
         defaultManager.recordCall('com.kita.test');
@@ -118,14 +118,14 @@ void main() {
       manager.recordCall('com.kita.test');
 
       // Advance 30 seconds and record 1 more
-      _now = _now.add(const Duration(seconds: 30));
+      now = now.add(const Duration(seconds: 30));
       manager.recordCall('com.kita.test');
 
       // At quota now (3 calls in last minute)
       expect(manager.checkQuota('com.kita.test').isFailure, isTrue);
 
       // Advance to 61 seconds after first two calls (they expire)
-      _now = _now.add(const Duration(seconds: 31));
+      now = now.add(const Duration(seconds: 31));
 
       // The first 2 calls are now > 1 minute old, only 1 remains
       expect(manager.remainingCalls('com.kita.test'), equals(2));

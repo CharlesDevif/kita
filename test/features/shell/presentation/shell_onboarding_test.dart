@@ -642,9 +642,9 @@ class _FakeAIRouter implements AIRouter {
     required List<ToolSpec> tools,
     List<ConversationMessage> history = const [],
   }) async {
-    return Result.success(AIToolResponse(
+    return const Result.success(AIToolResponse(
       text: 'Fake tool response',
-      meta: const AIResponseMeta(
+      meta: AIResponseMeta(
         providerId: 'fake',
         latency: Duration.zero,
         tier: ProviderTier.local,

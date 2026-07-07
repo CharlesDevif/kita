@@ -225,7 +225,7 @@ void main() {
 
       // Re-create manager for clean state (simulates app restart)
       manager.dispose();
-      batteryStreamController.close();
+      unawaited(batteryStreamController.close());
       batteryStreamController = StreamController<int>.broadcast();
       batteryLevel = 75;
 

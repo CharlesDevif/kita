@@ -44,7 +44,7 @@ void main() {
     });
 
     test('handles empty stream', () async {
-      final tokens = const Stream<String>.empty();
+      const tokens = Stream<String>.empty();
 
       final result = await streamToTTS(
         tokenStream: tokens,

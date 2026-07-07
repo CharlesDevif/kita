@@ -125,6 +125,25 @@ void main() {
       expect(count, equals(1));
     });
 
+    test('upsert propagates a typed failure when the insert path fails',
+        () async {
+      // Force every INSERT on preferences to abort at the SQL level.
+      await db.customStatement(
+        'CREATE TRIGGER fail_pref_insert BEFORE INSERT ON preferences '
+        "BEGIN SELECT RAISE(ABORT, 'insert blocked'); END;",
+      );
+
+      // No existing row -> upsert takes the insert branch, which now fails.
+      final result = await dao.upsert(
+        category: 'display',
+        key: 'theme',
+        value: 'dark',
+        source: 'user',
+      );
+
+      expect(result.isFailure, isTrue);
+    });
+
     test('deleteByKey removes preference', () async {
       await dao.insert(category: 'display', key: 'theme', value: 'dark', source: 'user');
 

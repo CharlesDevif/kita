@@ -448,8 +448,8 @@ void main() {
           ],
           history: [
             const ConversationMessage.user('Weather in Paris?'),
-            ConversationMessage.assistantToolCalls([
-              const ToolCall(
+            const ConversationMessage.assistantToolCalls([
+              ToolCall(
                 id: 'toolu_prev1',
                 name: 'get_weather',
                 arguments: {'location': 'Paris'},

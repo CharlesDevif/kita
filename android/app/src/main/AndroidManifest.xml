@@ -1,4 +1,22 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Network access: cloud AI providers (Claude, OpenAI) + model downloads.
+         Required explicitly — debug builds get INTERNET implicitly but release
+         builds do NOT. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Camera + microphone: scene description, obstacle detection, voice input.
+         camera_android_camerax merges these too, but we declare them explicitly
+         so the app contract doesn't depend on a transitive manifest merge. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Location: geolocator_android does NOT merge these automatically. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- Speech recognition through Bluetooth headsets (runtime on Android 12+) -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
     <!-- Foreground Service permissions (Android 12+ / API 31+) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
@@ -59,6 +77,15 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Required on SDK 30+ for speech_to_text to see the system
+             speech recognition service (package visibility). -->
+        <intent>
+            <action android:name="android.speech.RecognitionService"/>
+        </intent>
+        <!-- Required for flutter_tts to see the system TTS engines. -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE"/>
         </intent>
     </queries>
 </manifest>

@@ -36,7 +36,7 @@ class TestableObstacleDetector extends ObstacleDetector {
   Future<Result<void>> initialize() async {
     if (shouldFailInit) {
       return const Result.failure(AIProviderFailure(
-        userMessage: 'Le modele de detection est indisponible.',
+        userMessage: 'Le modèle de détection est indisponible.',
         logMessage: 'Test: model not found',
         providerId: 'tflite-yolo',
       ));
@@ -49,7 +49,7 @@ class TestableObstacleDetector extends ObstacleDetector {
   Future<Result<List<Detection>>> detect(ImageData frame) async {
     if (!_testInitialized) {
       return const Result.failure(AIProviderFailure(
-        userMessage: 'Le detecteur n est pas initialise.',
+        userMessage: "Le détecteur n'est pas initialisé.",
         logMessage: 'ObstacleDetector.detect called before initialize',
         providerId: 'tflite-yolo',
       ));
@@ -57,14 +57,14 @@ class TestableObstacleDetector extends ObstacleDetector {
 
     if (shouldFailInference) {
       return const Result.failure(AIProviderFailure(
-        userMessage: 'La detection a echoue.',
+        userMessage: 'La détection a échoué.',
         logMessage: 'Test: inference failed',
         providerId: 'tflite-yolo',
       ));
     }
 
     if (mockOutput != null) {
-      final postprocessor = const DetectionPostprocessor();
+      const postprocessor = DetectionPostprocessor();
       final detections = postprocessor.postprocess(mockOutput!);
       return Result.success(detections);
     }
@@ -108,7 +108,7 @@ class ConcurrentTestableDetector extends ObstacleDetector {
   Future<Result<List<Detection>>> detect(ImageData frame) async {
     if (!_testInitialized) {
       return const Result.failure(AIProviderFailure(
-        userMessage: 'Le detecteur n est pas initialise.',
+        userMessage: "Le détecteur n'est pas initialisé.",
         logMessage: 'ObstacleDetector.detect called before initialize',
         providerId: 'tflite-yolo',
       ));

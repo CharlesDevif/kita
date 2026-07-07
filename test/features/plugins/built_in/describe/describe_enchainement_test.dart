@@ -206,7 +206,7 @@ void main() {
 
       expect(result.isFailure, isTrue);
       final failure = (result as Failure).failure;
-      expect(failure.userMessage, contains('decris'));
+      expect(failure.userMessage, contains('décris'));
     });
 
     test('also works with "details" alias', () async {

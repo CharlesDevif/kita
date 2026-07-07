@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart' as sql;
@@ -183,6 +184,106 @@ void main() {
       final remaining = (await dao.getAll()).getOrNull()!;
       expect(remaining, hasLength(1));
       expect(remaining.first.source, equals('pinned'));
+    });
+
+    test('deleteExpiredBefore also removes old episodes with no expiry date',
+        () async {
+      final now = DateTime.now();
+      final cutoff = now.subtract(const Duration(days: 30));
+
+      // Old episode, NO expiry date, created before the cutoff -> must be deleted.
+      await db.into(db.episodes).insert(EpisodesCompanion.insert(
+            source: 'old',
+            eventType: 'test',
+            summary: 'Old no-expiry',
+            createdAt: Value(now.subtract(const Duration(days: 40))),
+          ));
+
+      // Recent episode, NO expiry date, created after the cutoff -> must survive.
+      await db.into(db.episodes).insert(EpisodesCompanion.insert(
+            source: 'recent',
+            eventType: 'test',
+            summary: 'Recent no-expiry',
+            createdAt: Value(now.subtract(const Duration(days: 5))),
+          ));
+
+      final result = await dao.deleteExpiredBefore(cutoff);
+      expect(result.isSuccess, isTrue);
+      expect(result.getOrNull(), equals(1));
+
+      final remaining = (await dao.getAll()).getOrNull()!;
+      expect(remaining, hasLength(1));
+      expect(remaining.first.source, equals('recent'));
+    });
+
+    test('deleteExpiredBefore keeps pinned old episodes with no expiry date',
+        () async {
+      final now = DateTime.now();
+      final cutoff = now.subtract(const Duration(days: 30));
+
+      await db.into(db.episodes).insert(EpisodesCompanion.insert(
+            source: 'pinned-old',
+            eventType: 'test',
+            summary: 'Pinned old no-expiry',
+            isPinned: const Value(true),
+            createdAt: Value(now.subtract(const Duration(days: 40))),
+          ));
+
+      final result = await dao.deleteExpiredBefore(cutoff);
+      expect(result.getOrNull(), equals(0));
+      expect((await dao.getAll()).getOrNull(), hasLength(1));
+    });
+
+    test('deleteExpiredBefore keeps episodes whose expiry is still in the future',
+        () async {
+      final now = DateTime.now();
+      final cutoff = now.subtract(const Duration(days: 30));
+
+      // Created long ago but explicitly set to expire later -> must survive.
+      await db.into(db.episodes).insert(EpisodesCompanion.insert(
+            source: 'future-expiry',
+            eventType: 'test',
+            summary: 'Future expiry',
+            createdAt: Value(now.subtract(const Duration(days: 40))),
+            expiresAt: Value(now.add(const Duration(days: 10))),
+          ));
+
+      final result = await dao.deleteExpiredBefore(cutoff);
+      expect(result.getOrNull(), equals(0));
+      expect((await dao.getAll()).getOrNull(), hasLength(1));
+    });
+
+    test('getExpiredBefore uses the same predicate as deleteExpiredBefore',
+        () async {
+      final now = DateTime.now();
+      final cutoff = now.subtract(const Duration(days: 30));
+
+      // Old, no expiry -> expired.
+      await db.into(db.episodes).insert(EpisodesCompanion.insert(
+            source: 'old',
+            eventType: 'test',
+            summary: 'Old no-expiry',
+            createdAt: Value(now.subtract(const Duration(days: 40))),
+          ));
+      // Recent, no expiry -> not expired.
+      await db.into(db.episodes).insert(EpisodesCompanion.insert(
+            source: 'recent',
+            eventType: 'test',
+            summary: 'Recent no-expiry',
+            createdAt: Value(now.subtract(const Duration(days: 5))),
+          ));
+      // Old created_at but future expiry -> not expired.
+      await db.into(db.episodes).insert(EpisodesCompanion.insert(
+            source: 'future-expiry',
+            eventType: 'test',
+            summary: 'Future expiry',
+            createdAt: Value(now.subtract(const Duration(days: 40))),
+            expiresAt: Value(now.add(const Duration(days: 10))),
+          ));
+
+      final expired = (await dao.getExpiredBefore(cutoff)).getOrNull()!;
+      expect(expired, hasLength(1));
+      expect(expired.first.source, equals('old'));
     });
 
     test('insert with isPinned true preserves pinned state', () async {

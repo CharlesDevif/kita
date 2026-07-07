@@ -75,7 +75,7 @@ class AndroidBackgroundServiceImpl implements KitaBackgroundService {
           error: e, stackTrace: stack);
       return Result.failure(
         PermissionFailure(
-          userMessage: 'Le service en arriere-plan n\'est pas disponible.',
+          userMessage: 'Le service en arrière-plan n\'est pas disponible.',
           logMessage: 'Background service plugin not available',
           permission: 'foreground_service',
           cause: e,

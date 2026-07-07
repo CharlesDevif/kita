@@ -1,6 +1,5 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:kita/core/errors/kita_failure.dart';
 import 'package:kita/features/io/data/tts_service_impl.dart';
 import 'package:kita/features/io/domain/tts_service.dart';
 

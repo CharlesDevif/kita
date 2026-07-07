@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/onboarding/presentation/onboarding_screen.dart';
-import '../../features/settings/presentation/forget_placeholder.dart';
+import '../../features/settings/presentation/forget_screen.dart';
 import '../../features/settings/presentation/memory_view_placeholder.dart';
 import '../../features/settings/presentation/plugin_manager_placeholder.dart';
 import '../../features/settings/presentation/settings_placeholder.dart';
@@ -33,7 +33,7 @@ final List<RouteBase> kitaRoutes = [
       ),
       GoRoute(
         path: 'forget',
-        builder: (context, state) => const ForgetPlaceholder(),
+        builder: (context, state) => const ForgetScreen(),
       ),
     ],
   ),

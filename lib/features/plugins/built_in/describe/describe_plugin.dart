@@ -265,7 +265,7 @@ Réponds en 5-8 phrases. Pas de formule d'introduction.''';
     if (context == null || _state.imageData == null) {
       _log.warning('More details requested but no image in state');
       return Result.failure(PluginFailure(
-        userMessage: "Dis 'decris' d'abord pour prendre une photo.",
+        userMessage: "Dis 'décris' d'abord pour prendre une photo.",
         logMessage: 'Describe: more details without prior image',
         pluginId: manifest.id,
       ));
@@ -290,7 +290,7 @@ Réponds en 5-8 phrases. Pas de formule d'introduction.''';
     if (lastDesc == null) {
       _log.warning('Repeat requested but no description in state');
       return Result.failure(PluginFailure(
-        userMessage: "Il n'y a rien a repeter.",
+        userMessage: "Il n'y a rien à répéter.",
         logMessage: 'Describe: repeat without prior description',
         pluginId: manifest.id,
       ));

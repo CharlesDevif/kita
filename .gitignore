@@ -83,6 +83,8 @@ Gemfile.lock
 assets/models/*.litertlm
 assets/models/*.task
 assets/models/*.bin
+# YOLOv8 est sous licence AGPL-3.0 — ne jamais commiter le modèle dans ce repo MIT
+assets/models/*.tflite
 
 # Temp
 .tmp/

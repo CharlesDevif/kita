@@ -22,18 +22,30 @@ class AIRouterImpl implements AIRouter {
     required RequestClassifier classifier,
     required List<AIProvider> providers,
   })  : _classifier = classifier,
-        _providers = List.unmodifiable(providers),
+        _providers = List.of(providers),
         _fallbackChain = FallbackChain(providers: providers);
 
   static final _log = KitaLogger('AI');
 
   final RequestClassifier _classifier;
   final List<AIProvider> _providers;
-  final FallbackChain _fallbackChain;
+  FallbackChain _fallbackChain;
 
   @override
   List<AIProvider> get availableProviders =>
       _providers.where((p) => p.isAvailable).toList();
+
+  /// Registers an [AIProvider] at runtime.
+  ///
+  /// Called at bootstrap (stored API keys) and after onboarding when the
+  /// user configures a cloud provider — the fallback chain picks it up
+  /// without an app restart. Replaces any provider with the same id.
+  void registerProvider(AIProvider provider) {
+    _providers.removeWhere((p) => p.id == provider.id);
+    _providers.add(provider);
+    _fallbackChain = FallbackChain(providers: _providers);
+    _log.info('Provider registered: ${provider.id}');
+  }
 
   @override
   Future<Result<AIResponse>> route(AIRequest request) async {

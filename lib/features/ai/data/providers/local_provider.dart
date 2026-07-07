@@ -644,7 +644,7 @@ $userMessage''';
       stopwatch.stop();
       _log.error('ML Kit vision failed', error: e, stackTrace: stack);
       return Result.failure(AIProviderFailure(
-        userMessage: 'Analyse d\'image locale echouee.',
+        userMessage: 'Analyse d\'image locale échouée.',
         logMessage: 'ML Kit vision error: ${e.runtimeType}',
         providerId: id,
         cause: e,

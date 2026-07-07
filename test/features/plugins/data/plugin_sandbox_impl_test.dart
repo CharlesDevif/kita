@@ -11,7 +11,6 @@ import 'package:kita/features/ai/domain/provider_tier.dart';
 import 'package:kita/features/io/domain/location_service.dart';
 import 'package:kita/features/io/domain/motion_service.dart';
 import 'package:kita/features/memory/domain/episode.dart';
-import 'package:kita/features/memory/domain/memory_domain.dart';
 import 'package:kita/features/plugins/data/plugin_quota_manager.dart';
 import 'package:kita/features/plugins/data/plugin_sandbox_impl.dart';
 import 'package:kita/features/plugins/data/sandboxed_ai_access.dart';

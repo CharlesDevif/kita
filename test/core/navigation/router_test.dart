@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,12 +7,14 @@ import 'package:go_router/go_router.dart';
 
 import 'package:kita/core/navigation/router.dart';
 import 'package:kita/features/io/data/providers/tts_providers.dart';
+import 'package:kita/features/memory/di/providers.dart';
+import 'package:kita/features/memory/domain/memory_vault.dart';
 import 'package:kita/features/onboarding/di/providers.dart';
 import 'package:kita/features/onboarding/domain/onboarding_state.dart';
 import 'package:kita/features/onboarding/domain/profile_detection.dart';
 import 'package:kita/features/onboarding/presentation/onboarding_screen.dart';
 import 'package:kita/features/orchestration/di/providers.dart';
-import 'package:kita/features/settings/presentation/forget_placeholder.dart';
+import 'package:kita/features/settings/presentation/forget_screen.dart';
 import 'package:kita/features/settings/presentation/memory_view_placeholder.dart';
 import 'package:kita/features/settings/presentation/plugin_manager_placeholder.dart';
 import 'package:kita/features/settings/presentation/settings_placeholder.dart';
@@ -124,15 +128,34 @@ void main() {
       expect(find.text('Memory View — Placeholder'), findsOneWidget);
     });
 
-    testWidgets('/settings/forget resolves to ForgetPlaceholder', (tester) async {
+    testWidgets('/settings/forget resolves to ForgetScreen', (tester) async {
       final router = _createRouter('/settings/forget');
       addTearDown(router.dispose);
 
-      await tester.pumpWidget(_createTestApp(router));
-      await tester.pumpAndSettle();
+      // Keep the route test off the real encrypted DB: the ForgetScreen only
+      // needs to render (it degrades gracefully while the vault loads).
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            hasActiveOnDemandProvider.overrideWithValue(false),
+            onboardingNotifierProvider.overrideWith(_CompletedOnboarding.new),
+            onboardingCompleteProvider.overrideWith(_TrueOnboardingComplete.new),
+            memoryVaultProvider.overrideWith(
+              (ref) => Completer<MemoryVault>().future,
+            ),
+          ],
+          child: MediaQuery(
+            data: const MediaQueryData(disableAnimations: true),
+            child: MaterialApp.router(routerConfig: router),
+          ),
+        ),
+      );
+      // The vault stub never completes, so the screen stays in its loading
+      // state (a spinner that would never let pumpAndSettle converge). A
+      // single frame is enough to confirm the route resolved to ForgetScreen.
+      await tester.pump();
 
-      expect(find.byType(ForgetPlaceholder), findsOneWidget);
-      expect(find.text('Forget — Placeholder'), findsOneWidget);
+      expect(find.byType(ForgetScreen), findsOneWidget);
     });
   });
 
@@ -178,7 +201,7 @@ void main() {
         find.byWidgetPredicate(
           (widget) =>
               widget is Semantics &&
-              widget.properties.label == 'Ecran principal Kita',
+              widget.properties.label == 'Écran principal Kita',
         ),
         findsOneWidget,
       );

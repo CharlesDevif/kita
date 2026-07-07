@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:kita/app.dart';
 import 'package:kita/features/io/data/providers/tts_providers.dart';
+import 'package:kita/features/memory/data/auto_cleanup_service.dart';
+import 'package:kita/features/memory/di/providers.dart';
 import 'package:kita/features/onboarding/di/providers.dart';
 import 'package:kita/features/onboarding/domain/permission_storytelling.dart';
 import 'package:kita/features/onboarding/domain/profile_detection.dart';
@@ -48,6 +52,11 @@ void main() {
               .overrideWithValue(_FakePermissionRequester()),
           // Mock AI router to avoid FallbackChain 15s timeout timers.
           aiRouterProvider.overrideWithValue(MockAIRouter()),
+          // KitaApp fires autoCleanup at boot; keep it off the real
+          // encrypted DB in this widget test with a never-completing stub.
+          autoCleanupProvider.overrideWith(
+            (ref) => Completer<AutoCleanupService>().future,
+          ),
         ],
         child: const KitaApp(),
       ),

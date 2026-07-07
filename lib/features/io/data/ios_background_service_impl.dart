@@ -78,7 +78,7 @@ class IosBackgroundServiceImpl implements KitaBackgroundService {
           error: e, stackTrace: stack);
       return Result.failure(
         PermissionFailure(
-          userMessage: 'Le service en arriere-plan n\'est pas disponible.',
+          userMessage: 'Le service en arrière-plan n\'est pas disponible.',
           logMessage: 'iOS background service plugin not available',
           permission: 'background_audio',
           cause: e,

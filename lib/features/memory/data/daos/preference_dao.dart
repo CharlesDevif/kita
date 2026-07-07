@@ -130,14 +130,14 @@ class PreferenceDao {
         _log.debug('Preference updated');
         return const Result.success(true);
       } else {
-        await insert(
+        final insertResult = await insert(
           category: category,
           key: key,
           value: value,
           confidenceScore: confidenceScore ?? 0.5,
           source: source,
         );
-        return const Result.success(true);
+        return insertResult.map((_) => true);
       }
     } catch (e, stack) {
       _log.error('Failed to upsert preference', error: e, stackTrace: stack);

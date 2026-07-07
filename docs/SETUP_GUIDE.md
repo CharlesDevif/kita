@@ -449,6 +449,41 @@ Pas de panique ! Kita a un systeme de fallback automatique :
 
 Sur un appareil moins puissant, Kita utilisera ML Kit pour les fonctionnalites de base (lecture de texte, detection d'obstacles) et les providers cloud si disponibles pour la generation de texte.
 
+### 5.7 Modele de detection d'obstacles (YOLOv8n)
+
+Le plugin Alert (detection d'obstacles temps reel) utilise un modele YOLOv8n au format TFLite. Ce modele n'est **pas** fourni dans le repo (licence AGPL-3.0, incompatible avec la licence MIT du projet) — il faut le generer localement :
+
+```bash
+# Dans un environnement Python (venv recommande)
+pip install ultralytics
+
+# IMPORTANT : utiliser format=saved_model (chemin onnx2tf), qui produit un
+# modele NHWC [1, 640, 640, 3] attendu par Kita.
+# NE PAS utiliser format=tflite : le nouveau convertisseur LiteRT-Torch
+# produit un layout NCHW [1, 3, 640, 640] incompatible.
+yolo export model=yolov8n.pt format=saved_model imgsz=640
+
+# Installer le modele float32 dans les assets
+cp yolov8n_saved_model/yolov8n_float32.tflite <projet>/assets/models/yolo_v8_nano.tflite
+```
+
+**Verifier le modele :**
+
+```bash
+ls -lh assets/models/yolo_v8_nano.tflite
+# Doit afficher : ~13 Mo
+```
+
+Specifications attendues par `obstacle_detector.dart` :
+
+| Propriete | Valeur |
+|-----------|--------|
+| Entree | `[1, 640, 640, 3]` float32 (NHWC), RGB normalise [0, 1] |
+| Sortie | `[1, 84, 8400]` float32 (4 bbox + 80 classes COCO) |
+| Taille | ~13 Mo (float32) |
+
+> **Note :** sans ce modele, l'app fonctionne quand meme — le plugin Alert signale simplement que la detection est indisponible (degradation gracieuse).
+
 ---
 
 ## 6. Configuration des cles API (optionnel)

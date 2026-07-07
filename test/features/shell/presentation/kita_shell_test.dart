@@ -24,7 +24,7 @@ void main() {
       overrides: [
         hasActiveOnDemandProvider.overrideWithValue(false),
         // Mark onboarding as complete so KitaShell shows normal viewport
-        onboardingCompleteProvider.overrideWith(() => _CompletedOnboarding()),
+        onboardingCompleteProvider.overrideWith(_CompletedOnboarding.new),
       ],
       child: MaterialApp(
         home: MediaQuery(
@@ -98,7 +98,7 @@ void main() {
         find.byWidgetPredicate(
           (widget) =>
               widget is Semantics &&
-              widget.properties.label == 'Ecran principal Kita',
+              widget.properties.label == 'Écran principal Kita',
         ),
         findsOneWidget,
       );

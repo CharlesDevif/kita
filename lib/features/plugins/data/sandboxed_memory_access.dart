@@ -31,7 +31,7 @@ class SandboxedMemoryAccess implements MemoryAccess {
     if (!allowedPermissions.contains('memory')) {
       _log.warning('Plugin $pluginId denied memory access: no memory permission');
       return Result.failure(PluginFailure(
-        userMessage: "Le plugin n'a pas la permission memoire.",
+        userMessage: "Le plugin n'a pas la permission mémoire.",
         logMessage: 'Memory access denied for plugin $pluginId',
         pluginId: pluginId,
       ));

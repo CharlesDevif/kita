@@ -49,7 +49,7 @@ void main() {
 
     test('startStream returns failure when no camera available', () async {
       final frames = <dynamic>[];
-      final result = await service.startStream((frame) => frames.add(frame));
+      final result = await service.startStream(frames.add);
 
       expect(result.isFailure, isTrue);
       expect(frames, isEmpty);
