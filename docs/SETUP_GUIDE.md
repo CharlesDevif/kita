@@ -391,40 +391,43 @@ huggingface-cli download google/gemma-3n-E2B-it-litert-lm \
   --local-dir ./model-download
 ```
 
-### 5.3 Placer le modele dans le projet
+### 5.3 Pousser le modele sur l'appareil (dev)
 
-Le modele doit etre dans le dossier `assets/models/` du projet :
-
-```bash
-# Creer le dossier si necessaire
-mkdir -p assets/models/
-
-# Copier le modele telecharge
-cp ~/Downloads/gemma-3n-E2B-it-int4.litertlm assets/models/
-# ou depuis la CLI HuggingFace :
-cp model-download/gemma-3n-E2B-it-int4.litertlm assets/models/
-```
-
-**Verifier la presence du modele :**
+Le modele n'est **PAS** embarque dans l'APK (il ferait 3,5 Go et rendrait
+`flutter run` inutilisable). On le pousse **une fois** sur le telephone de
+test ; l'app le charge ensuite depuis ce fichier (`fromFile`).
 
 ```bash
-ls -lh assets/models/
-# Doit afficher : gemma-3n-E2B-it-int4.litertlm  (~3.5G)
+# Ranger le modele telecharge dans le dossier local du projet (hors assets)
+mkdir -p models-local/
+cp ~/Downloads/gemma-3n-E2B-it-int4.litertlm models-local/
+
+# Creer le dossier cible sur le telephone (accessible sans root)
+adb shell mkdir -p /sdcard/Android/data/com.kita.kita/files/models
+
+# Pousser le modele (~3,5 Go, une seule fois par appareil, ~5-10 min en USB)
+adb push models-local/gemma-3n-E2B-it-int4.litertlm \
+  /sdcard/Android/data/com.kita.kita/files/models/
+
+# Verifier
+adb shell ls -lh /sdcard/Android/data/com.kita.kita/files/models/
 ```
 
-> **Warning :** Le fichier `.litertlm` fait ~3.5 Go. Il est dans le `.gitignore` et ne sera **jamais** commite dans le depot git. Chaque developpeur doit le telecharger manuellement.
+> **Note :** le modele survit aux reinstallations de l'app tant que le dossier
+> `files/` n'est pas efface (desinstallation complete = modele a repousser).
+> Pour la distribution a un utilisateur final (sans adb), la strategie
+> (telechargement in-app, APK avec modele, etc.) sera decidee dans un cycle
+> dedie.
+
+> **Warning :** Le fichier `.litertlm` fait ~3,5 Go. `models-local/` est dans
+> le `.gitignore` et ne sera **jamais** commite. Chaque developpeur doit le
+> telecharger manuellement (voir 5.2).
 
 ### 5.4 Configuration dans pubspec.yaml
 
-Le fichier `pubspec.yaml` declare deja le dossier assets :
-
-```yaml
-flutter:
-  assets:
-    - assets/models/
-```
-
-Aucune modification necessaire -- le modele sera automatiquement inclu dans le build.
+Rien a faire : `assets/models/` ne contient plus que le petit modele YOLO
+(13 Mo, detection d'obstacles). Le modele Gemma n'est volontairement **pas**
+declare comme asset.
 
 ### 5.5 Appareils compatibles
 

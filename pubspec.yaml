@@ -97,7 +97,11 @@ flutter:
 
   assets:
     - assets/sounds/
+    # yolo_v8_nano.tflite (13 Mo) seulement — le modèle Gemma (3,5 Go) n'est
+    # PAS un asset : il vit dans models-local/ et est poussé sur l'appareil
+    # via adb (voir docs/SETUP_GUIDE.md §5.3).
     - assets/models/
+    - assets/images/
 
   fonts:
     - family: SpaceGrotesk

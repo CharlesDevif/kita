@@ -128,7 +128,10 @@ class GemmaBridgeImpl implements GemmaBridge {
     try {
       await _ensureInitialized();
       return _status;
-    } on Exception catch (e) {
+      // `on Object`: _ensureInitialized peut relancer une KitaFailure typée
+      // (qui n'est pas une Exception) — un statut d'erreur doit TOUJOURS
+      // être retourné proprement, jamais propagé en erreur non gérée.
+    } on Object catch (e) {
       _log.warning('Gemma status check failed', error: e);
       _status = GemmaModelStatus.error;
       return GemmaModelStatus.error;
@@ -157,7 +160,9 @@ class GemmaBridgeImpl implements GemmaBridge {
 
       _warmedUp = true;
       _log.info('Gemma warmup complete');
-    } on Exception catch (e) {
+      // `on Object`: le warmup est fire-and-forget au boot — AUCUNE erreur
+      // (Exception, Error ou KitaFailure) ne doit s'en échapper.
+    } on Object catch (e) {
       _log.warning('Gemma warmup failed (non-fatal)', error: e);
     } finally {
       _processing = false;

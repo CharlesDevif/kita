@@ -89,3 +89,4 @@ assets/models/*.tflite
 # Temp
 .tmp/
 *.tmp
+models-local/
