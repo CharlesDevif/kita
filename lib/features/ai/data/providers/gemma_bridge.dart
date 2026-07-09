@@ -274,6 +274,9 @@ class GemmaBridgeImpl implements GemmaBridge {
       yield* tokens;
     } on Object catch (e, stack) {
       _log.error('Gemma completeStream failed', error: e, stackTrace: stack);
+      // Résilience : la session native est peut-être morte — invalider le
+      // chat mis en cache pour que la PROCHAINE requête reparte propre.
+      _textChat = null;
       throw gemmaFailure(e, stackTrace: stack);
     } finally {
       _processing = false;
@@ -347,10 +350,15 @@ class GemmaBridgeImpl implements GemmaBridge {
             .withInferenceTimeout(inferenceTimeout);
         yield* tokens;
       } finally {
-        // Pas de session vision persistante (mémoire #348) : fermer la
-        // session native du chat (PAS le moteur, partagé avec le texte)
-        // pour libérer la mémoire au plus tôt.
-        await chat.session.close();
+        // Sur mobile, le moteur LiteRT-LM ne maintient qu'UNE session
+        // native à la fois : créer le chat vision a remplacé la session du
+        // chat texte persistant. Ne PAS fermer la session ici (cela détruit
+        // le slot natif partagé → IllegalStateException « Session not
+        // created » sur la requête texte suivante, observé sur device).
+        // On invalide le chat texte : la prochaine requête texte recrée sa
+        // session, ce qui remplace (et libère) la session vision — la
+        // mémoire (#348) est ainsi recyclée à chaque cycle.
+        _textChat = null;
       }
     } on Object catch (e, stack) {
       _log.error('Gemma describeImageStream failed', error: e, stackTrace: stack);
