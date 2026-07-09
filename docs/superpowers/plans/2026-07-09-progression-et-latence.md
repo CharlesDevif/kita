@@ -56,7 +56,11 @@ Tests : un fichier par unité créée ; les tests existants touchés sont mis à
 - Consumes: `OutputCoordinator.enqueueSpeech(String agentId, String text, OutputPriority priority)`, `HapticService.info()`, `Clock.delayed(Duration, void Function())`, `OrbState`, `AgentIds.system`.
 - Produces:
   - `enum ProgressPhase { thinking, working, responding, done, failed }`
-  - `class ProgressReporter({required OutputCoordinator coordinator, required HapticService haptic, required Clock clock, required void Function(OrbState) onOrbStateChanged, required void Function(String? status) onStatusChanged, Duration spokenCueDelay = const Duration(milliseconds: 2500)})`
+  - `abstract interface class ProgressSpeaker { Future<void> speakCue(String text); }`
+    — défini dans `progress_reporter.dart`. Il évite de dépendre de tout
+    l'`OutputCoordinator` (test simple, pas de cycle d'import). La Task 2 le fera
+    implémenter par `OutputCoordinator`.
+  - `class ProgressReporter({required ProgressSpeaker speaker, required HapticService haptic, required Clock clock, required void Function(OrbState) onOrbStateChanged, required void Function(String? status) onStatusChanged, Duration spokenCueDelay = const Duration(milliseconds: 2500)})`
   - `void beginRequest()`, `void report(ProgressPhase phase)`, `void endRequest({required bool success})`, `void dispose()`
   - `static const String cueThinking = 'Un instant.'`, `static const String cueWorking = 'Je regarde.'`
 
