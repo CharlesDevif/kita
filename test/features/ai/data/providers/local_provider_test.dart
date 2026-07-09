@@ -193,7 +193,7 @@ void main() {
 
       expect(result.isSuccess, isTrue);
       final response = (result as Success<AIResponse>).value;
-      expect(response.content, contains('camera'));
+      expect(response.content, contains('caméra'));
     });
 
     test('complete returns generic response for unknown prompt', () async {
@@ -203,7 +203,7 @@ void main() {
 
       expect(result.isSuccess, isTrue);
       final response = (result as Success<AIResponse>).value;
-      expect(response.content, contains('locale limitee'));
+      expect(response.content, contains('locale limitée'));
     });
 
     test('validateApiKey always succeeds (no key needed)', () async {
@@ -774,7 +774,7 @@ void main() {
 
       expect(result.isSuccess, isTrue);
       final response = (result as Success<AIResponse>).value;
-      expect(response.content, contains('locale limitee'));
+      expect(response.content, contains('locale limitée'));
     });
 
     test('vision uses Gemma when ready', () async {

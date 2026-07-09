@@ -451,11 +451,23 @@ ${historyText.isNotEmpty ? '[History]\n$historyText\n' : ''}[Message]
 $userMessage''';
   }
 
-  /// Try to parse a Gemma response as a tool call. Returns null if parsing
-  /// fails (response is treated as plain text).
+  /// Parse une réponse Gemma en appel d'outil, OU en réponse texte.
+  ///
+  /// Retourner `null` ici ferait retomber [completeWithTools] sur
+  /// `_localResponse`, un répondeur en conserve : la vraie réponse
+  /// conversationnelle du modèle serait perdue (régression observée).
   AIToolResponse? _parseGemmaToolResponse(String text, Duration latency) {
     final parsed = parseLocalToolResponse(text);
-    if (parsed == null) return null;
+    final meta = AIResponseMeta(
+      providerId: 'gemma',
+      latency: latency,
+      tier: ProviderTier.local,
+    );
+    if (parsed == null) {
+      final trimmed = text.trim();
+      if (trimmed.isEmpty) return null;
+      return AIToolResponse(text: trimmed, meta: meta);
+    }
     return AIToolResponse(
       toolCalls: [
         ToolCall(
@@ -464,11 +476,7 @@ $userMessage''';
           arguments: parsed.arguments,
         ),
       ],
-      meta: AIResponseMeta(
-        providerId: 'gemma',
-        latency: latency,
-        tier: ProviderTier.local,
-      ),
+      meta: meta,
     );
   }
 
@@ -730,7 +738,7 @@ $userMessage''';
     if (lower.contains('obstacle') ||
         lower.contains('danger') ||
         lower.contains('alerte')) {
-      return 'Attention ! Obstacle potentiel detecte.';
+      return 'Attention ! Obstacle potentiel détecté.';
     }
 
     if (lower.contains('heure') || lower.contains('time')) {
@@ -741,11 +749,11 @@ $userMessage''';
         lower.contains('texte') ||
         lower.contains('read') ||
         lower.contains('lire')) {
-      return 'Texte detecte mais lecture detaillee non disponible hors-ligne.';
+      return 'Texte détecté mais lecture détaillée non disponible hors-ligne.';
     }
 
     if (lower.contains('aide') || lower.contains('help')) {
-      return 'Mode hors-ligne : je peux detecter des obstacles et lire du texte avec la camera.';
+      return 'Mode hors-ligne : je peux détecter des obstacles et lire du texte avec la caméra.';
     }
 
     if (lower.contains('ou') ||
@@ -760,9 +768,9 @@ $userMessage''';
         lower.contains('see') ||
         lower.contains('photo') ||
         lower.contains('image')) {
-      return 'Pour decrire une image, utilisez la camera. Analyse locale disponible.';
+      return 'Pour décrire une image, utilisez la caméra. Analyse locale disponible.';
     }
 
-    return 'Reponse locale limitee. Connectez-vous pour une reponse complete.';
+    return 'Réponse locale limitée. Connectez-vous pour une réponse complète.';
   }
 }
