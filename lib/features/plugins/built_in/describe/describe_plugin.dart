@@ -297,6 +297,8 @@ Réponds en 5-8 phrases. Pas de formule d'introduction.''';
         _state = _state.withDetailedDescription(content, offline: isOffline);
       },
       extraMetadata: const {'detailed': true},
+      // Meme photo que le « decris » initial : pas de second episode.
+      recordEpisode: false,
     );
   }
 
@@ -353,12 +355,20 @@ Réponds en 5-8 phrases. Pas de formule d'introduction.''';
   /// Shared by [_handleDescribe] and [_handleMoreDetails]. Streams tokens
   /// from the AI, speaks each sentence as it's detected, and returns the
   /// full accumulated text as an [AgentOutput].
+  ///
+  /// [recordEpisode] controls whether this call writes a memory episode.
+  /// CONTRAINTE : « plus de details » redecrit la meme photo qu'un
+  /// « decris » precedent — ce n'est pas un nouvel evenement mais un
+  /// approfondissement de la meme scene. Un second episode ferait begayer
+  /// Kita quand elle relit ses souvenirs a voix haute ("qu'est-ce que j'ai
+  /// vu ?"). Seule la description initiale doit laisser une trace.
   Future<Result<AgentOutput>> _streamVision({
     required AgentContext context,
     required ImageData image,
     required String prompt,
     required void Function(String content, bool isOffline) updateState,
     Map<String, Object> extraMetadata = const {},
+    bool recordEpisode = true,
   }) async {
     try {
       final fullText = StringBuffer();
@@ -394,7 +404,11 @@ Réponds en 5-8 phrases. Pas de formule d'introduction.''';
       // L'écriture de l'épisode est un bonus, jamais une condition de
       // succès : une personne aveugle a besoin d'entendre la description,
       // que la mémoire ait pu l'archiver ou non.
-      await _saveEpisode(context, content);
+      // `recordEpisode` est false pour « plus de details » : voir la
+      // CONTRAINTE documentée sur _streamVision.
+      if (recordEpisode) {
+        await _saveEpisode(context, content);
+      }
 
       _log.info('Streaming description complete (${content.length} chars)');
 

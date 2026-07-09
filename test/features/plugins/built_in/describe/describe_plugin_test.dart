@@ -504,6 +504,52 @@ void main() {
         expect(entry.message, isNot(contains(content)));
       }
     });
+
+    test(
+        "'decris' puis 'plus de details' n'ecrivent qu'un seul episode, "
+        'celui de la description initiale', () async {
+      final memory = FakeMemoryAccess();
+      await spawnPlugin(memory: memory);
+      mockSensors.photoToReturn = testImage();
+
+      mockAI.responseToReturn =
+          testAIResponse(content: 'Un bureau. Une souris grise.');
+      final initial = await plugin.handleInput(_agentInput());
+      expect(initial.isSuccess, isTrue);
+
+      // Contenu different pour prouver que l'episode conserve est bien
+      // celui de la description initiale, pas celui de l'approfondissement.
+      mockAI.responseToReturn = testAIResponse(
+          content: 'Le bureau a un tiroir entrouvert avec des cables.');
+      final details =
+          await plugin.handleInput(_agentInput(command: 'plus de details'));
+      expect(details.isSuccess, isTrue);
+
+      // « plus de details » redecrit la meme photo : un second episode
+      // ferait begayer le rappel memoire ("qu'est-ce que j'ai vu ?").
+      expect(memory.savedEpisodes, hasLength(1));
+      expect(memory.savedEpisodes.single.summary, equals('Un bureau.'));
+    });
+
+    test(
+        "'plus de details' seul, apres un 'decris' prealable, n'augmente "
+        'pas le nombre d\'episodes enregistres', () async {
+      final memory = FakeMemoryAccess();
+      await spawnPlugin(memory: memory);
+      mockSensors.photoToReturn = testImage();
+      mockAI.responseToReturn = testAIResponse(content: 'Un bureau.');
+
+      await plugin.handleInput(_agentInput());
+      final countAfterInitial = memory.savedEpisodes.length;
+
+      mockAI.responseToReturn =
+          testAIResponse(content: 'Un bureau avec un ordinateur portable.');
+      final details =
+          await plugin.handleInput(_agentInput(command: 'plus de details'));
+
+      expect(details.isSuccess, isTrue);
+      expect(memory.savedEpisodes, hasLength(countAfterInitial));
+    });
   });
 
   group('firstSentence', () {
