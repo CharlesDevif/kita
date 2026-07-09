@@ -14,6 +14,7 @@ import 'package:kita/features/onboarding/domain/onboarding_state.dart';
 import 'package:kita/features/onboarding/domain/profile_detection.dart';
 import 'package:kita/features/onboarding/presentation/onboarding_screen.dart';
 import 'package:kita/features/orchestration/di/providers.dart';
+import 'package:kita/features/settings/presentation/api_key_settings_screen.dart';
 import 'package:kita/features/settings/presentation/forget_screen.dart';
 import 'package:kita/features/settings/presentation/memory_view_placeholder.dart';
 import 'package:kita/features/settings/presentation/plugin_manager_placeholder.dart';
@@ -156,6 +157,17 @@ void main() {
       await tester.pump();
 
       expect(find.byType(ForgetScreen), findsOneWidget);
+    });
+
+    testWidgets('/settings/api-key resolves to ApiKeySettingsScreen',
+        (tester) async {
+      final router = _createRouter('/settings/api-key');
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(_createTestApp(router));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ApiKeySettingsScreen), findsOneWidget);
     });
   });
 

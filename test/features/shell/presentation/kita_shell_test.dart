@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:kita/features/memory/di/providers.dart';
+import 'package:kita/features/memory/domain/preferences_repository.dart';
 import 'package:kita/features/onboarding/di/providers.dart';
 import 'package:kita/features/orchestration/di/providers.dart';
 import 'package:kita/features/shell/domain/orb_state.dart';
@@ -246,6 +250,12 @@ void main() {
             () => onboardingComplete
                 ? _CompletedOnboarding()
                 : _IncompleteOnboarding(),
+          ),
+          // Hang the ShellOnboarding returning-user check so no greeting/TTS
+          // starts and the real DB is never touched (these tests only exercise
+          // the Shell layout during onboarding).
+          preferencesRepositoryProvider.overrideWith(
+            (ref) => Completer<PreferencesRepository>().future,
           ),
         ],
         child: MaterialApp(

@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kita/core/data/database.dart';
 import 'package:kita/core/errors/kita_failure.dart';
 import 'package:kita/core/errors/result.dart';
 import 'package:kita/features/ai/data/providers/gemma_bridge.dart';
@@ -19,11 +21,17 @@ import 'package:kita/features/io/data/providers/tts_providers.dart';
 import 'package:kita/features/io/domain/speech_event.dart';
 import 'package:kita/features/io/domain/stt_service.dart';
 import 'package:kita/features/io/domain/tts_service.dart';
+import 'package:kita/core/di/database_provider.dart';
+import 'package:kita/features/memory/data/daos/profile_dao.dart';
+import 'package:kita/features/memory/di/providers.dart';
 import 'package:kita/features/onboarding/di/providers.dart';
 import 'package:kita/features/onboarding/domain/permission_storytelling.dart';
 import 'package:kita/features/onboarding/domain/profile_detection.dart';
 import 'package:kita/features/orchestration/di/providers.dart';
 import 'package:kita/features/shell/presentation/shell_onboarding.dart';
+import 'package:sqlite3/sqlite3.dart' as sql;
+
+import '../../../mocks/mock_secure_key_vault.dart';
 
 void main() {
   late _FakeTTSService fakeTts;
@@ -31,6 +39,7 @@ void main() {
   late _FakePermissionRequester fakePermissions;
   late _FakeAIRouter fakeAIRouter;
   late _FakeGemmaBridge fakeGemmaBridge;
+  late KitaDatabase db;
 
   setUp(() {
     fakeTts = _FakeTTSService();
@@ -38,13 +47,23 @@ void main() {
     fakePermissions = _FakePermissionRequester();
     fakeAIRouter = _FakeAIRouter();
     fakeGemmaBridge = _FakeGemmaBridge();
+    // Real in-memory Drift DB so the returning-user check and completion
+    // persistence run end-to-end against Drift (integration cover). We override
+    // the DB + secure-vault leaves (below) and let the real
+    // preferencesRepositoryProvider build on top — this exercises the real
+    // provider chain and avoids overriding a provider that watches others.
+    db = KitaDatabase(NativeDatabase.opened(sql.sqlite3.openInMemory()));
   });
 
-  tearDown(() {
+  tearDown(() async {
     fakeTts.dispose();
+    await db.close();
   });
 
-  Widget buildTestApp({bool sttAvailable = true, bool aiAvailable = false}) {
+  Widget buildTestApp({
+    bool sttAvailable = true,
+    bool aiAvailable = false,
+  }) {
     fakeStt.shouldFail = !sttAvailable;
     fakeAIRouter.hasProviders = aiAvailable;
 
@@ -58,6 +77,13 @@ void main() {
         permissionRequesterProvider.overrideWithValue(fakePermissions),
         aiRouterProvider.overrideWithValue(fakeAIRouter),
         gemmaBridgeProvider.overrideWithValue(fakeGemmaBridge),
+        // Override the two DB-chain leaves with in-memory equivalents and let
+        // the REAL preferencesRepositoryProvider (+ memoryVaultProvider) build
+        // on top. Overriding leaves (which watch nothing) instead of the
+        // repository provider keeps us off the device's encrypted store without
+        // tripping riverpod's scoped-provider dependency rule.
+        kitaDatabaseProvider.overrideWith((ref) => db),
+        secureKeyVaultProvider.overrideWithValue(MockSecureKeyVault()),
       ],
       child: const MaterialApp(
         home: Scaffold(
@@ -111,8 +137,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // Should have advanced to camera permission step
-      expect(fakeTts.lastSpokenText, contains('camera'));
-      expect(fakeTts.lastSpokenText, contains('Enchantee Marie'));
+      expect(fakeTts.lastSpokenText, contains('caméra'));
+      expect(fakeTts.lastSpokenText, contains('Enchantée Marie'));
     });
 
     testWidgets('skips name on voice "passer"', (tester) async {
@@ -125,7 +151,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Should advance to camera permission without name
-      expect(fakeTts.lastSpokenText, contains('camera'));
+      expect(fakeTts.lastSpokenText, contains('caméra'));
       expect(fakeTts.lastSpokenText, isNot(contains('Marie')));
     });
 
@@ -138,9 +164,9 @@ void main() {
       fakeStt.emitTranscript("alors ca c'est OK");
       await tester.pumpAndSettle();
 
-      // No name should be captured — camera prompt without "Enchantee"
-      expect(fakeTts.lastSpokenText, contains('camera'));
-      expect(fakeTts.lastSpokenText, isNot(contains('Enchantee')));
+      // No name should be captured — camera prompt without "Enchantée"
+      expect(fakeTts.lastSpokenText, contains('caméra'));
+      expect(fakeTts.lastSpokenText, isNot(contains('Enchantée')));
     });
 
     testWidgets('extracts name from "je m\'appelle Marie"', (tester) async {
@@ -151,7 +177,7 @@ void main() {
       fakeStt.emitTranscript("je m'appelle Marie");
       await tester.pumpAndSettle();
 
-      expect(fakeTts.lastSpokenText, contains('Enchantee Marie'));
+      expect(fakeTts.lastSpokenText, contains('Enchantée Marie'));
     });
 
     testWidgets('extracts name from "bonjour moi c\'est Thomas"',
@@ -163,7 +189,7 @@ void main() {
       fakeStt.emitTranscript("bonjour moi c'est Thomas");
       await tester.pumpAndSettle();
 
-      expect(fakeTts.lastSpokenText, contains('Enchantee Thomas'));
+      expect(fakeTts.lastSpokenText, contains('Enchantée Thomas'));
     });
 
     testWidgets('extracts simple one-word name "Marie"', (tester) async {
@@ -174,7 +200,7 @@ void main() {
       fakeStt.emitTranscript('Marie');
       await tester.pumpAndSettle();
 
-      expect(fakeTts.lastSpokenText, contains('Enchantee Marie'));
+      expect(fakeTts.lastSpokenText, contains('Enchantée Marie'));
     });
   });
 
@@ -191,8 +217,8 @@ void main() {
         (tester) async {
       await advanceToCameraStep(tester);
 
-      expect(fakeTts.lastSpokenText, contains('Enchantee Marie'));
-      expect(fakeTts.lastSpokenText, contains('camera'));
+      expect(fakeTts.lastSpokenText, contains('Enchantée Marie'));
+      expect(fakeTts.lastSpokenText, contains('caméra'));
     });
 
     testWidgets('requests camera from OS when user says oui', (tester) async {
@@ -223,7 +249,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Should have advanced to magic moment
-      expect(fakeTts.lastSpokenText, contains('decris'));
+      expect(fakeTts.lastSpokenText, contains('décris'));
     });
   });
 
@@ -244,7 +270,7 @@ void main() {
     testWidgets('speaks magic moment invitation', (tester) async {
       await advanceToMagicStep(tester);
 
-      expect(fakeTts.lastSpokenText, contains('decris'));
+      expect(fakeTts.lastSpokenText, contains('décris'));
     });
 
     testWidgets('shows processing state when user says decris', (tester) async {
@@ -313,7 +339,7 @@ void main() {
       await tester.tap(find.byKey(const Key('onboarding_continue')));
       await tester.pumpAndSettle();
 
-      expect(fakeTts.lastSpokenText, contains('camera'));
+      expect(fakeTts.lastSpokenText, contains('caméra'));
     });
 
     testWidgets('skip button advances from greeting to camera', (tester) async {
@@ -323,7 +349,7 @@ void main() {
       await tester.tap(find.byKey(const Key('onboarding_skip')));
       await tester.pumpAndSettle();
 
-      expect(fakeTts.lastSpokenText, contains('camera'));
+      expect(fakeTts.lastSpokenText, contains('caméra'));
     });
 
     testWidgets('skip button on camera step goes to magic moment',
@@ -339,7 +365,7 @@ void main() {
       await tester.tap(find.byKey(const Key('onboarding_skip')));
       await tester.pumpAndSettle();
 
-      expect(fakeTts.lastSpokenText, contains('decris'));
+      expect(fakeTts.lastSpokenText, contains('décris'));
     });
 
     testWidgets('skip on magic moment completes onboarding', (tester) async {
@@ -374,7 +400,7 @@ void main() {
       await tester.tap(find.byKey(const Key('onboarding_continue')));
       await tester.pumpAndSettle();
 
-      expect(fakeTts.lastSpokenText, contains('camera'));
+      expect(fakeTts.lastSpokenText, contains('caméra'));
 
       // Continue through camera
       await tester.tap(find.byKey(const Key('onboarding_continue')));
@@ -508,6 +534,133 @@ void main() {
       expect(fakeAIRouter.routeCallCount, 0);
     });
   });
+
+  group('ShellOnboarding progression watchdog', () {
+    testWidgets(
+        'advances to the camera step even when TTS never emits completed',
+        (tester) async {
+      // Simulate a TTS engine that speaks but never signals completion.
+      fakeTts.emitCompletion = false;
+
+      await tester.pumpWidget(buildTestApp());
+      await tester.pump();
+
+      // Without any `completed` event, progress can only come from the
+      // watchdog timers (mic-announce timeout + greeting watchdog) and the STT
+      // listen timeout. Pump well past all of them.
+      for (var i = 0; i < 30; i++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+
+      // The greeting watchdog started STT; the silent STT timed out; the flow
+      // reached the camera step — all without a single completion event.
+      expect(
+        fakeTts.spokenTexts.any((t) => t.contains('caméra')),
+        isTrue,
+        reason: 'watchdog + STT timeout should advance to the camera step',
+      );
+    });
+  });
+
+  group('ShellOnboarding microphone refused', () {
+    testWidgets('announces the button fallback and stays navigable',
+        (tester) async {
+      fakePermissions.statusToReturn = PermissionRequestStatus.denied;
+
+      await tester.pumpWidget(buildTestApp());
+      await tester.pumpAndSettle();
+
+      // The mic-refused message is spoken (TTS works without the mic).
+      expect(
+        fakeTts.spokenTexts.any((t) => t.contains('pas accès au micro')),
+        isTrue,
+      );
+      // STT is never started in button-only mode.
+      expect(fakeStt.isListening, isFalse);
+      // The fallback buttons remain available to drive the flow.
+      expect(find.byKey(const Key('onboarding_continue')), findsOneWidget);
+      expect(find.byKey(const Key('onboarding_skip')), findsOneWidget);
+    });
+
+    testWidgets('button navigation still advances when mic is refused',
+        (tester) async {
+      fakePermissions.statusToReturn = PermissionRequestStatus.denied;
+
+      await tester.pumpWidget(buildTestApp());
+      await tester.pumpAndSettle();
+
+      // Advance via the button; the camera prompt is spoken (speak-only).
+      await tester.tap(find.byKey(const Key('onboarding_continue')));
+      await tester.pumpAndSettle();
+
+      expect(
+        fakeTts.spokenTexts.any((t) => t.contains('caméra')),
+        isTrue,
+      );
+      // Still no STT even after advancing.
+      expect(fakeStt.isListening, isFalse);
+    });
+  });
+
+  group('ShellOnboarding silent STT', () {
+    testWidgets('advances via onTimeout when STT returns no result',
+        (tester) async {
+      await tester.pumpWidget(buildTestApp());
+      await tester.pumpAndSettle();
+
+      // Greeting finished, STT is listening for the name.
+      expect(fakeStt.isListening, isTrue);
+
+      // User stays silent — the 8s listen timer must fire onTimeout.
+      await tester.pump(const Duration(seconds: 8));
+      await tester.pumpAndSettle();
+
+      // onTimeout advanced to the camera step.
+      expect(fakeTts.lastSpokenText, contains('caméra'));
+    });
+  });
+
+  group('ShellOnboarding persistence', () {
+    testWidgets('skips onboarding and stays silent when a profile exists',
+        (tester) async {
+      // Seed a real profile row — the returning-user check must find it via
+      // the real repository.
+      await ProfileDao(db).insert(
+        displayName: 'Marie',
+        accessibilityProfile: 'blind',
+      );
+
+      await tester.pumpWidget(buildTestApp());
+      await tester.pumpAndSettle();
+
+      // Returning user: no speech at all, onboarding UI gone.
+      expect(fakeTts.spokenTexts, isEmpty);
+      expect(find.byKey(const Key('onboarding_continue')), findsNothing);
+      expect(find.byKey(const Key('onboarding_status')), findsNothing);
+    });
+
+    testWidgets('persists a real active profile on completion',
+        (tester) async {
+      await tester.pumpWidget(buildTestApp());
+      await tester.pumpAndSettle();
+
+      // No profile yet — first run.
+      expect((await ProfileDao(db).getActive()).getOrNull(), isNull);
+
+      // Button-only path to completion: skip greeting, camera, magic moment.
+      await tester.tap(find.byKey(const Key('onboarding_skip')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('onboarding_skip')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('onboarding_skip')));
+      await tester.pumpAndSettle();
+
+      // Completion persisted a real active profile row (returning-user marker).
+      final saved = (await ProfileDao(db).getActive()).getOrNull();
+      expect(saved, isNotNull);
+      expect(saved!.accessibilityProfile, 'general');
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -517,10 +670,13 @@ void main() {
 class _FakePermissionRequester implements PermissionRequester {
   final List<KitaPermission> requestedPermissions = [];
 
+  /// Status returned by [request] — tests set this to simulate a refusal.
+  PermissionRequestStatus statusToReturn = PermissionRequestStatus.granted;
+
   @override
   Future<PermissionRequestStatus> request(KitaPermission permission) async {
     requestedPermissions.add(permission);
-    return PermissionRequestStatus.granted;
+    return statusToReturn;
   }
 
   @override
@@ -531,6 +687,10 @@ class _FakeTTSService implements TTSService {
   bool _isSpeaking = false;
   String? lastSpokenText;
   final List<String> spokenTexts = [];
+
+  /// When false, the fake never emits `completed` events — simulates a TTS
+  /// engine that speaks but never signals completion (watchdog test).
+  bool emitCompletion = true;
   final _controller = StreamController<TtsSpeechEvent>.broadcast();
 
   @override
@@ -549,7 +709,7 @@ class _FakeTTSService implements TTSService {
     _isSpeaking = true;
     unawaited(Future.microtask(() {
       _isSpeaking = false;
-      if (!_controller.isClosed) {
+      if (emitCompletion && !_controller.isClosed) {
         _controller.add(TtsSpeechEvent.completed(text: text));
       }
     }));

@@ -14,7 +14,9 @@ import '../../ai/domain/ai_request.dart';
 import '../../io/data/providers/stt_providers.dart';
 import '../../io/data/providers/tts_providers.dart';
 import '../../io/domain/speech_event.dart';
+import '../../io/domain/stt_service.dart';
 import '../../io/domain/tts_service.dart';
+import '../../memory/di/providers.dart';
 import '../../onboarding/di/providers.dart';
 import '../../onboarding/domain/permission_storytelling.dart';
 import '../../onboarding/domain/profile_detection.dart';
@@ -71,6 +73,18 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
   /// Timeout for STT listening.
   Timer? _listenTimer;
 
+  /// Backup timer that advances the flow if a TTS `completed` event is never
+  /// delivered. Cancelled as soon as the real event arrives (or on dispose).
+  Timer? _watchdogTimer;
+
+  /// Set once microphone permission is refused: the flow then runs in
+  /// button-only mode (TTS still speaks, but no STT / listen timers).
+  bool _micDenied = false;
+
+  /// Cached STT handle so [dispose] can stop recognition without touching
+  /// `ref` (which is invalid during unmount).
+  STTService? _stt;
+
   /// Timer for AI probe poll interval (so it can be cancelled on dispose).
   Timer? _probeTimer;
 
@@ -102,6 +116,28 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
   }
 
   Future<void> _initAndGreet() async {
+    // D1: returning-user check. Onboarding completion is materialised by an
+    // active profile row in the DB. We query it through the preferences
+    // repository (equivalent to activeProfileProvider, but keeping a single
+    // provider dependency). If a profile exists, onboarding already ran — skip
+    // it entirely (no greeting, no probe, no speech). On any storage error we
+    // fall through to the normal first-run flow.
+    try {
+      final repo = await ref.read(preferencesRepositoryProvider.future);
+      final existingProfile = (await repo.getActiveProfile()).getOrNull();
+      if (!mounted) return;
+      if (existingProfile != null) {
+        _log.info('Active profile found — skipping onboarding');
+        ref.read(onboardingCompleteProvider.notifier).markComplete();
+        setState(() => _step = _ConversationStep.done);
+        return;
+      }
+    } catch (e) {
+      _log.info('Active profile check skipped (storage unavailable)');
+    }
+
+    if (!mounted) return;
+
     // Always start with LLM disabled — greeting uses hardcoded text for
     // instant, reliable UX. We probe the AI pipeline in background; by the
     // time mic permission + greeting finish (~15s), Gemma warmup (~13s)
@@ -202,6 +238,8 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
     _speechSub = null;
     _listenTimer?.cancel();
     _listenTimer = null;
+    _watchdogTimer?.cancel();
+    _watchdogTimer = null;
     _probeTimer?.cancel();
     _probeTimer = null;
     // Unblock any awaiting probe poll so the future doesn't hang.
@@ -209,6 +247,12 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
       _probePollCompleter!.complete();
     }
     _probePollCompleter = null;
+    // Stop any in-flight STT so the native recognizer releases the mic.
+    // Uses the cached handle — `ref` is unavailable during unmount.
+    final stt = _stt;
+    if (stt != null && stt.isListening) {
+      unawaited(stt.stopRecognition());
+    }
     _voiceActive = false;
     super.dispose();
   }
@@ -222,16 +266,33 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
     _speechSub = null;
     _listenTimer?.cancel();
     _listenTimer = null;
+    _watchdogTimer?.cancel();
+    _watchdogTimer = null;
     final stt = ref.read(sttServiceProvider);
+    _stt = stt;
     if (stt.isListening) {
       unawaited(stt.stopRecognition());
     }
     _voiceActive = false;
   }
 
+  /// Backup-timer duration for a TTS utterance. Some TTS engines never emit
+  /// the `completed` event; without this watchdog the onboarding would stall
+  /// silently. Base 4s + 80ms per character, capped at 20s.
+  static Duration _ttsWatchdog(String text) {
+    const baseMs = 4000;
+    const perCharMs = 80;
+    const capMs = 20000;
+    final ms = baseMs + perCharMs * text.length;
+    return Duration(milliseconds: ms > capMs ? capMs : ms);
+  }
+
   /// Speak [prompt] via TTS, then auto-start STT when TTS completes.
   /// Calls [onTranscript] with the final transcript.
   /// On [timeout], calls [onTimeout] if provided.
+  ///
+  /// If the microphone was refused ([_micDenied]), speaks the prompt only and
+  /// lets the on-screen buttons drive progression (no STT, no timers).
   void _speakThenListen({
     required String prompt,
     required void Function(String transcript) onTranscript,
@@ -239,67 +300,85 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
     Duration timeout = const Duration(seconds: 8),
   }) {
     if (_voiceActive) return;
+
+    if (_micDenied) {
+      _speakOnly(prompt);
+      if (mounted) setState(() => _statusMessage = prompt);
+      return;
+    }
+
     _voiceActive = true;
 
     final tts = ref.read(ttsServiceProvider);
-    final stt = ref.read(sttServiceProvider);
 
     // Track the last partial result so we can use it on timeout.
     String lastPartial = '';
 
+    _awaitCompletionThenListen(
+      matchText: prompt,
+      onTranscript: onTranscript,
+      onTimeout: onTimeout,
+      timeout: timeout,
+      lastPartialRef: () => lastPartial,
+      setLastPartial: (v) => lastPartial = v,
+    );
+
+    unawaited(tts.speak(prompt, priority: TTSPriority.urgent));
+  }
+
+  /// Wait for the TTS `completed` event matching [matchText], then start STT.
+  ///
+  /// A watchdog timer guarantees progress even when the TTS engine never emits
+  /// the completion event. Whichever fires first (the event or the watchdog)
+  /// runs the continuation exactly once — the per-cycle [advanced] guard makes
+  /// late events (a delayed `completed`) no-ops.
+  void _awaitCompletionThenListen({
+    required String matchText,
+    required void Function(String transcript) onTranscript,
+    required VoidCallback? onTimeout,
+    required Duration timeout,
+    required String Function() lastPartialRef,
+    required void Function(String) setLastPartial,
+  }) {
+    final tts = ref.read(ttsServiceProvider);
+    var advanced = false;
+
+    void advance({required bool viaWatchdog}) {
+      if (advanced) return;
+      advanced = true;
+      _watchdogTimer?.cancel();
+      _watchdogTimer = null;
+      _speechSub?.cancel();
+      _speechSub = null;
+      if (viaWatchdog) {
+        // Metadata only — no PII.
+        _log.info('TTS completion missed, watchdog advanced');
+      }
+      if (!mounted) {
+        _voiceActive = false;
+        return;
+      }
+      _startListening(
+        onTranscript: onTranscript,
+        onTimeout: onTimeout,
+        timeout: timeout,
+        lastPartialRef: lastPartialRef,
+        setLastPartial: setLastPartial,
+      );
+    }
+
     _speechSub?.cancel();
     _speechSub = tts.speechEvents.listen((event) {
       if (event.type == TtsSpeechEventType.completed &&
-          event.text == prompt) {
-        _speechSub?.cancel();
-        _speechSub = null;
-
-        if (!mounted) {
-          _voiceActive = false;
-          return;
-        }
-
-        _listenTimer?.cancel();
-        _listenTimer = Timer(timeout, () {
-          unawaited(stt.stopRecognition());
-          _voiceActive = false;
-          if (mounted) {
-            // Use the last partial result if available, otherwise timeout.
-            if (lastPartial.isNotEmpty) {
-              _log.info('STT timeout, using last partial: "$lastPartial"');
-              onTranscript(lastPartial);
-            } else {
-              onTimeout?.call();
-            }
-          }
-        });
-
-        _log.info('TTS completed, starting STT...');
-        unawaited(stt.startRecognition(onResult: (transcript, isFinal) {
-          _log.info('STT result: "$transcript" (final=$isFinal)');
-          if (transcript.isNotEmpty) {
-            lastPartial = transcript;
-          }
-          if (isFinal && transcript.isNotEmpty && mounted) {
-            _listenTimer?.cancel();
-            _listenTimer = null;
-            unawaited(stt.stopRecognition());
-            _voiceActive = false;
-            onTranscript(transcript);
-          }
-        }).then((result) {
-          if (result.isFailure) {
-            _log.error('STT startRecognition failed: $result');
-            _voiceActive = false;
-          }
-        }).catchError((Object e) {
-          _log.error('STT failed during onboarding', error: e);
-          _voiceActive = false;
-        }));
+          event.text == matchText) {
+        advance(viaWatchdog: false);
       }
     });
 
-    unawaited(tts.speak(prompt, priority: TTSPriority.urgent));
+    _watchdogTimer?.cancel();
+    _watchdogTimer = Timer(_ttsWatchdog(matchText), () {
+      advance(viaWatchdog: true);
+    });
   }
 
   /// Speak text via TTS without listening afterwards.
@@ -323,6 +402,13 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
     Duration timeout = const Duration(seconds: 8),
   }) {
     if (_voiceActive) return;
+
+    if (_micDenied) {
+      // Mic refused earlier — speak only; buttons drive progression.
+      _speakOnly(fallbackPrompt);
+      if (mounted) setState(() => _statusMessage = fallbackPrompt);
+      return;
+    }
 
     // If LLM is not available, fall back to the non-streaming path.
     if (!_llmAvailable) {
@@ -430,28 +516,17 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
       });
 
       // Wait for the last sentence to finish being spoken, then start STT.
-      if (lastSentence != null) {
-        unawaited(_speechSub?.cancel());
-        _speechSub = tts.speechEvents.listen((event) {
-          if (event.type == TtsSpeechEventType.completed &&
-              event.text == lastSentence) {
-            _speechSub?.cancel();
-            _speechSub = null;
-
-            if (!mounted) {
-              _voiceActive = false;
-              return;
-            }
-
-            _startListening(
-              onTranscript: onTranscript,
-              onTimeout: onTimeout,
-              timeout: timeout,
-              lastPartialRef: () => lastPartial,
-              setLastPartial: (v) => lastPartial = v,
-            );
-          }
-        });
+      // A watchdog guarantees progress if the `completed` event never arrives.
+      final sentence = lastSentence;
+      if (sentence != null) {
+        _awaitCompletionThenListen(
+          matchText: sentence,
+          onTranscript: onTranscript,
+          onTimeout: onTimeout,
+          timeout: timeout,
+          lastPartialRef: () => lastPartial,
+          setLastPartial: (v) => lastPartial = v,
+        );
       } else {
         // No sentences were spoken (shouldn't happen). Start STT immediately.
         _startListening(
@@ -475,15 +550,23 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
     required void Function(String) setLastPartial,
   }) {
     final stt = ref.read(sttServiceProvider);
+    _stt = stt;
+
+    // Idempotence (finding #8): only one advance per listen cycle. Guards
+    // against a late final STT result arriving after the timeout already fired
+    // (and vice versa).
+    var done = false;
 
     _listenTimer?.cancel();
     _listenTimer = Timer(timeout, () {
+      if (done) return;
+      done = true;
       unawaited(stt.stopRecognition());
       _voiceActive = false;
       if (mounted) {
         final partial = lastPartialRef();
         if (partial.isNotEmpty) {
-          _log.info('STT timeout, using last partial: "$partial"');
+          _log.info('STT timeout, using last partial (len=${partial.length})');
           onTranscript(partial);
         } else {
           onTimeout?.call();
@@ -493,11 +576,13 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
 
     _log.info('TTS completed, starting STT...');
     unawaited(stt.startRecognition(onResult: (transcript, isFinal) {
-      _log.info('STT result: "$transcript" (final=$isFinal)');
+      _log.info('STT result (len=${transcript.length}, final=$isFinal)');
       if (transcript.isNotEmpty) {
         setLastPartial(transcript);
       }
       if (isFinal && transcript.isNotEmpty && mounted) {
+        if (done) return;
+        done = true;
         _listenTimer?.cancel();
         _listenTimer = null;
         unawaited(stt.stopRecognition());
@@ -506,7 +591,7 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
       }
     }).then((result) {
       if (result.isFailure) {
-        _log.error('STT startRecognition failed: $result');
+        _log.error('STT startRecognition failed');
         _voiceActive = false;
       }
     }).catchError((Object e) {
@@ -522,9 +607,9 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
   /// System prompt shared across all onboarding LLM calls.
   static const _systemBase = 'Tu es Kita, une assistante IA chaleureuse et '
       'bienveillante pour personnes aveugles ou malvoyantes. '
-      'Tu tutoies l\'utilisateur. Tu parles en francais simple et naturel. '
+      'Tu tutoies l\'utilisateur. Tu parles en français simple et naturel. '
       'Tes phrases sont courtes (max 2 phrases) car elles seront lues par '
-      'synthese vocale. Sois spontanee, chaque conversation est unique.';
+      'synthèse vocale. Sois spontanée, chaque conversation est unique.';
 
   /// Detect the FallbackChain brute alert response (all providers failed).
   /// When this is returned, we should treat it as a failure and use fallback text.
@@ -778,7 +863,7 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
       } else {
         _log.info('Camera permission declined (LLM-parsed)');
         final declineMsg = reaction ??
-            'Pas de souci, tu pourras l\'activer plus tard dans les reglages.';
+            'Pas de souci, tu pourras l\'activer plus tard dans les réglages.';
         _speakOnly(declineMsg);
         Future<void>.delayed(const Duration(milliseconds: 500), () {
           if (mounted) _advanceToMagicMoment(customPrompt: magicSpeech);
@@ -801,7 +886,7 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
     } else {
       _log.info('Camera permission declined via voice');
       _speakOnly(
-        'Pas de souci, tu pourras l\'activer plus tard dans les reglages.',
+        'Pas de souci, tu pourras l\'activer plus tard dans les réglages.',
       );
       Future<void>.delayed(const Duration(milliseconds: 500), () {
         if (mounted) _advanceToMagicMoment();
@@ -825,8 +910,8 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
     // before the OS dialog pops up.
     final tts = ref.read(ttsServiceProvider);
     const micAnnouncement =
-        'Bonjour ! Je vais te demander l\'acces au micro pour pouvoir '
-        't\'ecouter. Appuie sur Autoriser quand le dialog apparait.';
+        'Bonjour ! Je vais te demander l\'accès au micro pour pouvoir '
+        't\'écouter. Appuie sur Autoriser quand le dialogue apparaît.';
     _log.info('Announcing mic permission request');
     setState(() {
       _statusMessage = micAnnouncement;
@@ -856,15 +941,32 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
 
     // Now request mic permission — OS dialog appears
     _log.info('Requesting mic permission');
+    PermissionRequestStatus? micStatus;
     try {
       final requester = ref.read(permissionRequesterProvider);
-      final status = await requester.request(KitaPermission.microphone);
-      _log.info('Mic permission: ${status.name}');
+      micStatus = await requester.request(KitaPermission.microphone);
+      _log.info('Mic permission: ${micStatus.name}');
     } catch (e) {
       _log.error('Mic permission request failed', error: e);
     }
 
     if (!mounted) return;
+
+    // D4: mic refused → announce the button fallback and stop here. TTS still
+    // works without the mic, so Marie hears how to proceed; the on-screen
+    // buttons drive the rest of the flow (no STT, no idle listen timers).
+    if (micStatus != PermissionRequestStatus.granted) {
+      _log.info('Mic not granted — continuing in button-only mode');
+      _micDenied = true;
+      const micDeniedMessage =
+          'Je n\'ai pas accès au micro. Tu peux avancer avec les boutons à '
+          'l\'écran, ou activer le micro dans les réglages.';
+      _speakOnly(micDeniedMessage);
+      setState(() {
+        _statusMessage = micDeniedMessage;
+      });
+      return;
+    }
 
     // Generate greeting via streaming LLM → TTS, then listen for name.
     // User hears first sentence at ~1.5s instead of waiting ~8s.
@@ -921,10 +1023,10 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
 
     // Use LLM-generated transition or generate one, or fallback.
     final fallbackGreeting = _capturedName != null
-        ? 'Enchantee $_capturedName. '
+        ? 'Enchantée $_capturedName. '
         : '';
     final fallbackPrompt = '${fallbackGreeting}Pour t\'aider, j\'ai besoin '
-        'd\'acceder a ta camera. Tu permets ?';
+        'd\'accéder à ta caméra. Tu permets ?';
 
     if (!mounted) return;
 
@@ -1023,7 +1125,7 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
     });
 
     const fallbackPrompt =
-        'Parfait ! Essaie : dis decris et je te decrirai ce que je vois.';
+        'Parfait ! Essaie : dis décris et je te décrirai ce que je vois.';
 
     if (!mounted) return;
 
@@ -1042,7 +1144,9 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
         prompt: customPrompt,
         timeout: const Duration(seconds: 10),
         onTranscript: (transcript) {
-          _log.info('Magic moment: routing "$transcript" to orchestrator');
+          _log.info(
+              'Magic moment: routing transcript to orchestrator '
+              '(len=${transcript.length})');
           _triggerDescribeViaOrchestrator(transcript);
         },
         onTimeout: () {
@@ -1072,7 +1176,9 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
         fallbackPrompt: fallbackPrompt,
         timeout: const Duration(seconds: 10),
         onTranscript: (transcript) {
-          _log.info('Magic moment: routing "$transcript" to orchestrator');
+          _log.info(
+              'Magic moment: routing transcript to orchestrator '
+              '(len=${transcript.length})');
           _triggerDescribeViaOrchestrator(transcript);
         },
         onTimeout: () {
@@ -1094,12 +1200,12 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
     try {
       final orchestrator = ref.read(kitaOrchestratorProvider);
       final clock = ref.read(clockProvider);
-      _log.info('Routing to orchestrator: "$transcript"');
+      _log.info('Routing to orchestrator (len=${transcript.length})');
       unawaited(orchestrator
           .handleInput(RawInput.voice(transcript, clock: clock))
-          .then((_) => _log.info('Orchestrator handled: "$transcript"'))
+          .then((_) => _log.info('Orchestrator handled input'))
           .catchError((Object e) {
-        _log.error('Orchestrator failed for "$transcript"', error: e);
+        _log.error('Orchestrator failed for input', error: e);
       }));
     } catch (e) {
       _log.error('Could not access orchestrator', error: e);
@@ -1115,7 +1221,7 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
       // Use the pre-generated magic speech or fallback.
       // We can't call LLM here because it's processing the describe request.
       final readyMsg = _pendingReadyMessage ??
-          'Voila ! Je suis prete. Demande-moi ce que tu veux.';
+          'Voilà ! Je suis prête. Demande-moi ce que tu veux.';
       _speakOnly(readyMsg);
       setState(() {
         _statusMessage = readyMsg;
@@ -1152,7 +1258,7 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
       if (!mounted) return;
 
       final readyMsg = _pendingReadyMessage ??
-          'Voila ! Je suis prete. Demande-moi ce que tu veux.';
+          'Voilà ! Je suis prête. Demande-moi ce que tu veux.';
       _speakOnly(readyMsg);
       setState(() {
         _statusMessage = readyMsg;
@@ -1172,12 +1278,55 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
     _cancelVoice();
     _log.info('Onboarding complete');
 
+    // D7: if no AI provider is configured, tell the user where to enable it.
+    final aiRouter = ref.read(aiRouterProvider);
+    if (aiRouter.availableProviders.isEmpty) {
+      _speakOnly(
+        'Pour activer l\'intelligence artificielle, va dans les réglages.',
+      );
+    }
+
     ref.read(onboardingNotifierProvider.notifier).completeOnboarding();
+
+    // D1: persist an active profile so a returning user skips onboarding.
+    // Fire-and-forget so it never blocks the handoff to the Shell.
+    _persistProfile();
 
     setState(() {
       _step = _ConversationStep.done;
       _statusMessage = '';
     });
+  }
+
+  /// Persist the collected name + detected/chosen profile as an active profile
+  /// row. This is what [_initAndGreet] reads to detect a returning user.
+  ///
+  /// The plugin pack is intentionally NOT persisted here: the orchestrator
+  /// spawns the alert/describe agents independently on every Shell mount.
+  void _persistProfile() {
+    final onboardingState = ref.read(onboardingNotifierProvider);
+    final profile = onboardingState.detectedProfile?.profile ??
+        AccessibilityProfile.general;
+    final displayName = _capturedName;
+    // Capture the repo future synchronously — `ref` becomes invalid once the
+    // Shell swaps ShellOnboarding out after completion.
+    final repoFuture = ref.read(preferencesRepositoryProvider.future);
+    unawaited(() async {
+      try {
+        final repo = await repoFuture;
+        final result = await repo.saveProfile(
+          displayName: displayName,
+          accessibilityProfile: profile.name,
+        );
+        if (result.isFailure) {
+          _log.warning('Profile persistence failed');
+        } else {
+          _log.info('Active profile persisted');
+        }
+      } catch (e) {
+        _log.error('Profile persistence failed', error: e);
+      }
+    }());
   }
 
   // ---------------------------------------------------------------------------
@@ -1256,13 +1405,17 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
   Widget _buildFallbackButtons() {
     final continueLabel = switch (_step) {
       _ConversationStep.greeting => 'Continuer',
-      _ConversationStep.cameraPermission => 'Autoriser la camera',
-      _ConversationStep.magicMoment => 'Essayer decris',
+      _ConversationStep.cameraPermission => 'Autoriser la caméra',
+      _ConversationStep.magicMoment => 'Essayer décris',
       _ConversationStep.done => '',
     };
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+    // Wrap (not Row) so the two buttons flow onto a second line instead of
+    // overflowing on narrow screens or at large text scales.
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 12,
+      runSpacing: 8,
       children: [
         SizedBox(
           height: KitaAccessibility.touchTargetCritical,
@@ -1273,18 +1426,18 @@ class _ShellOnboardingState extends ConsumerState<ShellOnboarding> {
               key: const Key('onboarding_continue'),
               onPressed: _onContinuePressed,
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF0D9488),
+                // Darker teal for a >= 4.5:1 contrast ratio on white text.
+                backgroundColor: const Color(0xFF0F766E),
               ),
               child: Text(continueLabel),
             ),
           ),
         ),
-        const SizedBox(width: 12),
         SizedBox(
           height: KitaAccessibility.touchTargetMin,
           child: Semantics(
             button: true,
-            label: 'Passer cette etape',
+            label: 'Passer cette étape',
             child: OutlinedButton(
               key: const Key('onboarding_skip'),
               onPressed: _onSkipPressed,

@@ -45,6 +45,14 @@ class SettingsPlaceholder extends StatelessWidget {
               SizedBox(
                 height: 48,
                 child: ElevatedButton(
+                  onPressed: () => context.push('/settings/api-key'),
+                  child: const Text('Configurer l\'intelligence artificielle'),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 48,
+                child: ElevatedButton(
                   onPressed: () => context.go('/'),
                   child: const Text('Retour'),
                 ),

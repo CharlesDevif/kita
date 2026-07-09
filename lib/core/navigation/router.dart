@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/onboarding/presentation/onboarding_screen.dart';
+import '../../features/settings/presentation/api_key_settings_screen.dart';
 import '../../features/settings/presentation/diagnostic_screen.dart';
 import '../../features/settings/presentation/forget_screen.dart';
 import '../../features/settings/presentation/memory_view_placeholder.dart';
@@ -39,6 +40,10 @@ final List<RouteBase> kitaRoutes = [
       GoRoute(
         path: 'diagnostic',
         builder: (context, state) => const DiagnosticScreen(),
+      ),
+      GoRoute(
+        path: 'api-key',
+        builder: (context, state) => const ApiKeySettingsScreen(),
       ),
     ],
   ),

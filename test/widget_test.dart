@@ -7,6 +7,7 @@ import 'package:kita/app.dart';
 import 'package:kita/features/io/data/providers/tts_providers.dart';
 import 'package:kita/features/memory/data/auto_cleanup_service.dart';
 import 'package:kita/features/memory/di/providers.dart';
+import 'package:kita/features/memory/domain/preferences_repository.dart';
 import 'package:kita/features/onboarding/di/providers.dart';
 import 'package:kita/features/onboarding/domain/permission_storytelling.dart';
 import 'package:kita/features/onboarding/domain/profile_detection.dart';
@@ -57,6 +58,13 @@ void main() {
           autoCleanupProvider.overrideWith(
             (ref) => Completer<AutoCleanupService>().future,
           ),
+          // ShellOnboarding checks for a returning user at startup; hang that
+          // check so it never touches the real encrypted DB (this smoke test
+          // only verifies the Shell shows conversational onboarding).
+          preferencesRepositoryProvider.overrideWith(
+            (ref) => Completer<PreferencesRepository>().future,
+          ),
+
         ],
         child: const KitaApp(),
       ),
