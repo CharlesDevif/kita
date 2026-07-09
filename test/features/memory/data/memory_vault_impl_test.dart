@@ -406,6 +406,46 @@ void main() {
       expect(remaining, hasLength(1));
       expect(remaining.first.pluginId, equals('com.kita.alert'));
     });
+
+    test('forget(specific) supprime une préférence par clé', () async {
+      await grantConsentFor('semantic');
+      await vault.setPreference(
+        key: 'fact:frere_paul', value: "mon frère s'appelle Paul",
+        category: 'user_fact', source: 'explicit',
+      );
+
+      final result = await vault.forget(
+        ForgetRequest.specific(const ['fact:frere_paul'], confirmation: true),
+      );
+
+      expect(result.isSuccess, isTrue);
+      final prefs = (await vault.getPreferences()).getOrNull()!;
+      expect(prefs.where((p) => p.key == 'fact:frere_paul'), isEmpty);
+    });
+
+    test('forget(specific) sur une clé inconnue échoue, jamais un succès silencieux',
+        () async {
+      final result = await vault.forget(
+        ForgetRequest.specific(const ['fact:nexiste_pas'], confirmation: true),
+      );
+      expect(result.isSuccess, isFalse);
+    });
+
+    test('forget(specific) supprime toujours les épisodes par identifiant', () async {
+      await grantConsentFor('episodic');
+      await vault.saveEpisode(KitaEpisode(
+        id: 0, source: 'test', eventType: 'scene_description', summary: 'un bureau',
+        importanceScore: 0.3, isPinned: false, createdAt: DateTime(2026, 7, 9),
+      ));
+      final saved = (await vault.getEpisodes()).getOrNull()!.single;
+
+      final result = await vault.forget(
+        ForgetRequest.specific(['${saved.id}'], confirmation: true),
+      );
+
+      expect(result.isSuccess, isTrue);
+      expect((await vault.getEpisodes()).getOrNull(), isEmpty);
+    });
   });
 
   group('MemoryVaultImpl — Audit robustness', () {

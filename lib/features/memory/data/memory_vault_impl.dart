@@ -20,6 +20,9 @@ import 'daos/profile_dao.dart';
 
 final _log = KitaLogger('Memory');
 
+/// Préfixe des clés de préférence portant un fait utilisateur.
+const String userFactKeyPrefix = 'fact:';
+
 /// Concrete implementation of [MemoryVault] with consent-based storage.
 ///
 /// All sensitive data operations check for active consent before proceeding.
@@ -318,13 +321,25 @@ class MemoryVaultImpl implements MemoryVault {
           _log.info('Old episodes deleted');
 
         case ForgetScope.specific:
+          if (request.specificIds.isEmpty) {
+            return const Result.failure(StorageFailure(
+              userMessage: 'Rien à effacer.',
+              logMessage: 'Forget specific request with no ids',
+            ));
+          }
           for (final idStr in request.specificIds) {
-            final id = int.tryParse(idStr);
-            if (id != null) {
-              await episodeDao.deleteById(id);
+            final deleted = await _forgetSpecificId(idStr);
+            if (deleted == 0) {
+              // Jamais de succès silencieux : l'écran Mémoire afficherait « supprimé »
+              // sur une ligne toujours présente en base.
+              _log.warning('Forget specific: no row matched');
+              return const Result.failure(StorageFailure(
+                userMessage: "Cet élément n'existe plus.",
+                logMessage: 'Forget specific: id matched no row',
+              ));
             }
           }
-          _log.info('Specific episodes deleted');
+          _log.info('Specific entries deleted (count=${request.specificIds.length})');
       }
 
       return const Result.success(null);
@@ -360,6 +375,20 @@ class MemoryVaultImpl implements MemoryVault {
   }
 
   // --- Private helpers ---
+
+  /// Supprime une entrée désignée par [idStr] et renvoie le nombre de lignes
+  /// effacées. Une clé préfixée `fact:` vise le domaine sémantique ; un entier
+  /// vise un épisode.
+  Future<int> _forgetSpecificId(String idStr) async {
+    if (idStr.startsWith(userFactKeyPrefix)) {
+      final result = await preferenceDao.deleteByKey(idStr);
+      return result.getOrNull() ?? 0;
+    }
+    final id = int.tryParse(idStr);
+    if (id == null) return 0;
+    final result = await episodeDao.deleteById(id);
+    return result.getOrNull() ?? 0;
+  }
 
   /// Serializes [action] against every other consent-guarded operation.
   ///
