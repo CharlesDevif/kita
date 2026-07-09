@@ -47,7 +47,10 @@ ParsedToolCall? parseLocalToolResponse(String text) {
     final parts = line.substring(5).trim().split(RegExp(r'\s+'));
     if (parts.isEmpty || parts.first.isEmpty) continue;
     final name = parts.first;
-    if (!_knownTools.contains(name)) return null;
+    // Ligne `TOOL <inconnu>` : on l'ignore et on poursuit le scan (lignes
+    // suivantes puis repli JSON) au lieu d'abandonner tout le parsing. Ainsi
+    // `TOOL foobar\nTOOL describe` produit bien un appel `describe`.
+    if (!_knownTools.contains(name)) continue;
     final args = <String, dynamic>{};
     if (parts.length > 1 && _firstParamOf[name] != null) {
       args[_firstParamOf[name]!] = parts[1];

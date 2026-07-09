@@ -258,4 +258,93 @@ void main() {
       expect(orbStates.last, OrbState.error);
     });
   });
+
+  // ========================================================================
+  // Câblage onSpeechStarted : seul le premier mot d'une VRAIE réponse d'agent
+  // notifie le Shell (→ `responding`, efface le statut). Ni les repères de
+  // progression, ni le « OK » d'annulation ne doivent notifier — sinon ils
+  // pilotent l'orbe (interdit) et effacent la bulle de statut.
+  //
+  // On simule l'événement `started` natif du TTS en appelant `onSpeechStart()`
+  // à la main (le `started` réel arrive APRÈS `speak()`), comme le pattern des
+  // tests output_coordinator qui pilotent le faux TTS via les callbacks.
+  // ========================================================================
+  group('OutputCoordinator.onSpeechStart → onSpeechStarted', () {
+    late _FakeTts tts;
+    late OutputCoordinator coordinator;
+    late int startedCount;
+    late List<OrbState> orbStates;
+
+    setUp(() {
+      tts = _FakeTts();
+      startedCount = 0;
+      orbStates = [];
+      coordinator = OutputCoordinator(
+        tts: tts,
+        haptic: _FakeHaptic(),
+        profileAdapter: _FakeProfileAdapter(),
+        clock: FakeClock(),
+        bus: _FakeBus(),
+        onOrbStateChanged: orbStates.add,
+        onShellModeChanged: (_) {},
+        onSpeechStarted: () => startedCount++,
+      );
+    });
+
+    tearDown(() => coordinator.dispose());
+
+    test('(a) un repère ne notifie JAMAIS onSpeechStarted et ne bouge pas '
+        'l\'orbe', () async {
+      await coordinator.speakCue(ProgressReporter.cueThinking);
+      await _flush();
+      // Le `started` natif du TTS arrive après `speak()` : on le simule.
+      coordinator.onSpeechStart();
+      await _flush();
+
+      expect(tts.spoken, contains('Un instant.'));
+      expect(startedCount, 0);
+      expect(orbStates, isEmpty);
+    });
+
+    test('(b) une parole normale notifie onSpeechStarted une seule fois',
+        () async {
+      await coordinator.enqueueSpeech(
+        AgentIds.system,
+        'Voici la description.',
+        OutputPriority.standard,
+      );
+      await _flush();
+      coordinator.onSpeechStart();
+      await _flush();
+
+      expect(tts.spoken, contains('Voici la description.'));
+      expect(startedCount, 1);
+    });
+
+    test('(c) le « OK » de cancelAll ne notifie pas onSpeechStarted ; '
+        'l\'orbe finit en passive', () async {
+      // Une vraie réponse est en cours…
+      await coordinator.enqueueSpeech(
+        AgentIds.system,
+        'Réponse en cours.',
+        OutputPriority.standard,
+      );
+      await _flush();
+      startedCount = 0;
+      orbStates.clear();
+
+      // « stop » : cancelAll prononce « OK » et remet l'orbe en passive.
+      await coordinator.cancelAll();
+      await _flush();
+
+      // Le `started` (asynchrone) du « OK » arrive APRÈS le retour à passive :
+      // il ne doit surtout pas rallumer l'orbe en `responding`.
+      coordinator.onSpeechStart();
+      await _flush();
+
+      expect(tts.spoken, contains('OK'));
+      expect(startedCount, 0);
+      expect(orbStates.last, OrbState.passive);
+    });
+  });
 }

@@ -36,5 +36,17 @@ void main() {
     test('outil inconnu → pas d\'appel d\'outil', () {
       expect(parseLocalToolResponse('TOOL inventer'), isNull);
     });
+
+    test('TOOL <inconnu> seul → pas d\'appel d\'outil', () {
+      expect(parseLocalToolResponse('TOOL foobar'), isNull);
+    });
+
+    test('TOOL <inconnu> puis TOOL describe → appel describe', () {
+      // Le parseur ignore la ligne inconnue et poursuit le scan au lieu
+      // d'abandonner dès la première ligne non reconnue.
+      final call = parseLocalToolResponse('TOOL foobar\nTOOL describe');
+      expect(call, isNotNull);
+      expect(call!.name, 'describe');
+    });
   });
 }

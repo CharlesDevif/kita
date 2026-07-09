@@ -140,6 +140,17 @@ class OutputCoordinator implements ProgressSpeaker {
   AgentType? _currentSpeakingAgentType;
   bool _disposed = false;
 
+  /// `true` quand la diction en cours est un repère de progression
+  /// (« Un instant. », « Je regarde. ») ou le « OK » d'accusé de [cancelAll] —
+  /// jamais une vraie réponse d'agent. Positionné AVANT chaque `_tts.speak(...)`
+  /// (le `started` natif arrive APRÈS l'appel à `speak()`). Il empêche
+  /// [onSpeechStart] de notifier [_onSpeechStarted] — le seul câblage qui, via
+  /// la DI, bascule le Shell en `responding` et efface la bulle de statut — pour
+  /// ces paroles transitoires. Seul le ProgressReporter pilote l'orbe pendant
+  /// qu'un outil travaille. Une nouvelle diction réécrit ce drapeau ; il ne doit
+  /// PAS être réinitialisé dans [onSpeechComplete].
+  bool _currentSpeechIsCue = false;
+
   /// The agent that currently has focus (last to have produced output).
   String? _focusedAgentId;
 
@@ -357,6 +368,12 @@ class OutputCoordinator implements ProgressSpeaker {
     _focusedAgentId = null;
 
     // Feedback "OK" via ProfileAdapter.
+    // Le « OK » est un accusé de réception d'annulation, pas une réponse. Sans
+    // ce drapeau, son événement `started` (asynchrone) arriverait APRÈS que
+    // `cancelAll` (et `endRequest`) ont remis l'orbe en `passive`, puis
+    // `onSpeechStart` la rallumerait en `responding` indéfiniment. On lève donc
+    // le drapeau AVANT `speak('OK')`.
+    _currentSpeechIsCue = true;
     _profileAdapter.feedback(
       vocal: () {
         unawaited(_tts.speak('OK').catchError((Object e) {
@@ -446,6 +463,9 @@ class OutputCoordinator implements ProgressSpeaker {
 
     _emitSpeechEvent(request.agentId, SpeechEvent.started);
 
+    // Une alerte `critical` est une vraie réponse d'agent : elle DOIT piloter
+    // l'orbe. Le drapeau est donc explicitement `false`.
+    _currentSpeechIsCue = false;
     _profileAdapter.feedback(
       vocal: () {
         unawaited(_tts.speak(request.text).catchError((Object e) {
@@ -535,6 +555,11 @@ class OutputCoordinator implements ProgressSpeaker {
 
     _emitSpeechEvent(request.agentId, SpeechEvent.started);
 
+    // Un repère de progression (`isProgressCue`) ne doit jamais notifier
+    // `onSpeechStarted` : cela ferait basculer le Shell en `responding` et
+    // effacerait la bulle de statut alors qu'un outil travaille encore.
+    // Positionné AVANT `speak()` car le `started` natif suit.
+    _currentSpeechIsCue = request.isProgressCue;
     _profileAdapter.feedback(
       vocal: () {
         unawaited(_tts.speak(request.text).catchError((Object e) {
@@ -619,6 +644,9 @@ class OutputCoordinator implements ProgressSpeaker {
 
         _emitSpeechEvent(request.agentId, SpeechEvent.started);
 
+        // File normale (`standard`/`low`) : de vraies réponses d'agent, elles
+        // pilotent l'orbe. Le drapeau est donc `false`.
+        _currentSpeechIsCue = false;
         _profileAdapter.feedback(
           vocal: () {
             unawaited(_tts.speak(request.text).catchError((Object e) {
@@ -713,9 +741,14 @@ class OutputCoordinator implements ProgressSpeaker {
 
   /// Called by the TTS callback layer to notify speech started.
   void onSpeechStart() {
-    // Premier mot prononcé : le Shell bascule en `responding` et efface le
-    // statut transitoire (« Réflexion… »).
-    _onSpeechStarted?.call();
+    // Premier mot d'une VRAIE réponse : le Shell bascule en `responding` et
+    // efface le statut transitoire (« Réflexion… »). Les repères de progression
+    // (« Un instant. », « Je regarde. ») et le « OK » d'annulation ne sont pas
+    // des réponses : le drapeau posé avant leur `speak()` les exclut, sinon ils
+    // piloteraient l'orbe (interdit — seul le ProgressReporter le fait).
+    if (!_currentSpeechIsCue) {
+      _onSpeechStarted?.call();
+    }
     // The coordinator tracks speaking state internally otherwise.
   }
 
