@@ -113,8 +113,8 @@ class GemmaBridgeImpl implements GemmaBridge {
   bool _warmedUp = false;
   GemmaModelStatus _status = GemmaModelStatus.loading;
 
+  /// The single LiteRT-LM engine — serves BOTH text and vision chats.
   InferenceModel? _textModel;
-  InferenceModel? _visionModel;
 
   /// Persistent text chat session — reuses KV cache between calls,
   /// saving ~2s per subsequent inference.
@@ -283,42 +283,39 @@ class GemmaBridgeImpl implements GemmaBridge {
     try {
       await _ensureInitialized();
 
-      // Use or create vision model.
-      _visionModel ??= await FlutterGemma.getActiveModel(
-        maxTokens: 1024,
-        preferredBackend: PreferredBackend.gpu,
-        supportImage: true,
-        maxNumImages: 1,
-      );
-
-      final chat = await _visionModel!.createChat(
+      // Le moteur unique (créé avec supportImage dans _ensureInitialized)
+      // sert aussi la vision — on ouvre simplement un chat vision dessus.
+      final chat = await _textModel!.createChat(
         temperature: 0.7,
         topK: 40,
         supportImage: true,
       );
 
-      await chat.addQueryChunk(Message.withImage(
-        text: prompt ?? 'Décris cette image en français de manière détaillée.',
-        imageBytes: bytes,
-        isUser: true,
-      ));
+      try {
+        await chat.addQueryChunk(Message.withImage(
+          text:
+              prompt ?? 'Décris cette image en français de manière détaillée.',
+          imageBytes: bytes,
+          isUser: true,
+        ));
 
-      // Stream token-by-token for low-latency TTS.
-      final tokens = chat
-          .generateChatResponseAsync()
-          .where((r) => r is TextResponse)
-          .map((r) => (r as TextResponse).token)
-          .withInferenceTimeout(inferenceTimeout);
-      yield* tokens;
+        // Stream token-by-token for low-latency TTS.
+        final tokens = chat
+            .generateChatResponseAsync()
+            .where((r) => r is TextResponse)
+            .map((r) => (r as TextResponse).token)
+            .withInferenceTimeout(inferenceTimeout);
+        yield* tokens;
+      } finally {
+        // Pas de session vision persistante (mémoire #348) : fermer la
+        // session native du chat (PAS le moteur, partagé avec le texte)
+        // pour libérer la mémoire au plus tôt.
+        await chat.session.close();
+      }
     } on Object catch (e, stack) {
       _log.error('Gemma describeImageStream failed', error: e, stackTrace: stack);
       throw gemmaFailure(e, stackTrace: stack);
     } finally {
-      // Pas de session vision persistante (mémoire #348) : fermer et
-      // remettre à null pour que la prochaine description recrée une
-      // session native fraîche et libère la précédente au plus tôt.
-      await _visionModel?.close();
-      _visionModel = null;
       _processing = false;
     }
   }
@@ -330,8 +327,6 @@ class GemmaBridgeImpl implements GemmaBridge {
     _textChat = null;
     await _textModel?.close();
     _textModel = null;
-    await _visionModel?.close();
-    _visionModel = null;
     _log.info('Gemma bridge disposed');
   }
 
@@ -367,9 +362,17 @@ class GemmaBridgeImpl implements GemmaBridge {
         ).fromFile(path).install();
       }
 
+      // UN SEUL moteur pour texte ET vision. LiteRT-LM ne crée qu'un moteur
+      // actif par modèle : le premier getActiveModel fixe ses capacités.
+      // Vérifié sur device (S21) : sans supportImage ici, le moteur démarre
+      // avec visionBackend=null et « décris » est impossible. maxTokens est
+      // le budget TOTAL (prompt + réponse) : à 512, le prompt tool-use
+      // (~500 tokens) tronquait les réponses après quelques mots.
       _textModel = await FlutterGemma.getActiveModel(
-        maxTokens: 512,
+        maxTokens: 4096,
         preferredBackend: PreferredBackend.gpu,
+        supportImage: true,
+        maxNumImages: 1,
       );
 
       _initialized = true;
