@@ -21,11 +21,14 @@ class KitaApp extends ConsumerWidget {
     // root (not in KitaShell, so widget tests of the Shell stay DB-free):
     // - register cloud AI providers from any stored API keys (local-first:
     //   no-op when none are configured);
-    // - start the automatic data-retention cleanup (30-day policy).
+    // - start the automatic data-retention cleanup (30-day policy);
+    // - grant the storage consent required by saveEpisode/setPreference
+    //   (without it, every memory write fails silently at runtime).
     // These are keepAlive providers; reading them is enough to trigger them
     // and any errors stay contained in their AsyncValue.
     ref.read(cloudProvidersInitProvider);
     ref.read(autoCleanupProvider);
+    ref.read(memoryConsentBootstrapProvider);
 
     return MixTheme(
       data: buildKitaMixTheme(brightness),

@@ -58,6 +58,11 @@ void main() {
           autoCleanupProvider.overrideWith(
             (ref) => Completer<AutoCleanupService>().future,
           ),
+          // KitaApp also fires the memory consent bootstrap at boot (reads
+          // memoryVaultProvider); keep it off the real encrypted DB too.
+          memoryConsentBootstrapProvider.overrideWith(
+            (ref) => Completer<void>().future,
+          ),
           // ShellOnboarding checks for a returning user at startup; hang that
           // check so it never touches the real encrypted DB (this smoke test
           // only verifies the Shell shows conversational onboarding).

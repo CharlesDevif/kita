@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/errors/result.dart';
 import '../../../core/theme/accessibility_tokens.dart';
 import '../../../core/utils/logger.dart';
+import '../../memory/data/memory_consent.dart';
 import '../../memory/di/providers.dart';
 import '../../memory/domain/forget_request.dart';
 import '../../memory/domain/memory_domain.dart';
@@ -97,6 +98,28 @@ class _ForgetScreenState extends ConsumerState<ForgetScreen> {
 
       final verified =
           (await vault.auditForget(request)).getOrElse((_) => false);
+
+      if (request.scope == ForgetScope.everything) {
+        // forget(everything) fait consentDao.deleteAll() : sans ré-accord, la
+        // mémoire resterait désactivée pour toujours (saveEpisode et
+        // setPreference sont verrouillés par le consentement data_storage).
+        // Exécuté après l'audit ci-dessus pour que le compte de lignes
+        // résiduelles reflète l'état juste après l'effacement. Isolé dans son
+        // propre try/catch : un échec de ré-accord ne doit pas transformer un
+        // effacement déjà réussi (et déjà audité) en « erreur inattendue ».
+        try {
+          final keyVault = ref.read(secureKeyVaultProvider);
+          await MemoryConsent.ensureGranted(vault, keyVault: keyVault);
+          _log.info('Memory consent re-granted after forget(everything)');
+        } on Object catch (e, stack) {
+          _log.error(
+            'Could not re-grant memory consent after forget(everything)',
+            error: e,
+            stackTrace: stack,
+          );
+        }
+      }
+
       if (verified) {
         _log.info('Forget completed and verified');
         _finish(success: true, message: 'Données effacées et vérifiées.');

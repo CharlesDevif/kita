@@ -21,6 +21,8 @@ import 'package:kita/features/memory/domain/forget_request.dart';
 import 'package:kita/features/memory/domain/memory_vault.dart';
 import 'package:kita/features/settings/presentation/forget_screen.dart';
 
+import '../../../mocks/mock_secure_key_vault.dart';
+
 /// Fake vault whose erasure "succeeds" but whose audit reports residual data,
 /// to exercise the honest-failure path without a contrived real DB state.
 class _AuditFailsVault implements MemoryVault {
@@ -105,6 +107,10 @@ void main() {
           memoryVaultProvider.overrideWith(
             vaultOverride ?? (ref) => vault,
           ),
+          // Après « tout effacer », ForgetScreen ré-accorde le consentement
+          // via MemoryConsent.ensureGranted, qui lit le key vault sécurisé
+          // pour vérifier un éventuel opt-out.
+          secureKeyVaultProvider.overrideWithValue(MockSecureKeyVault()),
         ],
         child: const MaterialApp(home: ForgetScreen()),
       ),
@@ -133,11 +139,23 @@ void main() {
       final known = (await vault.whatDoYouKnow()).getOrNull()!;
       expect(known, isEmpty);
 
-      // L'audit confirme l'effacement.
-      final audit = (await vault
-              .auditForget(ForgetRequest.everything(confirmation: true)))
-          .getOrNull();
-      expect(audit, isTrue);
+      // Le consentement de stockage a été ré-accordé après l'effacement total
+      // (consentDao.deleteAll() l'avait aussi supprimé) : sans ce garde-fou,
+      // la mémoire resterait désactivée pour toujours.
+      final consents = (await vault.getConsents()).getOrNull()!;
+      expect(
+        consents.where((c) => c.granted && c.revokedAt == null),
+        hasLength(2),
+      );
+
+      // Preuve concrète : une écriture de préférence réussit à nouveau.
+      final rewrite = await vault.setPreference(
+        key: 'fact:apres_effacement',
+        value: 'ok',
+        category: 'user_fact',
+        source: 'explicit',
+      );
+      expect(rewrite.isSuccess, isTrue);
     });
 
     testWidgets('Effacer une catégorie ne supprime que ce domaine',

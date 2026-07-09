@@ -10,6 +10,7 @@ import '../data/daos/person_dao.dart';
 import '../data/daos/plugin_data_dao.dart';
 import '../data/daos/preference_dao.dart';
 import '../data/daos/profile_dao.dart';
+import '../data/memory_consent.dart';
 import '../data/memory_vault_impl.dart';
 import '../data/preferences_repository_impl.dart';
 import '../data/secure_key_vault_impl.dart';
@@ -84,4 +85,14 @@ Future<AutoCleanupService> autoCleanup(Ref ref) async {
   await service.start();
   ref.onDispose(service.dispose);
   return service;
+}
+
+/// Accorde le consentement de stockage au démarrage (décision produit :
+/// activé par défaut, révocable dans l'écran Mémoire). Sans lui, `saveEpisode`
+/// et `setPreference` échouent silencieusement à l'exécution.
+@Riverpod(keepAlive: true)
+Future<void> memoryConsentBootstrap(Ref ref) async {
+  final vault = await ref.watch(memoryVaultProvider.future);
+  final keyVault = ref.watch(secureKeyVaultProvider);
+  await MemoryConsent.ensureGranted(vault, keyVault: keyVault);
 }
