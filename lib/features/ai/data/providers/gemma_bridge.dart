@@ -108,10 +108,41 @@ class GemmaBridgeImpl implements GemmaBridge {
   /// Guard against concurrent inference calls.
   bool _processing = false;
 
+  /// Number of REAL requests currently waiting for their turn. The boot
+  /// warmup steps aside when a real request is queued.
+  int _waitingRealOps = 0;
+
   bool _disposed = false;
   bool _initialized = false;
   bool _warmedUp = false;
   GemmaModelStatus _status = GemmaModelStatus.loading;
+
+  /// Memoized initialization: concurrent callers (boot warmup + a user
+  /// request) await the SAME future instead of double-initializing the
+  /// native engine (double « Gemma model ready » observé sur device).
+  Future<void>? _initFuture;
+
+  /// Waits for the engine to be free, then claims it.
+  ///
+  /// Le moteur natif ne traite qu'une requête à la fois. Une vraie requête
+  /// ATTEND son tour au lieu d'échouer — vérifié sur device : un message
+  /// envoyé pendant le warmup de démarrage produisait une réponse d'erreur
+  /// absurde. L'attente est bornée par [inferenceTimeout] sur l'opération
+  /// en cours, donc elle se termine toujours.
+  Future<void> _acquireTurn({bool isRealRequest = true}) async {
+    if (isRealRequest) _waitingRealOps++;
+    try {
+      while (_processing) {
+        if (_disposed) {
+          throw StateError('GemmaBridge has been disposed');
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+      _processing = true;
+    } finally {
+      if (isRealRequest) _waitingRealOps--;
+    }
+  }
 
   /// The single LiteRT-LM engine — serves BOTH text and vision chats.
   InferenceModel? _textModel;
@@ -142,10 +173,22 @@ class GemmaBridgeImpl implements GemmaBridge {
   Future<void> warmUp() async {
     if (_warmedUp || _disposed) return;
 
+    // Ne relâcher le verrou que si CE warmup l'a pris — sinon le finally
+    // libérerait le tour d'une requête concurrente.
+    var acquired = false;
     try {
       await _ensureInitialized();
 
-      _processing = true;
+      await _acquireTurn(isRealRequest: false);
+      acquired = true;
+
+      // Une vraie requête attend déjà ? Elle chauffera le pipeline
+      // elle-même — le warmup s'efface pour ne pas la retarder.
+      if (_waitingRealOps > 0) {
+        _log.info('Gemma warmup skipped: real request waiting');
+        return;
+      }
+
       final chat = await _textModel!.createChat(
         temperature: 0.1,
         topK: 1,
@@ -165,7 +208,7 @@ class GemmaBridgeImpl implements GemmaBridge {
     } on Object catch (e) {
       _log.warning('Gemma warmup failed (non-fatal)', error: e);
     } finally {
-      _processing = false;
+      if (acquired) _processing = false;
     }
   }
 
@@ -201,11 +244,10 @@ class GemmaBridgeImpl implements GemmaBridge {
     if (_disposed) {
       throw StateError('GemmaBridge has been disposed');
     }
-    if (_processing) {
-      throw StateError('Gemma is already processing a request');
-    }
 
-    _processing = true;
+    // Attendre son tour (jamais échouer sur « déjà occupé ») — un message
+    // envoyé pendant le warmup doit être servi, pas rejeté.
+    await _acquireTurn();
     try {
       await _ensureInitialized();
 
@@ -275,11 +317,9 @@ class GemmaBridgeImpl implements GemmaBridge {
     if (_disposed) {
       throw StateError('GemmaBridge has been disposed');
     }
-    if (_processing) {
-      throw StateError('Gemma is already processing a request');
-    }
 
-    _processing = true;
+    // Attendre son tour (jamais échouer sur « déjà occupé »).
+    await _acquireTurn();
     try {
       await _ensureInitialized();
 
@@ -337,6 +377,23 @@ class GemmaBridgeImpl implements GemmaBridge {
   Future<void> _ensureInitialized() async {
     if (_initialized) return;
 
+    // Mémoïsation : les appelants concurrents (warmup du boot + une requête
+    // utilisateur) attendent la MÊME initialisation au lieu de charger le
+    // moteur deux fois (double « Gemma model ready » observé sur device).
+    final pending = _initFuture;
+    if (pending != null) return pending;
+
+    final future = _doInitialize();
+    _initFuture = future;
+    try {
+      await future;
+    } on Object {
+      _initFuture = null; // permettre une nouvelle tentative après un échec
+      rethrow;
+    }
+  }
+
+  Future<void> _doInitialize() async {
     _log.info('Initializing Gemma model from device file');
     _status = GemmaModelStatus.loading;
 
