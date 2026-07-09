@@ -17,12 +17,7 @@ void main() {
 
         final properties =
             inputSchema['properties'] as Map<String, dynamic>;
-        expect(properties, contains('detail_level'));
-
-        final detailLevel =
-            properties['detail_level'] as Map<String, dynamic>;
-        expect(detailLevel['type'], equals('string'));
-        expect(detailLevel['enum'], equals(['brief', 'detailed']));
+        expect(properties, isEmpty);
       });
 
       test('produces valid JSON structure for alert tool', () {
@@ -98,7 +93,7 @@ void main() {
 
         final properties =
             parameters['properties'] as Map<String, dynamic>;
-        expect(properties, contains('detail_level'));
+        expect(properties, isEmpty);
       });
 
       test('produces valid function-calling structure for alert tool', () {
@@ -139,12 +134,7 @@ void main() {
         final prompt = KitaTools.describe.toGemmaPrompt();
 
         expect(prompt, contains('Outil "describe"'));
-        expect(prompt, contains('Paramètres:'));
-        expect(prompt, contains('detail_level'));
-        expect(prompt, contains('(string)'));
-        expect(prompt, contains('(optionnel)'));
-        expect(prompt, contains('brief'));
-        expect(prompt, contains('detailed'));
+        expect(prompt, isNot(contains('Paramètres:')));
       });
 
       test('produces readable text for alert tool', () {
@@ -258,9 +248,8 @@ void main() {
       expect(KitaTools.all.map((t) => t.name), containsAll(['describe', 'alert']));
     });
 
-    test('describe has expected structure', () {
-      expect(KitaTools.describe.name, equals('describe'));
-      expect(KitaTools.describe.parameters, contains('detail_level'));
+    test('describe n\'expose plus de paramètre (detail_level supprimé)', () {
+      expect(KitaTools.describe.parameters, isEmpty);
     });
 
     test('alert has expected structure', () {

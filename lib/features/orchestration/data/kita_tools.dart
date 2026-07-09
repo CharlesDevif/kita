@@ -38,25 +38,8 @@ class KitaTools {
   static const describe = ToolSpec(
     name: toolDescribe,
     description:
-        'Prend une photo avec la caméra et décrit ce qui est visible. '
-        "Utilise cet outil quand l'utilisateur demande de décrire son "
-        "environnement, ce qu'il y a devant lui, autour de lui, ou ce "
-        "que la caméra voit. L'outil capture une photo, l'analyse par IA "
-        'de vision, et renvoie une description textuelle de la scène '
-        'organisée spatialement (gauche, droite, devant, derrière). '
-        "N'utilise PAS cet outil pour lire du texte ou des documents. "
-        'Si la caméra est indisponible, signale-le à l\'utilisateur.',
-    parameters: {
-      'detail_level': ToolParameter(
-        type: 'string',
-        description:
-            'Niveau de détail souhaité pour la description. '
-            '"brief" donne un résumé en 2-3 phrases des éléments principaux. '
-            '"detailed" donne une description complète en 5-8 phrases avec '
-            'les objets, personnes, couleurs et distances. Par défaut : "brief".',
-        enumValues: ['brief', 'detailed'],
-      ),
-    },
+        'Prend une photo et décrit ce que la caméra voit. À utiliser quand '
+        "l'utilisateur veut savoir ce qu'il y a autour de lui.",
   );
 
   /// Activates or deactivates real-time obstacle surveillance.
@@ -66,15 +49,8 @@ class KitaTools {
   static const alert = ToolSpec(
     name: toolAlert,
     description:
-        "Active ou désactive la surveillance d'obstacles en temps réel. "
-        "Utilise cet outil quand l'utilisateur veut être prévenu des "
-        'obstacles, dangers ou changements dans son environnement. '
-        "Le mode 'start' active la caméra et la détection continue "
-        "d'obstacles par IA de vision (personnes, objets, véhicules, "
-        'escaliers, trottoirs). Quand un obstacle est détecté, '
-        "l'utilisateur est alerté par retour audio et haptique. "
-        "Le mode 'stop' désactive la surveillance et libère la caméra. "
-        'Nécessite que la caméra soit accessible.',
+        "Active ('start') ou désactive ('stop') la surveillance d'obstacles "
+        'en temps réel.',
     parameters: {
       'action': ToolParameter(
         type: 'string',
