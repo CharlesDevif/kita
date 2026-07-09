@@ -14,11 +14,13 @@ import 'package:kita/features/memory/data/daos/person_dao.dart';
 import 'package:kita/features/memory/data/daos/plugin_data_dao.dart';
 import 'package:kita/features/memory/data/daos/preference_dao.dart';
 import 'package:kita/features/memory/data/daos/profile_dao.dart';
+import 'package:kita/features/memory/data/memory_consent.dart';
 import 'package:kita/features/memory/data/memory_vault_impl.dart';
 import 'package:kita/features/memory/di/providers.dart';
 import 'package:kita/features/memory/domain/episode.dart';
 import 'package:kita/features/memory/domain/forget_request.dart';
 import 'package:kita/features/memory/domain/memory_vault.dart';
+import 'package:kita/features/memory/domain/secure_key_vault.dart';
 import 'package:kita/features/settings/presentation/forget_screen.dart';
 
 import '../../../mocks/mock_secure_key_vault.dart';
@@ -43,18 +45,22 @@ void main() {
   late KitaDatabase db;
   late MemoryVaultImpl vault;
   late ConsentDao consentDao;
+  late ProfileDao profileDao;
+  late PluginDataDao pluginDataDao;
 
   setUp(() {
     final rawDb = sql.sqlite3.openInMemory();
     db = KitaDatabase(NativeDatabase.opened(rawDb));
 
     consentDao = ConsentDao(db);
+    profileDao = ProfileDao(db);
+    pluginDataDao = PluginDataDao(db);
     vault = MemoryVaultImpl(
       episodeDao: EpisodeDao(db),
       preferenceDao: PreferenceDao(db),
       personDao: PersonDao(db),
-      profileDao: ProfileDao(db),
-      pluginDataDao: PluginDataDao(db),
+      profileDao: profileDao,
+      pluginDataDao: pluginDataDao,
       consentDao: consentDao,
     );
   });
@@ -96,10 +102,13 @@ void main() {
   /// Pumps the ForgetScreen with the real [vault] injected.
   ///
   /// When [vaultOverride] is provided it replaces the default resolved-value
-  /// override (used to exercise the loading state).
+  /// override (used to exercise the loading state). When [keyVault] is
+  /// provided it replaces the default fresh [MockSecureKeyVault] — used to
+  /// pre-seed an opt-out before "Tout effacer" runs.
   Future<void> pumpScreen(
     WidgetTester tester, {
     FutureOr<MemoryVault> Function(Ref ref)? vaultOverride,
+    SecureKeyVault? keyVault,
   }) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -110,7 +119,9 @@ void main() {
           // Après « tout effacer », ForgetScreen ré-accorde le consentement
           // via MemoryConsent.ensureGranted, qui lit le key vault sécurisé
           // pour vérifier un éventuel opt-out.
-          secureKeyVaultProvider.overrideWithValue(MockSecureKeyVault()),
+          secureKeyVaultProvider.overrideWithValue(
+            keyVault ?? MockSecureKeyVault(),
+          ),
         ],
         child: const MaterialApp(home: ForgetScreen()),
       ),
@@ -139,6 +150,12 @@ void main() {
       final known = (await vault.whatDoYouKnow()).getOrNull()!;
       expect(known, isEmpty);
 
+      // whatDoYouKnow() ne couvre pas profile/plugin_data (pas de domaine
+      // MemoryDomain associé) : attestées vides directement via leur DAO,
+      // sinon seul le message UI en répondrait.
+      expect((await profileDao.count()).getOrNull(), equals(0));
+      expect((await pluginDataDao.count()).getOrNull(), equals(0));
+
       // Le consentement de stockage a été ré-accordé après l'effacement total
       // (consentDao.deleteAll() l'avait aussi supprimé) : sans ce garde-fou,
       // la mémoire resterait désactivée pour toujours.
@@ -156,6 +173,39 @@ void main() {
         source: 'explicit',
       );
       expect(rewrite.isSuccess, isTrue);
+    });
+
+    testWidgets(
+        'Tout effacer respecte un opt-out déjà actif : le consentement '
+        "n'est pas ré-accordé", (tester) async {
+      await seedData();
+
+      final keyVault = MockSecureKeyVault();
+      await keyVault.write(memoryConsentOptOutKey, 'true');
+
+      await pumpScreen(tester, keyVault: keyVault);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('forget_everything')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('forget_confirm')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('forget_confirm')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Données effacées et vérifiées.'), findsOneWidget);
+
+      // L'opt-out explicite doit survivre à « tout effacer » :
+      // onPurgeExternal ne purge que les clés API, jamais
+      // memory_consent_opt_out, donc MemoryConsent.ensureGranted (appelé par
+      // ForgetScreen après l'effacement) ne doit ré-accorder AUCUNE ligne de
+      // consentement actif. Si un futur onPurgeExternal se mettait à effacer
+      // aussi l'opt-out, ce test échouerait.
+      final consents = (await vault.getConsents()).getOrNull()!;
+      expect(
+        consents.where((c) => c.granted && c.revokedAt == null),
+        isEmpty,
+      );
     });
 
     testWidgets('Effacer une catégorie ne supprime que ce domaine',
