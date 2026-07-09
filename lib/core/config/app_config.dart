@@ -5,7 +5,10 @@
 abstract final class AppConfig {
   // AI Provider timeouts
   static const Duration aiCloudTimeout = Duration(seconds: 3);
-  static const Duration aiLocalTimeout = Duration(seconds: 15);
+  // 45 s : mesuré sur device (S21 Ultra), une inférence Gemma peut prendre
+  // 20-30 s (vision) et une requête peut en plus attendre que le moteur se
+  // libère. À 15 s, la conclusion post-outil expirait systématiquement.
+  static const Duration aiLocalTimeout = Duration(seconds: 45);
   static const Duration pluginTimeout = Duration(seconds: 10);
   static const Duration networkTimeout = Duration(seconds: 10);
 

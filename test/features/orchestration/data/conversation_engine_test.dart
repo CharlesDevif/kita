@@ -263,16 +263,16 @@ void main() {
             ),
           ],
         )));
-        mockRouter.enqueueToolResponse(
-          Result.success(_textResponse('Je vois un parc avec une fontaine.')),
-        );
-
         final result = await engine.processInput('Decris ce que tu vois');
 
         expect(result.isSuccess, isTrue);
         final response = (result as Success<iface.ConversationResponse>).value;
-        expect(response.text, contains('Je vois un parc'));
+        // describe est auto-parlant : l'agent délivre la description à voix
+        // haute lui-même, la boucle s'arrête SANS tour de conclusion LLM.
+        expect(response.text, isEmpty);
         expect(response.toolCalls, contains('describe'));
+        expect(mockRouter.toolCallCount, 1,
+            reason: 'pas de second appel LLM après un outil auto-parlant');
       });
 
       test('executes alert tool with start action', () async {
@@ -330,17 +330,16 @@ void main() {
             ),
           ],
         )));
-        mockRouter.enqueueToolResponse(
-          Result.success(_textResponse('Je vois un arbre.')),
-        );
-
         final result = await engine.processInput('Que vois-tu?');
 
         expect(result.isSuccess, isTrue);
         final response = (result as Success<iface.ConversationResponse>).value;
+        // Le texte pré-outil du LLM est conservé ; pas de conclusion après
+        // un outil auto-parlant (l'agent describe parle lui-même).
         expect(response.text, contains('Laisse-moi regarder.'));
-        expect(response.text, contains('Je vois un arbre.'));
         expect(response.toolCalls, ['describe']);
+        expect(mockRouter.toolCallCount, 1,
+            reason: 'pas de second appel LLM après un outil auto-parlant');
       });
 
       test('max iterations guard prevents infinite loop', () async {
@@ -392,9 +391,9 @@ void main() {
         expect(response.toolCalls, ['describe']);
       });
 
-      test('returns default text when LLM fails mid-loop with no prior text',
+      test('un échec LLM en attente ne casse pas un outil auto-parlant',
           () async {
-        // First call: tool call with NO text
+        // Premier appel : tool call SANS texte.
         mockRouter.enqueueToolResponse(Result.success(_toolCallResponse(
           toolCalls: [
             const ai.ToolCall(
@@ -404,7 +403,10 @@ void main() {
             ),
           ],
         )));
-        // Second call fails
+        // Une erreur est en file — elle ne doit JAMAIS être consommée :
+        // describe est auto-parlant, la boucle s'arrête sans second appel.
+        // (La branche « échec LLM en milieu de boucle » reste dans le code
+        // pour de futurs outils non auto-parlants.)
         mockRouter.enqueueToolResponse(
           const Result.failure(AIProviderFailure(
             userMessage: 'Erreur',
@@ -417,8 +419,9 @@ void main() {
 
         expect(result.isSuccess, isTrue);
         final response = (result as Success<iface.ConversationResponse>).value;
-        // Should return default fallback text
-        expect(response.text, contains('effectu'));
+        expect(response.text, isEmpty);
+        expect(response.toolCalls, ['describe']);
+        expect(mockRouter.toolCallCount, 1);
       });
     });
 

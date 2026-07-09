@@ -20,6 +20,13 @@ class KitaTools {
   static const toolDescribe = 'describe';
   static const toolAlert = 'alert';
 
+  /// Outils dont l'agent délivre lui-même le résultat à voix haute.
+  /// Après leur exécution, la boucle tool-use s'arrête : renvoyer le
+  /// résultat au LLM pour une « conclusion » serait redondant à l'oreille
+  /// et faisait expirer le timeout local pendant que la vision occupe le
+  /// moteur (fausse alerte vocalisée — observé sur device).
+  static const Set<String> selfSpeakingTools = {toolDescribe, toolAlert};
+
   /// Command constant sent to agents when routing voice input.
   /// Must match DescribePlugin.handleInput's switch case ('decris').
   static const commandDescribe = 'decris';

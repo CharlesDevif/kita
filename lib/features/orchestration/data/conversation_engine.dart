@@ -185,6 +185,19 @@ class ConversationEngineImpl implements iface.ConversationEngine {
 
       if (_disposed) break;
 
+      // Les outils « auto-parlants » (describe, alert) ont déjà parlé via
+      // leur agent : la conversation est terminée, pas de tour de
+      // conclusion LLM (voir KitaTools.selfSpeakingTools).
+      final allSelfSpeaking = currentResponse.toolCalls.every(
+        (c) => KitaTools.selfSpeakingTools.contains(c.name),
+      );
+      if (allSelfSpeaking) {
+        return Result.success(iface.ConversationResponse(
+          text: spokenTexts.join(' '),
+          toolCalls: executedToolNames,
+        ));
+      }
+
       // Send tool results back to the LLM for the next turn.
       final nextResult = await _aiRouter.routeWithTools(
         const AIRequest(prompt: ''),
