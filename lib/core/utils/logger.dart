@@ -1,6 +1,6 @@
 import 'dart:developer' as dev;
 
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, visibleForTesting;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 
 /// Log severity levels, mapped to dart:developer level values.
 enum LogLevel implements Comparable<LogLevel> {
@@ -23,6 +23,16 @@ typedef LogEntry = ({
   LogLevel level,
   Object? error,
   StackTrace? stackTrace,
+});
+
+/// One captured log line for the in-app journal (Réglages → Journal).
+///
+/// Les logs Kita sont garantis sans PII (règle stricte du projet), le
+/// journal est donc sûr à afficher et à copier pour le diagnostic.
+typedef JournalEntry = ({
+  DateTime timestamp,
+  LogLevel level,
+  String message,
 });
 
 /// Centralized logger for the Kita app.
@@ -60,6 +70,16 @@ class KitaLogger {
   void critical(String message, {Object? error, StackTrace? stackTrace}) =>
       _log(message, level: LogLevel.critical, error: error, stackTrace: stackTrace);
 
+  /// Ring buffer of the most recent log lines, shown in Réglages → Journal.
+  static final List<JournalEntry> _journal = [];
+  static const int _journalCapacity = 300;
+
+  /// The recent log lines (oldest first). Safe to display: zero PII by rule.
+  static List<JournalEntry> get journal => List.unmodifiable(_journal);
+
+  /// Clears the in-memory journal (tests, or user request).
+  static void clearJournal() => _journal.clear();
+
   void _log(
     String message, {
     required LogLevel level,
@@ -69,6 +89,16 @@ class KitaLogger {
     if (level.value < _minLevel.value) return;
 
     final formatted = '[$_source] $message';
+    final errorSuffix = error != null ? ' | $error' : '';
+
+    _journal.add((
+      timestamp: DateTime.now(),
+      level: level,
+      message: '$formatted$errorSuffix',
+    ));
+    if (_journal.length > _journalCapacity) {
+      _journal.removeAt(0);
+    }
 
     if (testLogHandler != null) {
       testLogHandler!(
@@ -77,11 +107,11 @@ class KitaLogger {
       return;
     }
 
-    // In debug mode, also print to stdout for flutter run console visibility.
-    if (kDebugMode) {
-      final errorSuffix = error != null ? ' | $error' : '';
-      debugPrint('kita: $formatted$errorSuffix');
-    }
+    // dart:developer log() est INVISIBLE en build release (il ne va qu'au
+    // VM service, pas à logcat). On imprime donc aussi via debugPrint pour
+    // que `adb logcat` capte les logs sur un vrai appareil ; _minLevel
+    // borne déjà le volume (prod = info).
+    debugPrint('kita: $formatted$errorSuffix');
 
     dev.log(
       formatted,

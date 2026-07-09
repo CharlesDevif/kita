@@ -10,7 +10,9 @@ import '../../io/data/providers/stt_providers.dart';
 import '../../onboarding/di/providers.dart';
 import '../../orchestration/di/providers.dart';
 import '../../orchestration/domain/models/raw_input.dart';
+import '../di/conversation_providers.dart';
 import '../di/orb_providers.dart';
+import '../domain/conversation_entry.dart';
 import '../domain/input_state.dart';
 import '../di/shell_mode_providers.dart';
 import '../domain/orb_state.dart';
@@ -139,6 +141,7 @@ class _KitaShellState extends ConsumerState<KitaShell>
 
   void _onTextSubmit(String text) {
     _log.info('Text submitted, routing to orchestrator');
+    ref.read(conversationFeedProvider.notifier).addUser(text);
     final orchestrator = ref.read(kitaOrchestratorProvider);
     final clock = ref.read(clockProvider);
     orchestrator.handleInput(RawInput.text(text, clock: clock));
@@ -156,6 +159,7 @@ class _KitaShellState extends ConsumerState<KitaShell>
       unawaited(stt.startRecognition(onResult: (transcript, isFinal) {
         if (isFinal && transcript.isNotEmpty) {
           _log.info('STT final result, routing to orchestrator');
+          ref.read(conversationFeedProvider.notifier).addUser(transcript);
           final orchestrator = ref.read(kitaOrchestratorProvider);
           final clock = ref.read(clockProvider);
           orchestrator.handleInput(RawInput.voice(transcript, clock: clock));
@@ -292,6 +296,22 @@ class _KitaShellState extends ConsumerState<KitaShell>
 
     // Check if onboarding is complete — if not, show conversational onboarding
     final onboardingComplete = ref.watch(onboardingCompleteProvider);
+    final conversation = ref.watch(conversationFeedProvider);
+
+    // Default viewport: the conversation feed once a dialogue started,
+    // otherwise the calm idle text.
+    final Widget defaultViewport = conversation.isEmpty
+        ? Center(
+            child: Text(
+              'Tout va bien',
+              style: TextStyle(
+                color: const Color(0xFFE2E8F0)
+                    .withValues(alpha: 0.5 + 0.5 * viewportOpacity),
+                fontSize: 16,
+              ),
+            ),
+          )
+        : _ConversationFeedView(entries: conversation);
 
     return Semantics(
       liveRegion: true,
@@ -300,17 +320,7 @@ class _KitaShellState extends ConsumerState<KitaShell>
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: onboardingComplete
-              ? (widget.viewportChild ??
-                  Center(
-                    child: Text(
-                      'Tout va bien',
-                      style: TextStyle(
-                        color: const Color(0xFFE2E8F0)
-                            .withValues(alpha: 0.5 + 0.5 * viewportOpacity),
-                        fontSize: 16,
-                      ),
-                    ),
-                  ))
+              ? (widget.viewportChild ?? defaultViewport)
               : const ShellOnboarding(),
         ),
       ),
@@ -335,6 +345,58 @@ class _KitaShellState extends ConsumerState<KitaShell>
             onTextSubmit: _onTextSubmit,
             onMicPressed: _onMicPressed,
           ),
+    );
+  }
+}
+
+/// Scrollable feed of the current conversation (session-only, never stored).
+///
+/// User messages align right (teal), Kita messages align left (dark). The
+/// list is rendered bottom-up so the latest exchange is always visible.
+class _ConversationFeedView extends StatelessWidget {
+  const _ConversationFeedView({required this.entries});
+
+  final List<ConversationEntry> entries;
+
+  @override
+  Widget build(BuildContext context) {
+    // reverse:true keeps the newest message pinned at the bottom without a
+    // scroll controller; iterate the list backwards to match.
+    return ListView.builder(
+      reverse: true,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: entries.length,
+      itemBuilder: (context, index) {
+        final entry = entries[entries.length - 1 - index];
+        final isUser = entry.speaker == ConversationSpeaker.user;
+        return Semantics(
+          label: isUser ? 'Toi' : 'Kita',
+          child: Align(
+            alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+            child: Container(
+              margin: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 10,
+              ),
+              constraints: const BoxConstraints(maxWidth: 300),
+              decoration: BoxDecoration(
+                color: isUser
+                    ? const Color(0xFF0F766E)
+                    : const Color(0xFF16213E),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Text(
+                entry.text,
+                style: const TextStyle(
+                  color: Color(0xFFF8FAFC),
+                  fontSize: 15,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

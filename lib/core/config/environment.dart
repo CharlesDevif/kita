@@ -33,6 +33,10 @@ class EnvironmentConfig {
   static LogLevel get logLevel => switch (current) {
         Environment.dev => LogLevel.debug,
         Environment.staging => LogLevel.info,
-        Environment.prod => LogLevel.warning,
+        // info (et non warning) : les logs sont garantis sans PII et le
+        // niveau info est indispensable au diagnostic sur device (journal
+        // in-app + logcat) — vérifié sur le terrain : à warning, une panne
+        // release est indéboguable.
+        Environment.prod => LogLevel.info,
       };
 }

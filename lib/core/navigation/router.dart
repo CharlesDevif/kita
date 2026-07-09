@@ -6,6 +6,7 @@ import '../../features/onboarding/presentation/onboarding_screen.dart';
 import '../../features/settings/presentation/api_key_settings_screen.dart';
 import '../../features/settings/presentation/diagnostic_screen.dart';
 import '../../features/settings/presentation/forget_screen.dart';
+import '../../features/settings/presentation/log_journal_screen.dart';
 import '../../features/settings/presentation/memory_view_placeholder.dart';
 import '../../features/settings/presentation/plugin_manager_placeholder.dart';
 import '../../features/settings/presentation/settings_placeholder.dart';
@@ -44,6 +45,10 @@ final List<RouteBase> kitaRoutes = [
       GoRoute(
         path: 'api-key',
         builder: (context, state) => const ApiKeySettingsScreen(),
+      ),
+      GoRoute(
+        path: 'journal',
+        builder: (context, state) => const LogJournalScreen(),
       ),
     ],
   ),

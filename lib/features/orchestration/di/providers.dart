@@ -18,6 +18,7 @@ import '../../io/data/providers/motion_providers.dart';
 import '../../io/data/providers/tts_providers.dart';
 import '../../io/domain/speech_event.dart';
 import '../../plugins/data/plugin_sandbox_impl.dart';
+import '../../shell/di/conversation_providers.dart';
 import '../../shell/di/orb_providers.dart';
 import '../../shell/di/shell_mode_providers.dart';
 import '../../shell/domain/orb_state.dart';
@@ -180,6 +181,10 @@ final outputCoordinatorProvider = Provider<OutputCoordinator>((ref) {
     onShellModeChanged: (ShellMode mode) {
       // Bridge to ShellModeNotifier via ref.read
       ref.read(shellModeProvider.notifier).setMode(mode);
+    },
+    // Miroir texte de tout ce que Kita dit → fil de conversation du Shell.
+    onSpeechEnqueued: (String agentId, String text) {
+      ref.read(conversationFeedProvider.notifier).addKita(text);
     },
   );
 

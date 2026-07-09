@@ -40,7 +40,7 @@ void main() {
 
     testWidgets('shows placeholder text', (tester) async {
       await tester.pumpWidget(buildInput());
-      expect(find.text('Parle ou ecris a Kita'), findsOneWidget);
+      expect(find.text('Parle ou écris à Kita'), findsOneWidget);
     });
 
     testWidgets('shows mic button', (tester) async {
@@ -197,7 +197,7 @@ void main() {
         find.byWidgetPredicate(
           (widget) =>
               widget is Semantics &&
-              widget.properties.label == 'Parle ou ecris a Kita',
+              widget.properties.label == 'Parle ou écris à Kita',
         ),
         findsOneWidget,
       );
@@ -221,7 +221,7 @@ void main() {
         find.byWidgetPredicate(
           (widget) =>
               widget is Semantics &&
-              widget.properties.label == 'Arreter le micro',
+              widget.properties.label == 'Arrêter le micro',
         ),
         findsOneWidget,
       );
@@ -240,6 +240,41 @@ void main() {
       );
       expect(micBox.width, 56.0);
       expect(micBox.height, 56.0);
+    });
+  });
+
+  group('KitaInput send button', () {
+    testWidgets('affiche le bouton envoyer quand du texte est tapé',
+        (tester) async {
+      await tester.pumpWidget(buildInput());
+      expect(find.byIcon(Icons.send), findsNothing);
+
+      await tester.enterText(find.byType(TextField), 'bonjour Kita');
+      await tester.pump();
+
+      expect(find.byIcon(Icons.send), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Semantics &&
+              (w.properties.label ?? '') == 'Envoyer le message',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('le bouton envoyer soumet le texte et vide le champ',
+        (tester) async {
+      String? submitted;
+      await tester.pumpWidget(buildInput(onTextSubmit: (t) => submitted = t));
+
+      await tester.enterText(find.byType(TextField), 'décris la scène');
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.send));
+      await tester.pump();
+
+      expect(submitted, 'décris la scène');
+      expect(find.byIcon(Icons.send), findsNothing); // champ vidé
     });
   });
 }

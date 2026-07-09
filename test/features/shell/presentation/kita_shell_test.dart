@@ -90,7 +90,7 @@ void main() {
 
     testWidgets('displays default input placeholder', (tester) async {
       await tester.pumpWidget(buildShell());
-      expect(find.text('Parle ou ecris a Kita'), findsOneWidget);
+      expect(find.text('Parle ou écris à Kita'), findsOneWidget);
     });
   });
 
@@ -129,7 +129,7 @@ void main() {
         find.byWidgetPredicate(
           (widget) =>
               widget is Semantics &&
-              widget.properties.label == 'Parle ou ecris a Kita',
+              widget.properties.label == 'Parle ou écris à Kita',
         ),
         findsOneWidget,
       );

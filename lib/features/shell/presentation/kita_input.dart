@@ -39,13 +39,25 @@ class _KitaInputState extends State<KitaInput> {
   late final TextEditingController _textController;
   late final FocusNode _focusNode;
 
+  /// True when the field contains text — switches the suffix to a send button.
+  bool _hasText = false;
+
   @override
   void initState() {
     super.initState();
     _textController = TextEditingController(
       text: widget.state == InputState.listening ? widget.transcription : null,
     );
+    _hasText = _textController.text.trim().isNotEmpty;
+    _textController.addListener(_onTextControllerChanged);
     _focusNode = FocusNode();
+  }
+
+  void _onTextControllerChanged() {
+    final hasText = _textController.text.trim().isNotEmpty;
+    if (hasText != _hasText) {
+      setState(() => _hasText = hasText);
+    }
   }
 
   @override
@@ -81,7 +93,7 @@ class _KitaInputState extends State<KitaInput> {
     final isListening = widget.state == InputState.listening;
 
     return Semantics(
-      label: 'Parle ou ecris a Kita',
+      label: 'Parle ou écris à Kita',
       child: Row(
         children: [
           // Text field
@@ -97,7 +109,7 @@ class _KitaInputState extends State<KitaInput> {
                 fontSize: 16,
               ),
               decoration: InputDecoration(
-                hintText: 'Parle ou ecris a Kita',
+                hintText: 'Parle ou écris à Kita',
                 hintStyle: const TextStyle(
                   color: Color(0xFF94A3B8),
                   fontSize: 16,
@@ -132,14 +144,32 @@ class _KitaInputState extends State<KitaInput> {
                         padding: EdgeInsets.only(right: 12),
                         child: _ListeningIndicator(),
                       )
-                    : null,
+                    // Bouton envoyer dès qu'il y a du texte tapé — l'icône
+                    // micro seule laissait croire qu'on ne pouvait pas
+                    // envoyer un message écrit (retour de test terrain).
+                    : _hasText
+                        ? Semantics(
+                            label: 'Envoyer le message',
+                            button: true,
+                            child: IconButton(
+                              onPressed: isDisabled
+                                  ? null
+                                  : () => _handleSubmit(_textController.text),
+                              icon: const Icon(
+                                Icons.send,
+                                color: Color(0xFF0F766E),
+                                size: 26,
+                              ),
+                            ),
+                          )
+                        : null,
               ),
             ),
           ),
           const SizedBox(width: 8),
           // Mic button (56x56px critical action)
           Semantics(
-            label: isListening ? 'Arreter le micro' : 'Activer le micro',
+            label: isListening ? 'Arrêter le micro' : 'Activer le micro',
             button: true,
             child: SizedBox(
               width: 56,

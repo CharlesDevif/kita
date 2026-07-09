@@ -91,13 +91,15 @@ class OutputCoordinator {
     required AgentBus bus,
     required void Function(OrbState) onOrbStateChanged,
     required void Function(ShellMode) onShellModeChanged,
+    void Function(String agentId, String text)? onSpeechEnqueued,
   })  : _tts = tts,
         _haptic = haptic,
         _profileAdapter = profileAdapter,
         _clock = clock,
         _bus = bus,
         _onOrbStateChanged = onOrbStateChanged,
-        _onShellModeChanged = onShellModeChanged;
+        _onShellModeChanged = onShellModeChanged,
+        _onSpeechEnqueued = onSpeechEnqueued;
 
   static final _log = KitaLogger('Orchestration');
 
@@ -109,6 +111,10 @@ class OutputCoordinator {
   final AgentBus _bus;
   final void Function(OrbState) _onOrbStateChanged;
   final void Function(ShellMode) _onShellModeChanged;
+
+  /// Notified with every speech that passes dedup/cooldown — mirrors Kita's
+  /// spoken output as text (conversation feed in the Shell). Optional.
+  final void Function(String agentId, String text)? _onSpeechEnqueued;
 
   // -- Queue --
   final SplayTreeSet<_OutputRequest> _queue = SplayTreeSet<_OutputRequest>();
@@ -238,6 +244,12 @@ class OutputCoordinator {
       cooldownKey: cooldownKey,
       agentType: agentType,
     );
+
+    // Mirror the accepted speech as text (conversation feed) — after
+    // dedup/cooldown so the feed matches what will actually be spoken.
+    if (priority != OutputPriority.cancel) {
+      _onSpeechEnqueued?.call(agentId, text);
+    }
 
     // -- Route by priority --
     switch (priority) {

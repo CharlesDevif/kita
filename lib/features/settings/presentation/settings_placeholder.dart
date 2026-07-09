@@ -38,7 +38,7 @@ class SettingsPlaceholder extends StatelessWidget {
                 height: 48,
                 child: ElevatedButton(
                   onPressed: () => context.push('/settings/forget'),
-                  child: const Text("Droit a l'oubli"),
+                  child: const Text("Droit à l'oubli"),
                 ),
               ),
               const SizedBox(height: 16),
@@ -47,6 +47,14 @@ class SettingsPlaceholder extends StatelessWidget {
                 child: ElevatedButton(
                   onPressed: () => context.push('/settings/api-key'),
                   child: const Text('Configurer l\'intelligence artificielle'),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () => context.push('/settings/journal'),
+                  child: const Text('Journal de bord'),
                 ),
               ),
               const SizedBox(height: 16),
