@@ -662,6 +662,277 @@ git commit -m "feat(memory): VaultMemoryAccess — le maillon manquant, context.
 
 ---
 
+### Task 3bis: Consentement au stockage — accordé au démarrage, révocable
+
+**Contexte — seconde cause racine, découverte pendant la Tâche 1.** `saveEpisode` et
+`setPreference` sont tous deux verrouillés par `_withConsentLock(consentType:
+'data_storage', scope: 'episodic' | 'semantic')` (`memory_vault_impl.dart:71-75,113-116`).
+`grantConsent` a **zéro appelant en production**. Sans cette tâche, la Tâche 3 brancherait
+`memoryAccess` et **chaque écriture échouerait quand même** — tests verts, mémoire morte
+sur device. C'est le piège des deux cycles précédents ; on le désamorce ici.
+
+**Décision de Charles (2026-07-09) :** consentement accordé au premier lancement, sans
+question, et révocable par un interrupteur dans l'écran Mémoire. La donnée est locale et
+chiffrée, jamais transmise.
+
+**Piège en cascade.** `forget(everything)` appelle `consentDao.deleteAll()`
+(`memory_vault_impl.dart:368`). Sans précaution, effacer ses données **désactive la mémoire
+définitivement**. Le consentement doit donc être ré-accordé après un effacement total —
+sauf si l'utilisateur a explicitement coupé l'interrupteur.
+
+**Files:**
+- Create: `lib/features/memory/data/memory_consent.dart`
+- Modify: `lib/features/memory/di/providers.dart` (provider de bootstrap)
+- Modify: `lib/app.dart` (déclencher le bootstrap au démarrage)
+- Modify: `lib/features/settings/presentation/forget_screen.dart` (ré-accorder après `everything`)
+- Test: `test/features/memory/data/memory_consent_test.dart`
+
+**Interfaces:**
+- Produit : `MemoryConsent.ensureGranted(MemoryVault)`, `MemoryConsent.isGranted(MemoryVault)`,
+  `MemoryConsent.revokeAll(MemoryVault)` — consommés par le bootstrap, par `ForgetScreen`,
+  et par l'interrupteur de l'écran Mémoire (Tâche 8).
+- Produit : `memoryConsentBootstrapProvider` (`FutureProvider<void>`, `keepAlive`).
+- Constantes : `consentTypeDataStorage = 'data_storage'`, scopes `'episodic'` et `'semantic'`.
+
+**Idempotence obligatoire.** `ensureGranted` vérifie `hasConsent` avant d'insérer :
+`grantConsent` insère une ligne **par appel** (`memory_vault_impl.dart:169`, commentaire à
+la ligne 198). Sans garde, chaque lancement ajouterait deux lignes.
+
+**Interrupteur coupé ≠ consentement absent.** Si l'utilisateur révoque, le bootstrap ne
+doit pas ré-accorder au lancement suivant. Persister le choix dans une préférence
+**hors du domaine sémantique verrouillé** — utiliser `ProfileDao` ou
+`SecureKeyVault`, jamais `setPreference` (qui exige justement le consentement : deadlock).
+Décision : `SecureKeyVault.write('memory_consent_opt_out', 'true')`.
+
+- [ ] **Step 1: Écrire les tests qui échouent**
+
+`test/features/memory/data/memory_consent_test.dart`, **vraie base Drift en mémoire** :
+
+```dart
+test('ensureGranted accorde les deux scopes sur un coffre neuf', () async {
+  await MemoryConsent.ensureGranted(vault);
+
+  expect(
+    (await vault.hasConsent(consentType: 'data_storage', scope: 'episodic'))
+        .getOrNull(),
+    isTrue,
+  );
+  expect(
+    (await vault.hasConsent(consentType: 'data_storage', scope: 'semantic'))
+        .getOrNull(),
+    isTrue,
+  );
+});
+
+test('ensureGranted est idempotent : deux appels, pas de doublon', () async {
+  await MemoryConsent.ensureGranted(vault);
+  await MemoryConsent.ensureGranted(vault);
+
+  final consents = (await vault.getConsents()).getOrNull()!;
+  expect(consents.where((c) => c.granted), hasLength(2)); // episodic + semantic
+});
+
+test('après ensureGranted, une écriture de préférence réussit', () async {
+  await MemoryConsent.ensureGranted(vault);
+  final result = await vault.setPreference(
+    key: 'fact:test', value: 'un fait', category: 'user_fact', source: 'explicit',
+  );
+  expect(result.isSuccess, isTrue);
+});
+
+test('sans consentement, une écriture de préférence échoue', () async {
+  final result = await vault.setPreference(
+    key: 'fact:test', value: 'un fait', category: 'user_fact', source: 'explicit',
+  );
+  expect(result.isSuccess, isFalse);
+});
+
+test('revokeAll coupe les écritures', () async {
+  await MemoryConsent.ensureGranted(vault);
+  await MemoryConsent.revokeAll(vault);
+  final result = await vault.saveEpisode(/* épisode minimal */);
+  expect(result.isSuccess, isFalse);
+});
+
+test('ensureGranted ne ré-accorde pas si l\'utilisateur a coupé l\'interrupteur',
+    () async {
+  // keyVault contient memory_consent_opt_out = 'true'
+  await MemoryConsent.ensureGranted(vault, keyVault: keyVault);
+  expect((await vault.getConsents()).getOrNull(), isEmpty);
+});
+
+test('après forget(everything), le consentement est ré-accordé', () async {
+  await MemoryConsent.ensureGranted(vault);
+  await vault.forget(ForgetRequest.everything(confirmation: true));
+  expect((await vault.getConsents()).getOrNull(), isEmpty); // deleteAll a frappé
+
+  await MemoryConsent.ensureGranted(vault);
+  final result = await vault.setPreference(
+    key: 'fact:x', value: 'y', category: 'user_fact', source: 'explicit',
+  );
+  expect(result.isSuccess, isTrue); // la mémoire n'est pas lobotomisée
+});
+```
+
+- [ ] **Step 2: Lancer, vérifier l'échec**
+
+Run: `flutter test test/features/memory/data/memory_consent_test.dart`
+Expected: FAIL — `memory_consent.dart` n'existe pas.
+
+- [ ] **Step 3: Implémenter `memory_consent.dart`**
+
+```dart
+import '../../../core/errors/result.dart';
+import '../../../core/utils/logger.dart';
+import '../domain/consent_entry.dart';
+import '../domain/memory_vault.dart';
+import '../domain/secure_key_vault.dart';
+
+/// Type de consentement exigé par `MemoryVaultImpl._withConsentLock`.
+const String consentTypeDataStorage = 'data_storage';
+
+/// Scopes verrouillés : `saveEpisode` exige `episodic`, `setPreference` exige
+/// `semantic`.
+const List<String> memoryConsentScopes = ['episodic', 'semantic'];
+
+/// Clé de l'opt-out utilisateur. Stockée hors du domaine sémantique : celui-ci
+/// exige justement le consentement, ce qui créerait un interblocage.
+const String memoryConsentOptOutKey = 'memory_consent_opt_out';
+
+/// Le coffre refuse toute écriture sans consentement `data_storage`. Personne
+/// ne le demandait : la mémoire était morte pour cette raison autant que par le
+/// `memoryAccess` manquant.
+class MemoryConsent {
+  MemoryConsent._();
+
+  static final _log = KitaLogger('Memory.Consent');
+
+  static Future<bool> _optedOut(SecureKeyVault? keyVault) async {
+    if (keyVault == null) return false;
+    final value = (await keyVault.read(memoryConsentOptOutKey)).getOrNull();
+    return value == 'true';
+  }
+
+  /// Accorde le consentement pour les deux scopes, sauf opt-out explicite.
+  ///
+  /// Idempotent : `grantConsent` insère une ligne par appel, donc on vérifie
+  /// `hasConsent` d'abord. Appelé au démarrage **et** après `forget(everything)`,
+  /// qui supprime toutes les lignes de consentement.
+  static Future<void> ensureGranted(
+    MemoryVault vault, {
+    SecureKeyVault? keyVault,
+    DateTime Function()? now,
+  }) async {
+    if (await _optedOut(keyVault)) {
+      _log.info('Memory consent opted out by user, not granting');
+      return;
+    }
+    final timestamp = (now ?? DateTime.now)();
+    for (final scope in memoryConsentScopes) {
+      final already = (await vault.hasConsent(
+        consentType: consentTypeDataStorage,
+        scope: scope,
+      )).getOrElse((_) => false);
+      if (already) continue;
+
+      final result = await vault.grantConsent(ConsentEntry(
+        id: 0,
+        consentType: consentTypeDataStorage,
+        scope: scope,
+        granted: true,
+        grantedAt: timestamp,
+      ));
+      if (result.isFailure) {
+        _log.warning('Could not grant memory consent for scope $scope');
+      }
+    }
+    _log.info('Memory consent ensured');
+  }
+
+  static Future<bool> isGranted(MemoryVault vault) async {
+    for (final scope in memoryConsentScopes) {
+      final granted = (await vault.hasConsent(
+        consentType: consentTypeDataStorage, scope: scope,
+      )).getOrElse((_) => false);
+      if (!granted) return false;
+    }
+    return true;
+  }
+
+  /// Révoque les deux scopes et mémorise l'opt-out, pour que le bootstrap du
+  /// prochain démarrage ne ré-accorde pas dans le dos de l'utilisateur.
+  static Future<void> revokeAll(
+    MemoryVault vault, {
+    SecureKeyVault? keyVault,
+  }) async {
+    final consents = (await vault.getConsents()).getOrNull() ?? const [];
+    for (final entry in consents.where(
+      (c) => c.granted && c.consentType == consentTypeDataStorage,
+    )) {
+      await vault.revokeConsent(entry.id);
+    }
+    await keyVault?.write(memoryConsentOptOutKey, 'true');
+    _log.info('Memory consent revoked');
+  }
+
+  /// Ré-autorise après un opt-out.
+  static Future<void> grantAgain(
+    MemoryVault vault, {
+    SecureKeyVault? keyVault,
+  }) async {
+    await keyVault?.delete(memoryConsentOptOutKey);
+    await ensureGranted(vault, keyVault: keyVault);
+  }
+}
+```
+
+Vérifier les signatures réelles de `SecureKeyVault` (`read` / `write` / `delete`) dans
+`lib/features/memory/domain/secure_key_vault.dart` et adapter (`getOrNull()` peut ne pas
+s'appliquer si `read` renvoie `Future<String?>`).
+
+- [ ] **Step 4: Provider de bootstrap**
+
+`lib/features/memory/di/providers.dart` :
+
+```dart
+/// Accorde le consentement de stockage au démarrage (décision produit :
+/// activé par défaut, révocable dans l'écran Mémoire). Sans lui, `saveEpisode`
+/// et `setPreference` échouent silencieusement à l'exécution.
+@Riverpod(keepAlive: true)
+Future<void> memoryConsentBootstrap(Ref ref) async {
+  final vault = await ref.watch(memoryVaultProvider.future);
+  final keyVault = ref.watch(secureKeyVaultProvider);
+  await MemoryConsent.ensureGranted(vault, keyVault: keyVault);
+}
+```
+
+Puis `dart run build_runner build --delete-conflicting-outputs` (ne pas commiter `*.g.dart`).
+
+- [ ] **Step 5: Déclencher au démarrage**
+
+`lib/app.dart` : à côté de `autoCleanupProvider` et `cloudProvidersInitProvider`
+(lignes 27-28), ajouter `ref.watch(memoryConsentBootstrapProvider);`.
+
+- [ ] **Step 6: Ré-accorder après `forget(everything)`**
+
+`lib/features/settings/presentation/forget_screen.dart` : après un `forget(everything)`
+réussi, appeler `MemoryConsent.ensureGranted(vault, keyVault: keyVault)`.
+
+Ajouter un test : après « tout effacer », une écriture de préférence réussit à nouveau.
+
+- [ ] **Step 7: Suite complète + analyze**
+
+Run: `flutter test && dart analyze --fatal-infos`
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add -A
+git commit -m "fix(memory): accorder le consentement de stockage — sans lui, toute écriture échoue"
+```
+
+---
+
 ### Task 4: Le plugin `describe` écrit son épisode
 
 **Files:**

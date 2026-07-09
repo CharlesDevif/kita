@@ -26,6 +26,30 @@ structurellement vides.
 La seule mémoire réelle est `ConversationEngineImpl._history` (20 messages,
 `conversation_engine.dart:55-58`), en RAM, détruite avec le process.
 
+### 0.0 Seconde cause racine : le consentement n'est jamais demandé
+
+Découverte pendant l'implémentation de la Tâche 1, **pas par l'audit**.
+
+`saveEpisode` et `setPreference` sont verrouillés par `_withConsentLock(consentType:
+'data_storage', scope: 'episodic' | 'semantic')` (`memory_vault_impl.dart:71-75,113-116`).
+Or `grantConsent` a **zéro appelant en production**.
+
+La mémoire est donc morte pour **deux raisons indépendantes**. Brancher `memoryAccess`
+(§2.4) n'aurait rien changé : les tests seraient restés verts — ils accordent le
+consentement — et chaque écriture aurait échoué sur device avec « Consentement requis pour
+stocker ces données ». C'est exactement le piège des deux cycles précédents (§8).
+
+**Décision de Charles :** consentement accordé au premier lancement, sans question,
+révocable par un interrupteur dans l'écran Mémoire. Donnée locale, chiffrée, jamais
+transmise.
+
+**Piège en cascade.** `forget(everything)` appelle `consentDao.deleteAll()`
+(`memory_vault_impl.dart:368`). Sans précaution, effacer ses données désactiverait la
+mémoire **définitivement** : le droit à l'oubli deviendrait une lobotomie. Le consentement
+est donc ré-accordé après un effacement total, sauf opt-out explicite. L'opt-out est stocké
+dans `SecureKeyVault`, jamais via `setPreference` — qui exige justement le consentement
+(interblocage).
+
 ### 0.1 Défaut découvert pendant l'audit
 
 `ForgetScope.specific` ne supprime **que des épisodes** (`memory_vault_impl.dart:319-325`) :
