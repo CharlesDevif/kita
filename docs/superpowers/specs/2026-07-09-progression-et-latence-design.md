@@ -208,18 +208,49 @@ Actions :
 - `describePrompt` devient **bref** (2-3 phrases) + la consigne de §5.3.
 - `detailedPrompt` (inchangé) reste réservé à « plus de détails ».
 
-### 5.5 Attendu
+### 5.5 Mesuré après implémentation (2026-07-09)
 
-| | Avant (mesuré) | Après (estimé) |
-|---|---|---|
-| Décision tool-use | 22,0 s | ~7 s |
-| Photo | 1,5 s | 1,5 s |
-| 1ʳᵉ phrase | 31,9 s | ~12 s |
-| **Premier mot entendu** | **55,4 s** | **~20 s** |
-| **Total** | **70,3 s** | **~35 s** |
+Samsung S21 Ultra, build release, deux requêtes « décris » consécutives.
 
-Estimations dérivées du débit mesuré (0,55 s/token). **À re-mesurer sur device** : les
-chiffres du spec seront remplacés par les mesures réelles après implémentation.
+| | Avant (mesuré) | Estimé | **Après (mesuré)** |
+|---|---|---|---|
+| Décision tool-use | 22,0 s | ~7 s | **4,0 s / 5,4 s** |
+| Photo | 1,5 s | 1,5 s | **0,5 s** |
+| 1ʳᵉ phrase | 31,9 s | ~12 s | **10,9 s** |
+| **Premier mot entendu** | **55,4 s** | **~20 s** | **17,8 s / 17,0 s** |
+| **Total** | **70,3 s** | **~35 s** | **29,3 s / 24,1 s** |
+
+Le repère « Un instant. » est prononcé à **2,50 s** exactement, « Je regarde. » à l'instant
+de la prise de photo. Les deux tiennent leur contrat.
+
+Le format compact `TOOL describe` a rapporté davantage que prévu (−17 s sur la décision,
+contre −15 s estimés) : le JSON legacy coûtait plus de tokens de décodage que modélisé.
+
+**Réserve.** Une troisième requête, avec un historique de conversation chargé, a mis
+**18,6 s** à décider. Le prefill croît avec l'historique ; les résultats d'outil internes
+y contribuaient pour rien. Ils sont désormais omis du prompt (voir §5.6). Le cap de
+`_maxHistoryLength = 20` reste le prochain levier si la dérive réapparaît.
+
+### 5.6 Régression trouvée pendant la validation device
+
+Le format compact a introduit un défaut que les tests unitaires ne pouvaient pas voir :
+**Gemma appelait `describe` à chaque message.** Une fois le premier appel effectué,
+l'historique contenait `[assistant]: (tool call)` ; le modèle voyait son dernier tour et
+imitait. « je ne t'ai pas demandé ça » relançait la caméra.
+
+Cause seconde : le prompt ouvrait sur `You have access to the following tools` suivi de la
+syntaxe d'appel — cadrage outil-d'abord, sans identité ni consigne de n'appeler qu'à la
+demande explicite.
+
+Correctif (`b4e9b7a`) : prompt refait en dialogue few-shot français — identité Kita,
+conversation par défaut, exemples positifs **et négatifs**. Les appels passés sont rendus
+`Kita : (a utilisé describe)`, les résultats d'outil omis. `stripHallucinatedTurns` coupe
+la réponse si le modèle enchaîne en fabriquant le tour suivant.
+
+**Leçon, jumelle de celle du §8 du spec reconnaissance.** Les chronos étaient excellents
+pendant que le produit faisait la mauvaise chose. Une métrique verte ne dit rien du
+comportement. Ici c'est l'utilisateur qui a écrit « je t'ai pas demandé ça » dans
+l'application — c'est ce texte, dans les logs, qui a révélé le bug.
 
 ## 6. Accessibilité (obligatoire)
 
