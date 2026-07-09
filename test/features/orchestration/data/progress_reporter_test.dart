@@ -149,4 +149,22 @@ void main() {
     reporter.report(ProgressPhase.failed);
     expect(orbStates.last, OrbState.error);
   });
+
+  test('aucun effet après dispose()', () {
+    reporter.dispose();
+    reporter.beginRequest();
+    reporter.report(ProgressPhase.thinking);
+    clock.advance(const Duration(seconds: 5));
+    expect(speaker.spoken, isEmpty);
+    expect(orbStates, isEmpty);
+  });
+
+  test('des report(thinking) répétés ne repoussent pas « Un instant »', () {
+    reporter.beginRequest();
+    reporter.report(ProgressPhase.thinking);
+    clock.advance(const Duration(seconds: 1));
+    reporter.report(ProgressPhase.thinking); // ne doit PAS réarmer
+    clock.advance(const Duration(milliseconds: 1600)); // total 2,6 s
+    expect(speaker.spoken, contains(ProgressReporter.cueThinking));
+  });
 }

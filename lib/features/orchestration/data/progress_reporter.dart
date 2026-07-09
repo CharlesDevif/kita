@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import '../../../core/errors/result.dart';
 import '../../../core/utils/logger.dart';
 import '../../io/domain/haptic_service.dart';
 import '../../shell/domain/orb_state.dart';
@@ -85,7 +86,7 @@ class ProgressReporter {
         _tick();
         if (!_workingCueSpoken) {
           _workingCueSpoken = true;
-          unawaited(_speaker.speakCue(cueWorking));
+          _speakCue(cueWorking);
         }
 
       case ProgressPhase.responding:
@@ -105,7 +106,7 @@ class ProgressReporter {
         _cancelThinkingCue();
         _onOrbStateChanged(OrbState.error);
         _onStatusChanged(null);
-        unawaited(_haptic.warning());
+        _fireHaptic(_haptic.warning());
     }
   }
 
@@ -120,17 +121,36 @@ class ProgressReporter {
   }
 
   /// Vibration brève : le seul signal disponible pour un utilisateur aveugle
-  /// qui n'a pas encore de son.
-  void _tick() => unawaited(_haptic.info());
+  /// qui n'a pas encore de son. Best-effort, mais un échec doit se voir dans
+  /// le Journal (Réglages) pour rester diagnosticable.
+  void _tick() => _fireHaptic(_haptic.info());
+
+  void _fireHaptic(Future<Result<void>> future) {
+    unawaited(future.then((result) {
+      if (result.isFailure) _log.warning('Haptic feedback failed');
+    }).catchError((Object e) {
+      _log.warning('Haptic feedback threw', error: e);
+    }));
+  }
 
   void _armThinkingCue() {
-    if (_thinkingCueSpoken) return;
-    _cancelThinkingCue();
+    // Ne jamais repousser un compte à rebours déjà en cours : des
+    // `report(thinking)` répétés priveraient l'utilisateur du repère vocal,
+    // soit exactement le silence que ce composant corrige.
+    if (_thinkingCueSpoken || _thinkingCueTimer != null) return;
     _thinkingCueTimer = _clock.delayed(spokenCueDelay, () {
       if (_disposed || _thinkingCueSpoken) return;
       _thinkingCueSpoken = true;
-      unawaited(_speaker.speakCue(cueThinking));
+      _speakCue(cueThinking);
     });
+  }
+
+  /// Un repère de progression est best-effort : un échec du TTS ne doit
+  /// jamais remonter en erreur non gérée (règle CLAUDE.md).
+  void _speakCue(String text) {
+    unawaited(_speaker.speakCue(text).catchError((Object e, StackTrace st) {
+      _log.warning('speakCue failed', error: e, stackTrace: st);
+    }));
   }
 
   void _cancelThinkingCue() {
