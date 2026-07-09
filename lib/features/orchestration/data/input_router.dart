@@ -9,9 +9,11 @@ import '../domain/models/agent_input.dart';
 import '../domain/models/agent_ids.dart';
 import '../domain/models/output_priority.dart';
 import '../domain/models/raw_input.dart';
+import '../domain/progress_phase.dart';
 import 'agent_supervisor.dart';
 import 'kita_tools.dart';
 import 'output_coordinator.dart';
+import 'progress_reporter.dart';
 
 /// Classifies and routes raw user/sensor inputs to the appropriate agent.
 ///
@@ -33,11 +35,13 @@ class InputRouter {
     required Clock clock,
     RequestClassifier? classifier,
     ConversationEngine? conversationEngine,
+    ProgressReporter? progress,
   })  : _supervisor = supervisor,
         _outputCoordinator = outputCoordinator,
         _clock = clock,
         _classifier = classifier,
-        _conversationEngine = conversationEngine;
+        _conversationEngine = conversationEngine,
+        _progress = progress;
 
   static final _log = KitaLogger('Orchestration.Router');
 
@@ -46,6 +50,7 @@ class InputRouter {
   final Clock _clock;
   final RequestClassifier? _classifier;
   final ConversationEngine? _conversationEngine;
+  final ProgressReporter? _progress;
 
   /// Routes a [RawInput] to the appropriate handler or agent.
   ///
@@ -69,6 +74,27 @@ class InputRouter {
       return;
     }
 
+    // Ouvre la fenêtre de progression : orbe en traitement, haptique, et — si
+    // le LLM tarde — un repère vocal. Fermée dans le finally quel que soit le
+    // chemin de sortie (succès, échec, exception).
+    _progress?.beginRequest();
+    _progress?.report(ProgressPhase.thinking);
+    var success = true;
+    try {
+      await _routeTranscript(input, transcript);
+    } on Object {
+      success = false;
+      rethrow;
+    } finally {
+      _progress?.endRequest(success: success);
+    }
+  }
+
+  /// Corps historique de [route] à partir de l'étape 3 (commande « stop »).
+  ///
+  /// Logique métier inchangée : seule l'orchestration de progression (autour
+  /// de l'appel) a été ajoutée dans [route].
+  Future<void> _routeTranscript(RawInput input, String transcript) async {
     // 3. ALWAYS check critical safety commands first (pattern-matched, no LLM)
     //    "stop" must work even if the LLM is down — safety critical for
     //    blind users who need to immediately cancel all activity.

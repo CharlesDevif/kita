@@ -11,9 +11,11 @@ import '../domain/clock.dart';
 import '../domain/conversation_engine.dart' as iface;
 import '../domain/models/agent_ids.dart';
 import '../domain/models/agent_input.dart';
+import '../domain/progress_phase.dart';
 import '../domain/tool_spec.dart' as orch;
 import 'agent_supervisor.dart';
 import 'kita_tools.dart';
+import 'progress_reporter.dart';
 
 /// Concrete implementation of [ConversationEngine] that routes user input
 /// through an LLM with tool use.
@@ -32,9 +34,11 @@ class ConversationEngineImpl implements iface.ConversationEngine {
     required AgentSupervisor supervisor,
     required Clock clock,
     List<orch.ToolSpec>? availableTools,
+    ProgressReporter? progress,
   })  : _aiRouter = aiRouter,
         _supervisor = supervisor,
         _clock = clock,
+        _progress = progress,
         _aiTools = _convertTools(availableTools ?? KitaTools.all);
 
   static final _log = KitaLogger('Orchestration.ConvEngine');
@@ -42,6 +46,7 @@ class ConversationEngineImpl implements iface.ConversationEngine {
   final AIRouter _aiRouter;
   final AgentSupervisor _supervisor;
   final Clock _clock;
+  final ProgressReporter? _progress;
 
   /// Tool specs converted to AI domain format (for AIRouter calls).
   final List<ai.ToolSpec> _aiTools;
@@ -175,6 +180,9 @@ class ConversationEngineImpl implements iface.ConversationEngine {
       for (final call in currentResponse.toolCalls) {
         if (_disposed) break;
         executedToolNames.add(call.name);
+        // Un outil démarre (photo, analyse) : signale `working` pour que le
+        // ProgressReporter dise « Je regarde. » et rafraîchisse le statut.
+        _progress?.report(ProgressPhase.working);
         final toolResult = await _executeToolCall(call);
         if (_disposed) break;
         _addToHistory(ai.ConversationMessage.toolResult(

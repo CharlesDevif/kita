@@ -12,6 +12,7 @@ import '../../orchestration/di/providers.dart';
 import '../../orchestration/domain/models/raw_input.dart';
 import '../di/conversation_providers.dart';
 import '../di/orb_providers.dart';
+import '../di/progress_status_provider.dart';
 import '../domain/conversation_entry.dart';
 import '../domain/input_state.dart';
 import '../di/shell_mode_providers.dart';
@@ -297,10 +298,12 @@ class _KitaShellState extends ConsumerState<KitaShell>
     // Check if onboarding is complete — if not, show conversational onboarding
     final onboardingComplete = ref.watch(onboardingCompleteProvider);
     final conversation = ref.watch(conversationFeedProvider);
+    final status = ref.watch(progressStatusProvider);
 
-    // Default viewport: the conversation feed once a dialogue started,
-    // otherwise the calm idle text.
-    final Widget defaultViewport = conversation.isEmpty
+    // Default viewport: the conversation feed once a dialogue started (or a
+    // transient status bubble is showing), otherwise the calm idle text.
+    final showFeed = conversation.isNotEmpty || status != null;
+    final Widget defaultViewport = !showFeed
         ? Center(
             child: Text(
               'Tout va bien',
@@ -311,13 +314,12 @@ class _KitaShellState extends ConsumerState<KitaShell>
               ),
             ),
           )
-        : _ConversationFeedView(entries: conversation);
+        : _ConversationFeedView(entries: conversation, status: status);
 
     // Le fondu passif (0.3) n'est acceptable que pour le texte d'ambiance :
     // une conversation en cours doit rester PLEINEMENT lisible quel que soit
     // le mode (retour terrain : fil invisible sur fond sombre en passif).
-    final opacity =
-        conversation.isEmpty ? 0.3 + 0.7 * viewportOpacity : 1.0;
+    final opacity = showFeed ? 1.0 : 0.3 + 0.7 * viewportOpacity;
 
     return Semantics(
       liveRegion: true,
@@ -360,20 +362,55 @@ class _KitaShellState extends ConsumerState<KitaShell>
 /// User messages align right (teal), Kita messages align left (dark). The
 /// list is rendered bottom-up so the latest exchange is always visible.
 class _ConversationFeedView extends StatelessWidget {
-  const _ConversationFeedView({required this.entries});
+  const _ConversationFeedView({required this.entries, this.status});
 
   final List<ConversationEntry> entries;
+
+  /// Statut transitoire (« Réflexion… »). Affiché en bas, sous le dernier
+  /// message, et remplacé dès que la vraie réponse arrive.
+  final String? status;
 
   @override
   Widget build(BuildContext context) {
     // reverse:true keeps the newest message pinned at the bottom without a
     // scroll controller; iterate the list backwards to match.
+    final hasStatus = status != null;
     return ListView.builder(
       reverse: true,
       padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: entries.length,
+      itemCount: entries.length + (hasStatus ? 1 : 0),
       itemBuilder: (context, index) {
-        final entry = entries[entries.length - 1 - index];
+        // reverse:true => index 0 is at the bottom: the transient status bubble
+        // sits below the latest message.
+        if (hasStatus && index == 0) {
+          return Semantics(
+            liveRegion: true,
+            label: 'Kita ${status!}',
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                margin: const EdgeInsets.symmetric(vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2D3A5F),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFF475D8F)),
+                ),
+                child: Text(
+                  status!,
+                  style: const TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 16,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+        final entryIndex = hasStatus ? index - 1 : index;
+        final entry = entries[entries.length - 1 - entryIndex];
         final isUser = entry.speaker == ConversationSpeaker.user;
         return Semantics(
           label: isUser ? 'Toi' : 'Kita',

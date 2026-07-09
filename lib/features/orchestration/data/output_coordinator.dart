@@ -15,6 +15,7 @@ import '../domain/models/agent_manifest.dart';
 import '../domain/models/agent_message.dart';
 import '../domain/models/output_priority.dart';
 import '../domain/output_handle.dart';
+import 'progress_reporter.dart' show ProgressSpeaker;
 
 // MVP: Timings (cooldown 15s, dedup 2s, presence haptic 2s) and the
 // priority-to-haptic mapping are hard-coded constants. For N agents with
@@ -82,7 +83,7 @@ class _CooldownEntry {
 /// - **Shell state** (drives OrbState and ShellMode via injected callbacks)
 ///
 /// All timings use an injectable [Clock] for deterministic testing.
-class OutputCoordinator {
+class OutputCoordinator implements ProgressSpeaker {
   OutputCoordinator({
     required TTSService tts,
     required HapticService haptic,
@@ -92,6 +93,7 @@ class OutputCoordinator {
     required void Function(OrbState) onOrbStateChanged,
     required void Function(ShellMode) onShellModeChanged,
     void Function(String agentId, String text)? onSpeechEnqueued,
+    void Function()? onSpeechStarted,
   })  : _tts = tts,
         _haptic = haptic,
         _profileAdapter = profileAdapter,
@@ -99,7 +101,8 @@ class OutputCoordinator {
         _bus = bus,
         _onOrbStateChanged = onOrbStateChanged,
         _onShellModeChanged = onShellModeChanged,
-        _onSpeechEnqueued = onSpeechEnqueued;
+        _onSpeechEnqueued = onSpeechEnqueued,
+        _onSpeechStarted = onSpeechStarted;
 
   static final _log = KitaLogger('Orchestration');
 
@@ -115,6 +118,9 @@ class OutputCoordinator {
   /// Notified with every speech that passes dedup/cooldown — mirrors Kita's
   /// spoken output as text (conversation feed in the Shell). Optional.
   final void Function(String agentId, String text)? _onSpeechEnqueued;
+
+  /// Notifié au tout premier mot prononcé : le Shell bascule en `responding`.
+  final void Function()? _onSpeechStarted;
 
   // -- Queue --
   final SplayTreeSet<_OutputRequest> _queue = SplayTreeSet<_OutputRequest>();
@@ -265,6 +271,23 @@ class OutputCoordinator {
         _onOrbStateChanged(OrbState.processing);
         unawaited(_processQueue());
     }
+  }
+
+  /// Prononce un repère de progression (« Un instant. », « Je regarde. »).
+  ///
+  /// Priorité `high` : passe devant la file normale mais cède à une alerte
+  /// `critical`. N'appelle PAS `_onSpeechEnqueued` : un repère est transitoire
+  /// et ne doit jamais laisser de bulle dans le fil de conversation.
+  @override
+  Future<void> speakCue(String text) async {
+    if (_disposed) return;
+    final request = _OutputRequest(
+      agentId: AgentIds.system,
+      text: text,
+      priority: OutputPriority.high,
+      enqueuedAt: _clock.now(),
+    );
+    unawaited(_handleHigh(request));
   }
 
   /// Enqueue a haptic request (executed immediately, no queue).
@@ -673,7 +696,10 @@ class OutputCoordinator {
 
   /// Called by the TTS callback layer to notify speech started.
   void onSpeechStart() {
-    // No-op for now; the coordinator tracks speaking state internally.
+    // Premier mot prononcé : le Shell bascule en `responding` et efface le
+    // statut transitoire (« Réflexion… »).
+    _onSpeechStarted?.call();
+    // The coordinator tracks speaking state internally otherwise.
   }
 
   /// Called by the TTS callback layer to notify speech was cancelled.

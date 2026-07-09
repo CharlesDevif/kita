@@ -20,6 +20,7 @@ import '../../io/domain/speech_event.dart';
 import '../../plugins/data/plugin_sandbox_impl.dart';
 import '../../shell/di/conversation_providers.dart';
 import '../../shell/di/orb_providers.dart';
+import '../../shell/di/progress_status_provider.dart';
 import '../../shell/di/shell_mode_providers.dart';
 import '../../shell/domain/orb_state.dart';
 import '../../shell/domain/shell_mode.dart';
@@ -29,11 +30,13 @@ import '../data/agent_supervisor.dart';
 import '../data/input_router.dart';
 import '../data/kita_orchestrator.dart';
 import '../data/output_coordinator.dart';
+import '../data/progress_reporter.dart';
 import '../data/real_access.dart';
 import '../domain/agent_bus.dart';
 import '../domain/clock.dart';
 import '../data/conversation_engine.dart';
 import '../domain/conversation_engine.dart';
+import '../domain/progress_phase.dart';
 import '../domain/models/agent_manifest.dart';
 
 // =============================================================================
@@ -160,7 +163,14 @@ final agentSupervisorProvider = Provider<AgentSupervisor>((ref) {
 ///
 /// keepAlive — persists for the entire app lifecycle.
 /// Bridges shell state changes via Riverpod notifiers.
-final outputCoordinatorProvider = Provider<OutputCoordinator>((ref) {
+// Type de variable annoté explicitement : outputCoordinatorProvider et
+// progressReporterProvider se référencent mutuellement (le premier lit le
+// second dans son callback onSpeechStarted, paresseusement). C'est une
+// dépendance runtime UNIDIRECTIONNELLE (reporter → coordinator), mais
+// l'inférence de type Dart, elle, voit une boucle textuelle : l'annotation
+// explicite la casse (recommandation de l'analyzer, pas un contournement).
+final Provider<OutputCoordinator> outputCoordinatorProvider =
+    Provider<OutputCoordinator>((ref) {
   final tts = ref.watch(ttsServiceProvider);
   final haptic = ref.watch(hapticServiceProvider);
   final adapter = ref.watch(profileAdapterProvider);
@@ -186,6 +196,13 @@ final outputCoordinatorProvider = Provider<OutputCoordinator>((ref) {
     onSpeechEnqueued: (String agentId, String text) {
       ref.read(conversationFeedProvider.notifier).addKita(text);
     },
+    // Premier mot prononcé → le Shell bascule en `responding`. Lecture
+    // PARESSEUSE de progressReporterProvider (closure exécutée plus tard) :
+    // ce provider watch outputCoordinatorProvider, un accès à la construction
+    // créerait un cycle.
+    onSpeechStarted: () {
+      ref.read(progressReporterProvider).report(ProgressPhase.responding);
+    },
   );
 
   // Bridge TTS speech events to the OutputCoordinator so it can advance
@@ -210,6 +227,32 @@ final outputCoordinatorProvider = Provider<OutputCoordinator>((ref) {
   return coordinator;
 });
 
+/// Le [ProgressReporter] — politique unique de retour de progression.
+///
+/// Concentre orbe + haptique + repères vocaux + texte de statut. Les émetteurs
+/// (InputRouter, ConversationEngine, OutputCoordinator) ne font qu'émettre des
+/// [ProgressPhase] ; toute la décision de restitution vit ici.
+final Provider<ProgressReporter> progressReporterProvider =
+    Provider<ProgressReporter>((ref) {
+  final coordinator = ref.watch(outputCoordinatorProvider);
+  final haptic = ref.watch(hapticServiceProvider);
+  final clock = ref.watch(clockProvider);
+
+  final reporter = ProgressReporter(
+    speaker: coordinator,
+    haptic: haptic,
+    clock: clock,
+    onOrbStateChanged: (OrbState state) {
+      ref.read(orbStateProvider.notifier).setState(state);
+    },
+    onStatusChanged: (String? status) {
+      ref.read(progressStatusProvider.notifier).set(status);
+    },
+  );
+  ref.onDispose(reporter.dispose);
+  return reporter;
+});
+
 /// The [RequestClassifier] for fallback routing.
 final requestClassifierProvider = Provider<RequestClassifier>((ref) {
   return RequestClassifierImpl();
@@ -230,6 +273,7 @@ final conversationEngineProvider = Provider<ConversationEngine>((ref) {
     aiRouter: aiRouter,
     supervisor: supervisor,
     clock: clock,
+    progress: ref.watch(progressReporterProvider),
   );
   ref.onDispose(engine.dispose);
   return engine;
@@ -252,6 +296,7 @@ final inputRouterProvider = Provider<InputRouter>((ref) {
     clock: clock,
     classifier: classifier,
     conversationEngine: conversationEngine,
+    progress: ref.watch(progressReporterProvider),
   );
 });
 
