@@ -390,6 +390,23 @@ class MemoryVaultImpl implements MemoryVault {
     return result.getOrNull() ?? 0;
   }
 
+  /// Renvoie `true` si l'entrée désignée par [idStr] existe encore en base.
+  /// Utilise le même routage que [_forgetSpecificId] : une clé préfixée
+  /// `fact:` vise le domaine sémantique, un entier vise un épisode. Un
+  /// identifiant qui n'est ni l'un ni l'autre ne peut désigner aucune entrée
+  /// réelle et est donc traité comme non résiduel (`false`) — cohérent avec
+  /// `_forgetSpecificId`, qui renvoie `0` (aucune suppression) dans ce cas.
+  Future<bool> _specificIdStillExists(String idStr) async {
+    if (idStr.startsWith(userFactKeyPrefix)) {
+      final pref = (await preferenceDao.getByKey(idStr)).getOrNull();
+      return pref != null;
+    }
+    final id = int.tryParse(idStr);
+    if (id == null) return false;
+    final episode = (await episodeDao.getById(id)).getOrNull();
+    return episode != null;
+  }
+
   /// Serializes [action] against every other consent-guarded operation.
   ///
   /// Both storage (check-then-write) and [revokeConsent] acquire this lock so
@@ -512,13 +529,9 @@ class MemoryVaultImpl implements MemoryVault {
 
         case ForgetScope.specific:
           for (final idStr in request.specificIds) {
-            final id = int.tryParse(idStr);
-            if (id != null) {
-              final episode = (await episodeDao.getById(id)).getOrNull();
-              if (episode != null) {
-                _log.info('Audit forget specific: found residual episode');
-                return const Result.success(false);
-              }
+            if (await _specificIdStillExists(idStr)) {
+              _log.info('Audit forget specific: found residual entry');
+              return const Result.success(false);
             }
           }
           return const Result.success(true);

@@ -446,6 +446,84 @@ void main() {
       expect(result.isSuccess, isTrue);
       expect((await vault.getEpisodes()).getOrNull(), isEmpty);
     });
+
+    test('forget(specific) avec une liste vide échoue', () async {
+      final result = await vault.forget(
+        ForgetRequest.specific(const [], confirmation: true),
+      );
+      expect(result.isFailure, isTrue);
+    });
+
+    test(
+        'forget(specific) avec un identifiant ni numérique ni préfixé '
+        'fact: échoue', () async {
+      final result = await vault.forget(
+        ForgetRequest.specific(const ['abc'], confirmation: true),
+      );
+      expect(result.isFailure, isTrue);
+    });
+
+    // Comportement figé, pas une garantie à "corriger" plus tard sans décision
+    // produit : forget(specific) n'est pas transactionnel (contrairement à
+    // forget(everything)), donc un identifiant valide déjà traité dans la même
+    // requête reste supprimé même si un identifiant suivant fait échouer
+    // l'ensemble de l'appel.
+    test(
+        'forget(specific) laisse la suppression déjà faite en place quand un '
+        'id suivant échoue', () async {
+      await grantConsentFor('semantic');
+      await vault.setPreference(
+        key: 'fact:existe',
+        value: 'valeur',
+        category: 'user_fact',
+        source: 'explicit',
+      );
+
+      final result = await vault.forget(
+        ForgetRequest.specific(
+          const ['fact:existe', '999999'],
+          confirmation: true,
+        ),
+      );
+
+      expect(result.isFailure, isTrue);
+      final prefs = (await vault.getPreferences()).getOrNull()!;
+      expect(prefs.where((p) => p.key == 'fact:existe'), isEmpty);
+    });
+  });
+
+  group('MemoryVaultImpl — Audit forget(specific)', () {
+    test(
+        'auditForget(specific) sur une clé fact: encore présente renvoie '
+        'success(false)', () async {
+      await grantConsentFor('semantic');
+      await vault.setPreference(
+        key: 'fact:frere_paul',
+        value: "mon frère s'appelle Paul",
+        category: 'user_fact',
+        source: 'explicit',
+      );
+
+      final request = ForgetRequest.specific(
+        const ['fact:frere_paul'],
+        confirmation: true,
+      );
+      final verified = await vault.auditForget(request);
+
+      expect(verified.getOrNull(), isFalse);
+    });
+
+    test(
+        'auditForget(specific) sur une clé fact: absente renvoie '
+        'success(true)', () async {
+      final request = ForgetRequest.specific(
+        const ['fact:frere_paul'],
+        confirmation: true,
+      );
+      final verified = await vault.auditForget(request);
+
+      expect(verified.getOrNull(), isTrue);
+    });
   });
 
   group('MemoryVaultImpl — Audit robustness', () {
