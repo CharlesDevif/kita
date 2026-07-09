@@ -1,11 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/utils/logger.dart';
 import '../domain/conversation_entry.dart';
 
 /// In-session conversation feed: what the user said (voice or text) and what
 /// Kita answered. Never persisted (privacy-first) — cleared when the app
 /// process ends.
 class ConversationFeed extends Notifier<List<ConversationEntry>> {
+  static final _log = KitaLogger('Shell.Feed');
+
   /// Oldest entries are dropped beyond this cap to bound memory.
   static const int maxEntries = 100;
 
@@ -23,6 +26,9 @@ class ConversationFeed extends Notifier<List<ConversationEntry>> {
   void _add(ConversationSpeaker speaker, String text) {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
+    // Métadonnées seulement — le contenu du message est de la donnée
+    // personnelle et n'est JAMAIS loggé.
+    _log.info('Entry added (${speaker.name}, len=${trimmed.length})');
     final next = [
       ...state,
       ConversationEntry(

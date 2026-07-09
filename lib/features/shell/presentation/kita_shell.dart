@@ -313,10 +313,16 @@ class _KitaShellState extends ConsumerState<KitaShell>
           )
         : _ConversationFeedView(entries: conversation);
 
+    // Le fondu passif (0.3) n'est acceptable que pour le texte d'ambiance :
+    // une conversation en cours doit rester PLEINEMENT lisible quel que soit
+    // le mode (retour terrain : fil invisible sur fond sombre en passif).
+    final opacity =
+        conversation.isEmpty ? 0.3 + 0.7 * viewportOpacity : 1.0;
+
     return Semantics(
       liveRegion: true,
       child: Opacity(
-        opacity: 0.3 + 0.7 * viewportOpacity,
+        opacity: opacity,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: onboardingComplete
@@ -381,16 +387,23 @@ class _ConversationFeedView extends StatelessWidget {
               ),
               constraints: const BoxConstraints(maxWidth: 300),
               decoration: BoxDecoration(
+                // La bulle de Kita doit se détacher NETTEMENT du fond
+                // (#1A1A2E) : #16213E en était indiscernable (retour terrain).
                 color: isUser
                     ? const Color(0xFF0F766E)
-                    : const Color(0xFF16213E),
+                    : const Color(0xFF2D3A5F),
                 borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isUser
+                      ? const Color(0xFF14B8A6)
+                      : const Color(0xFF475D8F),
+                ),
               ),
               child: Text(
                 entry.text,
                 style: const TextStyle(
                   color: Color(0xFFF8FAFC),
-                  fontSize: 15,
+                  fontSize: 16,
                 ),
               ),
             ),
