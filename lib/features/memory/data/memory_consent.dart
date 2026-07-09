@@ -76,7 +76,6 @@ class MemoryConsent {
   static Future<void> ensureGranted(
     MemoryVault vault, {
     SecureKeyVault? keyVault,
-    DateTime Function()? now,
   }) async {
     // Attend la fin de tout appel en cours avant de démarrer le sien.
     while (_ensureGrantedLock != null) {
@@ -85,7 +84,7 @@ class MemoryConsent {
     final myLock = Completer<void>();
     _ensureGrantedLock = myLock;
     try {
-      await _ensureGrantedLocked(vault, keyVault: keyVault, now: now);
+      await _ensureGrantedLocked(vault, keyVault: keyVault);
     } finally {
       _ensureGrantedLock = null;
       myLock.complete();
@@ -95,13 +94,16 @@ class MemoryConsent {
   static Future<void> _ensureGrantedLocked(
     MemoryVault vault, {
     SecureKeyVault? keyVault,
-    DateTime Function()? now,
   }) async {
     if (await _optedOut(keyVault)) {
       _log.info('Memory consent opted out by user, not granting');
       return;
     }
-    final timestamp = (now ?? DateTime.now)();
+    // grantConsent (via ConsentDao.insert) ne transmet jamais grantedAt à la
+    // companion Drift : la colonne retombe toujours sur son DEFAULT SQL
+    // (strftime('now')). Un paramètre `now` injectable ici serait donc mort
+    // et trompeur — utiliser directement l'heure système.
+    final timestamp = DateTime.now();
     for (final scope in memoryConsentScopes) {
       final already = (await vault.hasConsent(
         consentType: consentTypeDataStorage,
