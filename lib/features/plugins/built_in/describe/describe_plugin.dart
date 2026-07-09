@@ -39,15 +39,18 @@ import 'describe_viewport.dart';
 class KitaDescribePlugin implements KitaAgent {
   static final _log = KitaLogger('Plugin.Describe');
 
-  /// Prompt de description par défaut : bref, et surtout **première phrase
-  /// très courte**. Le SentenceBuffer n'émet qu'une phrase terminée : une
-  /// première phrase de 45 tokens = 25 s de silence mesurées sur device.
+  /// Prompt de description par défaut : bref, et surtout **première phrase très
+  /// courte**. Le SentenceBuffer n'émet qu'une phrase terminée : une première
+  /// phrase de 45 tokens = 25 s de silence mesurées sur device.
+  ///
+  /// La lecture du texte visible est conservée : pour une personne aveugle,
+  /// lire un panneau ou une étiquette vaut plus que la brièveté.
   static const describePrompt = '''
 Décris cette image en français pour une personne aveugle.
 Commence par une phrase très courte (5 à 8 mots) nommant l'élément principal.
-Puis ajoute 1 ou 2 phrases de détails, en situant les objets (gauche, droite,
-devant, derrière). Sois concret. N'identifie jamais les personnes.
-Ne mentionne pas que c'est une image.''';
+Puis ajoute 1 ou 2 phrases de détails : situe les objets (gauche, droite,
+devant) et signale le texte visible important. Sois concret.
+N'identifie jamais les personnes. Ne mentionne pas que c'est une image.''';
 
   /// Prompt for detailed description (5-8 sentences).
   static const detailedPrompt = '''

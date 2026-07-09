@@ -348,46 +348,45 @@ void main() {
   });
 
   group('prompt', () {
-    test('is in French', () {
+    test('est en français', () {
+      expect(KitaDescribePlugin.describePrompt, contains('français'));
+    });
+
+    // Verrouille le correctif de latence : sans première phrase courte,
+    // l'utilisateur attend ~25 s avant d'entendre le moindre mot.
+    test('demande une première phrase très courte', () {
       expect(
         KitaDescribePlugin.describePrompt,
-        contains('français'),
+        contains('phrase très courte'),
       );
     });
 
-    test('requests spatial positioning', () {
+    test('demande de situer les objets dans l\'espace', () {
+      expect(KitaDescribePlugin.describePrompt, contains('gauche'));
+      expect(KitaDescribePlugin.describePrompt, contains('droite'));
+    });
+
+    // Lire un panneau ou une étiquette est une fonction majeure pour un aveugle.
+    test('demande de signaler le texte visible', () {
+      expect(KitaDescribePlugin.describePrompt, contains('texte visible'));
+    });
+
+    test('interdit d\'identifier les personnes', () {
       expect(
         KitaDescribePlugin.describePrompt,
-        contains('position relative'),
+        contains("N'identifie jamais les personnes"),
       );
     });
 
-    test('requests visible text', () {
+    test('interdit les formules d\'introduction', () {
       expect(
         KitaDescribePlugin.describePrompt,
-        contains('texte visible'),
+        contains("Ne mentionne pas que c'est une image"),
       );
     });
 
-    test('requests obstacle/danger info', () {
-      expect(
-        KitaDescribePlugin.describePrompt,
-        contains('obstacles'),
-      );
-    });
-
-    test('requests concise response', () {
-      expect(
-        KitaDescribePlugin.describePrompt,
-        contains('concises'),
-      );
-    });
-
-    test('avoids introduction formulas', () {
-      expect(
-        KitaDescribePlugin.describePrompt,
-        contains("Pas de formule d'introduction"),
-      );
+    test('reste bref (moins de 400 caractères)', () {
+      expect(KitaDescribePlugin.describePrompt.length, lessThan(400));
     });
   });
 }
