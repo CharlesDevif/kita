@@ -18,6 +18,7 @@ import '../../io/data/providers/motion_providers.dart';
 import '../../io/data/providers/tts_providers.dart';
 import '../../io/domain/speech_event.dart';
 import '../../plugins/data/plugin_sandbox_impl.dart';
+import '../../plugins/data/vault_memory_access.dart';
 import '../../shell/di/conversation_providers.dart';
 import '../../shell/di/orb_providers.dart';
 import '../../shell/di/progress_status_provider.dart';
@@ -132,6 +133,11 @@ final pluginSandboxProvider = Provider<PluginSandboxImpl>((ref) {
       motionService: motion,
     ),
     aiAccess: RealAIAccess(aiRouter: aiRouter),
+    // Sans ceci, `_buildMemoryAccess` renvoie null et toute la mémoire est
+    // inerte, quelles que soient les permissions déclarées par les plugins.
+    memoryAccess: VaultMemoryAccess(
+      vaultLoader: () => ref.read(memoryVaultProvider.future),
+    ),
   );
 });
 
