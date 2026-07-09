@@ -7,6 +7,7 @@ import '../../../../core/errors/result.dart';
 import '../../../../core/utils/logger.dart';
 import '../../../../core/utils/sentence_buffer.dart';
 import '../../../ai/domain/image_data.dart';
+import '../../../memory/domain/episode.dart';
 import '../../../orchestration/domain/kita_agent.dart';
 import '../../../orchestration/domain/models/agent_input.dart';
 import '../../../orchestration/domain/models/agent_manifest.dart';
@@ -69,6 +70,20 @@ Réponds en 5-8 phrases. Pas de formule d'introduction.''';
   /// Duration of silence before auto-returning to passive mode.
   static const silenceTimeout = Duration(seconds: 5);
 
+  /// Première phrase du texte, ou le texte entier s'il n'y a pas de
+  /// ponctuation finale (`.`, `!`, `?`).
+  ///
+  /// Sert de `summary` d'épisode : court, lisible dans l'écran Mémoire.
+  /// Détection naïve par ponctuation : une abréviation en début de texte
+  /// (« M. Dupont ... ») tronque la phrase trop tôt. Limite connue et
+  /// acceptée — le summary reste utile pour des descriptions de scène,
+  /// qui ne contiennent quasiment jamais d'abréviations.
+  static String firstSentence(String text) {
+    final trimmed = text.trim();
+    final match = RegExp(r'^[^.!?]*[.!?]').firstMatch(trimmed);
+    return (match?.group(0) ?? trimmed).trim();
+  }
+
   /// Whether the agent has been terminated, to prevent timer callbacks
   /// from modifying state after termination.
   bool _terminated = false;
@@ -97,7 +112,7 @@ Réponds en 5-8 phrases. Pas de formule d'introduction.''';
         trustLevel: TrustLevel.official,
         agentType: AgentType.onDemand,
         priority: AgentPriority.standard,
-        permissions: ['camera', 'ai.vision'],
+        permissions: ['camera', 'ai.vision', 'memory'],
         capabilities: ['vision', 'text'],
         compatibleProfiles: ['blind', 'low_vision', 'standard'],
         subscriptions: {
@@ -376,6 +391,11 @@ Réponds en 5-8 phrases. Pas de formule d'introduction.''';
         ));
       }
 
+      // L'écriture de l'épisode est un bonus, jamais une condition de
+      // succès : une personne aveugle a besoin d'entendre la description,
+      // que la mémoire ait pu l'archiver ou non.
+      await _saveEpisode(context, content);
+
       _log.info('Streaming description complete (${content.length} chars)');
 
       updateState(content, false);
@@ -404,6 +424,49 @@ Réponds en 5-8 phrases. Pas de formule d'introduction.''';
         cause: e,
         stackTrace: stack,
       ));
+    }
+  }
+
+  /// Enregistre un épisode mémoire pour cette description réussie.
+  ///
+  /// Bonus, jamais un prérequis : `context.memory` peut être `null` (pas de
+  /// permission, mémoire indisponible) et l'écriture peut échouer (vault
+  /// verrouillé, consentement non accordé...). Dans les deux cas, on
+  /// journalise et on continue — jamais d'exception propagée vers l'appelant.
+  ///
+  /// Zero PII : le contenu de la description (ce que voit la caméra chez
+  /// l'utilisateur) n'est jamais journalisé, seulement sa longueur.
+  Future<void> _saveEpisode(AgentContext context, String description) async {
+    final memory = context.memory;
+    if (memory == null) {
+      _log.debug('No memory access, episode not saved');
+      return;
+    }
+
+    try {
+      final result = await memory.saveEpisode(KitaEpisode(
+        id: 0,
+        source: manifest.id,
+        eventType: 'scene_description',
+        summary: firstSentence(description),
+        details: description,
+        tags: const [],
+        importanceScore: 0.3,
+        isPinned: false,
+        createdAt: context.clock.now(),
+      ));
+
+      switch (result) {
+        case Success():
+          _log.info('Episode saved (len=${description.length})');
+        case Failure(:final failure):
+          _log.warning('Episode not saved: ${failure.logMessage}');
+      }
+    } on Object catch (e) {
+      // KitaFailure n'est pas une Exception : `on Object` est obligatoire.
+      // Frontière défensive : même une erreur inattendue côté mémoire ne
+      // doit jamais faire échouer la description.
+      _log.warning('Episode not saved: unexpected error $e');
     }
   }
 
