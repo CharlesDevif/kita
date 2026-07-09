@@ -10,6 +10,7 @@ void main() {
         'ÀÂÄÇÉÈÊËÎÏÔÖÙÛÜŸ',
         'àâäçéèêëîïôöùûüÿ',
         'Ça déménage, où ?',
+        'qu’est-ce que j’ai vu',
       ];
       for (final s in samples) {
         expect(normalizeForMatch(s).length, equals(s.length), reason: s);
@@ -19,6 +20,33 @@ void main() {
     test('retire les accents et met en minuscules', () {
       expect(normalizeForMatch('Frère'), equals('frere'));
     });
+
+    test(
+      'mappe l\'apostrophe typographique (U+2019) sur l\'apostrophe droite',
+      () {
+        expect(normalizeForMatch('qu’est-ce'), equals("qu'est-ce"));
+      },
+    );
+  });
+
+  group('normalizeLoose', () {
+    test('retire apostrophes et traits d\'union, réduit les espaces', () {
+      expect(
+        normalizeLoose("qu'est-ce que j'ai vu"),
+        equals('quest ce que jai vu'),
+      );
+      expect(
+        normalizeLoose('que sais-tu de moi'),
+        equals('que sais tu de moi'),
+      );
+    });
+
+    test('gère aussi l\'apostrophe typographique, via normalizeForMatch', () {
+      expect(
+        normalizeLoose('qu’est-ce que j’ai vu'),
+        equals('quest ce que jai vu'),
+      );
+    });
   });
 
   group('MemoryIntentParser.parse — RememberFact', () {
@@ -27,7 +55,10 @@ void main() {
         "Retiens que mon frère s'appelle Paul",
       );
       expect(intent, isA<RememberFact>());
-      expect((intent! as RememberFact).fact, equals("mon frère s'appelle Paul"));
+      expect(
+        (intent! as RememberFact).fact,
+        equals("mon frère s'appelle Paul"),
+      );
     });
 
     test('reconnaît « souviens-toi que » et « rappelle-toi que »', () {
@@ -59,16 +90,51 @@ void main() {
       expect(MemoryIntentParser.parse('retiens'), isNull);
     });
 
-    test('préfixe en majuscules, pas en début de chaîne', () {
+    test(
+      'reconnaît le vocatif « Kita, » en tête et extrait le fait, accents préservés',
+      () {
+        final intent = MemoryIntentParser.parse(
+          "Kita, retiens que mon frère s'appelle Paul",
+        );
+        expect(intent, isA<RememberFact>());
+        expect(
+          (intent! as RememberFact).fact,
+          equals("mon frère s'appelle Paul"),
+        );
+      },
+    );
+
+    test('reconnaît le vocatif « kita » sans virgule, juste un espace', () {
       final intent = MemoryIntentParser.parse(
-        "Dis donc, RETIENS QUE ma fille s'appelle Lina",
+        "kita retiens que ma fille s'appelle Lina",
       );
       expect(intent, isA<RememberFact>());
+      expect((intent! as RememberFact).fact, equals("ma fille s'appelle Lina"));
+    });
+
+    test('un préambule qui n\'est pas le vocatif « kita » ne déclenche plus '
+        'rien : le préfixe doit être en tête (après vocatif optionnel)', () {
       expect(
-        (intent! as RememberFact).fact,
-        equals("ma fille s'appelle Lina"),
+        MemoryIntentParser.parse(
+          "Dis donc, RETIENS QUE ma fille s'appelle Lina",
+        ),
+        isNull,
       );
     });
+
+    test(
+      'apostrophe typographique dans le fait : reconnu, apostrophe d\'origine préservée',
+      () {
+        final intent = MemoryIntentParser.parse(
+          'retiens que mon fils s’appelle Léo',
+        );
+        expect(intent, isA<RememberFact>());
+        expect(
+          (intent! as RememberFact).fact,
+          equals('mon fils s’appelle Léo'),
+        );
+      },
+    );
   });
 
   group('MemoryIntentParser.parse — Recall', () {
@@ -77,7 +143,21 @@ void main() {
         MemoryIntentParser.parse('Qu\'est-ce que tu sais de moi ?'),
         isA<RecallFacts>(),
       );
-      expect(MemoryIntentParser.parse('que sais-tu de moi'), isA<RecallFacts>());
+      expect(
+        MemoryIntentParser.parse('que sais-tu de moi'),
+        isA<RecallFacts>(),
+      );
+      expect(
+        MemoryIntentParser.parse('Que sais-tu de moi ?'),
+        isA<RecallFacts>(),
+      );
+    });
+
+    test('motifs de rappel de faits sans apostrophe → RecallFacts', () {
+      expect(
+        MemoryIntentParser.parse('quest ce que tu sais de moi'),
+        isA<RecallFacts>(),
+      );
     });
 
     test('« qu\'est-ce que j\'ai vu » → RecallEpisodes', () {
@@ -85,8 +165,17 @@ void main() {
         MemoryIntentParser.parse('qu\'est-ce que j\'ai vu aujourd\'hui ?'),
         isA<RecallEpisodes>(),
       );
-      expect(MemoryIntentParser.parse('tu te souviens de ce que j\'ai vu'),
-          isA<RecallEpisodes>());
+      expect(
+        MemoryIntentParser.parse('tu te souviens de ce que j\'ai vu'),
+        isA<RecallEpisodes>(),
+      );
+    });
+
+    test('apostrophe typographique → RecallEpisodes', () {
+      expect(
+        MemoryIntentParser.parse('qu’est-ce que j’ai vu aujourd’hui ?'),
+        isA<RecallEpisodes>(),
+      );
     });
   });
 
@@ -101,21 +190,15 @@ void main() {
     });
   });
 
-  group('MemoryIntentParser.parse — limite connue (matching par sous-chaîne)', () {
+  group('MemoryIntentParser.parse — faux positif corrigé (défaut 1)', () {
     test(
-      '« retiens » comme verbe conjugué ordinaire est capté à tort '
-      '(limitation documentée, pas de détection de frontière de mot)',
+      '« je retiens mon souffle avant de plonger » n\'est plus capté : '
+      '« retiens » n\'est plus en tête d\'énoncé (après vocatif optionnel)',
       () {
-        // « Je retiens mon souffle » : aucune intention de mémorisation ici,
-        // mais _rememberPrefixes cherche « retiens » n'importe où dans la
-        // chaîne normalisée, sans vérifier qu'il s'agit d'un mot isolé en
-        // tête d'énoncé. Ce test fige le comportement actuel plutôt que de
-        // le corriger silencieusement : la correction (détection de
-        // frontière de mot / position) n'est pas demandée par cette tâche.
-        final intent = MemoryIntentParser.parse(
-          'je retiens mon souffle avant de plonger',
+        expect(
+          MemoryIntentParser.parse('je retiens mon souffle avant de plonger'),
+          isNull,
         );
-        expect(intent, isA<RememberFact>());
       },
     );
   });

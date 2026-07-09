@@ -13,6 +13,11 @@ const Map<String, String> _accentFolding = {
   'ù': 'u', 'û': 'u', 'ü': 'u', 'ú': 'u',
   'ÿ': 'y', 'ý': 'y',
   'ñ': 'n',
+  // Apostrophe typographique (U+2019) → apostrophe droite (U+0027) : les
+  // claviers français et la reconnaissance vocale produisent l'apostrophe
+  // typographique, alors que les motifs sont écrits avec l'apostrophe
+  // droite. Un caractère vers un caractère : la longueur reste préservée.
+  '’': "'",
 };
 
 /// Minuscules + accents retirés, **sans changer la longueur**.
@@ -29,6 +34,23 @@ String normalizeForMatch(String input) {
   return buffer.toString();
 }
 
+/// Normalisation « loose », réservée aux motifs de **rappel**.
+///
+/// CONTRAINTE : `normalizeForMatch` doit rester 1:1 parce que `RememberFact`
+/// découpe la chaîne ORIGINALE à partir d'un indice trouvé sur la forme
+/// normalisée — changer la longueur y casserait l'alignement. Les motifs de
+/// rappel, eux, ne découpent rien : ils ne font que tester une présence
+/// (`contains`). Sans cette contrainte d'indices, on peut se permettre de
+/// retirer apostrophes et traits d'union et de réduire les espaces
+/// multiples, ce qui rend atteignables des variantes orales sans
+/// ponctuation (« quest ce que jai vu »).
+String normalizeLoose(String input) {
+  final withoutPunctuation = normalizeForMatch(
+    input,
+  ).replaceAll("'", '').replaceAll('-', ' ');
+  return withoutPunctuation.replaceAll(RegExp(r'\s+'), ' ').trim();
+}
+
 /// Préfixes d'écriture, du plus long au plus court : « retiens que » doit être
 /// testé avant « retiens », sinon le fait garderait un « que » en tête.
 const List<String> _rememberPrefixes = [
@@ -41,46 +63,67 @@ const List<String> _rememberPrefixes = [
   'retiens',
 ];
 
+// Motifs de rappel : testés sur `normalizeLoose`, donc écrits SANS
+// apostrophe ni trait d'union (ils seraient sinon inatteignables — la
+// normalisation loose les a déjà retirés de la chaîne comparée).
 const List<String> _recallFactsPatterns = [
-  'que sais-tu de moi',
   'que sais tu de moi',
-  "qu'est-ce que tu sais de moi",
-  'quest-ce que tu sais de moi',
+  'quest ce que tu sais de moi',
   'tu sais quoi sur moi',
 ];
 
 const List<String> _recallEpisodesPatterns = [
-  "qu'est-ce que j'ai vu",
-  'quest-ce que jai vu',
-  "ce que j'ai vu",
+  'quest ce que jai vu',
   'ce que jai vu',
-  "qu'ai-je vu",
+  'quai je vu',
 ];
 
 class MemoryIntentParser {
   MemoryIntentParser._();
 
+  /// Vocatif optionnel en tête d'énoncé : « kita » suivi d'au moins une
+  /// virgule et/ou un espace. Testé sur la forme normalisée (1:1), ce qui
+  /// permet de retirer le même nombre de caractères sur la chaîne originale
+  /// pour garder l'alignement des indices utilisé par `RememberFact`.
+  static final RegExp _vocative = RegExp(r'^kita[ ,]+');
+
   /// Reconnaît une intention mémoire, ou `null` si le transcript n'en porte pas.
   static MemoryIntent? parse(String transcript) {
     final trimmed = transcript.trim();
     if (trimmed.isEmpty) return null;
-    final normalized = normalizeForMatch(trimmed);
 
-    // Le rappel d'épisodes est testé avant celui des faits : « ce que j'ai vu »
-    // est plus spécifique et ne doit pas être avalé par un motif plus large.
+    // Rappel : aucune découpe de la chaîne originale, donc normalisation
+    // agressive (apostrophes et traits d'union retirés). Testé avant les
+    // faits de mémorisation : « ce que j'ai vu » est plus spécifique et ne
+    // doit pas être avalé par un motif plus large.
+    final loose = normalizeLoose(trimmed);
     for (final pattern in _recallEpisodesPatterns) {
-      if (normalized.contains(pattern)) return const RecallEpisodes();
+      if (loose.contains(pattern)) return const RecallEpisodes();
     }
     for (final pattern in _recallFactsPatterns) {
-      if (normalized.contains(pattern)) return const RecallFacts();
+      if (loose.contains(pattern)) return const RecallFacts();
     }
 
+    // RememberFact découpe la chaîne ORIGINALE (accents préservés) à partir
+    // d'un indice trouvé sur la forme normalisée : normalizeForMatch doit
+    // donc rester 1:1 ici, contrairement au rappel ci-dessus.
+    var working = trimmed;
+    var normalized = normalizeForMatch(trimmed);
+
+    final vocative = _vocative.firstMatch(normalized);
+    if (vocative != null) {
+      // Retire le vocatif des DEUX chaînes en même temps : la longueur
+      // supprimée est identique de part et d'autre, l'alignement survit.
+      working = working.substring(vocative.end);
+      normalized = normalized.substring(vocative.end);
+    }
+
+    // Le préfixe doit être en tête du transcript (après vocatif optionnel) :
+    // un `indexOf` n'importe où dans la phrase produirait des faux positifs
+    // sur des verbes conjugués ordinaires (« je retiens mon souffle »).
     for (final prefix in _rememberPrefixes) {
-      final index = normalized.indexOf(prefix);
-      if (index < 0) continue;
-      // Découpe la chaîne ORIGINALE : les indices sont valides parce que
-      // normalizeForMatch préserve la longueur.
-      final fact = trimmed.substring(index + prefix.length).trim();
+      if (!normalized.startsWith(prefix)) continue;
+      final fact = working.substring(prefix.length).trim();
       if (fact.isEmpty) return null;
       return RememberFact(fact);
     }
