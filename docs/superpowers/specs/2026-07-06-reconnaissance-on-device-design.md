@@ -174,3 +174,57 @@ attaquera la recette-frigo dans son propre cycle.
   au run réel (d'où `flutter run`/WiFi avec logs).
 - **Fuite mémoire #348** : atténuée par le recyclage de session ; à mesurer, pas éliminée
   tant qu'on reste en 0.12.4 (montée en 1.x = Flutter 3.44+, hors portée).
+
+---
+
+## 8. Résultats de validation on-device (2026-07-09)
+
+**Appareil :** Samsung Galaxy S21 Ultra (SM-G998B), Android 15, GPU Mali.
+**Méthode :** APK release arm64, `adb install` + `adb push` du modèle par WiFi.
+
+### Statut : ✅ VALIDÉ — reconnaissance de scène 100 % locale fonctionnelle
+
+Description réelle produite par Gemma 3n sur l'appareil, hors-ligne, sans clé API :
+> « À gauche de l'écran, on aperçoit une souris grise et quelques câbles noirs
+> serpentant autour du bureau. »
+
+Chaîne complète vérifiée : saisie → LLM local décide d'appeler l'outil `describe`
+→ capture caméra → EXIF strippé → inférence vision Gemma → streaming
+phrase-par-phrase → TTS + fil de conversation. Persistance du profil confirmée
+(pas de re-onboarding au redémarrage).
+
+### Mesures
+- Chargement du modèle (1er lancement) : ~20 s ; warmup ensuite.
+- Décision tool-use (texte) : ~13-22 s.
+- Inférence vision : ~30-45 s (268 caractères, streamés en 2 phrases).
+- Photo : ~75-108 Ko après strip EXIF.
+
+### Bugs trouvés SUR DEVICE (invisibles en test unitaire) et corrigés
+1. **Moteur sans vision** : `getActiveModel` sans `supportImage` → `visionBackend=null`.
+   Un seul moteur texte+vision, `maxTokens` 512 → 4096 (budget TOTAL prompt+réponse).
+2. **Race warmup / requête** : le guard `_processing` faisait échouer un message
+   envoyé au démarrage → `_acquireTurn()` fait attendre son tour ; init mémoïsée.
+3. **`Session not created`** : fermer la session du chat vision détruit le slot
+   natif unique → invalider `_textChat` à la place.
+4. **Conclusion post-outil** : la boucle renvoyait le résultat au LLM → timeout
+   systématique + fausse alerte vocalisée. `KitaTools.selfSpeakingTools` arrête
+   la boucle ; `aiLocalTimeout` 15 s → 45 s.
+5. **CRITIQUE — la vision renvoyait `{"tool_call": ...}` au lieu de décrire** :
+   le moteur mobile n'a qu'UNE session native, le chat vision héritait du
+   contexte tool-use. Le JSON était **lu à voix haute**. Corrigé par
+   `clearHistory()` avant chaque requête + `noTool` + garde-fou qui refuse de
+   vocaliser une réponse ressemblant à du JSON.
+6. **Logs invisibles en release** : `dart:developer log()` ne va pas à logcat →
+   `debugPrint` systématique ; niveau prod `warning` → `info`.
+7. **Fil de conversation invisible** : viewport à 30 % d'opacité en mode passif,
+   bulle Kita `#16213E` sur fond `#1A1A2E`.
+
+### Leçon
+Les logs disaient « description complete (78 chars) » pendant que l'app lisait du
+JSON à voix haute. **Une capture d'écran du device a révélé en 10 secondes ce que
+des heures de logs avaient masqué.** Vérifier le CONTENU, pas la métrique.
+
+### Reste à faire
+- Distribution utilisateur final (le modèle de 3,5 Go exige `adb push` aujourd'hui).
+- Latence vision (~30-45 s) trop lente pour un usage confortable : à optimiser.
+- Fuite mémoire flutter_gemma #348 : non mesurée en usage soutenu.
