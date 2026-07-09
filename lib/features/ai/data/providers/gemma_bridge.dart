@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_gemma/flutter_gemma.dart';
 
 import '../../../../core/utils/logger.dart';
@@ -101,6 +102,19 @@ class GemmaBridgeImpl implements GemmaBridge {
   }) : _locator = locator ?? GemmaModelLocator();
 
   static final _log = KitaLogger('AI.Gemma');
+
+  /// Nombre de caractères retenus avant de décider qu'une réponse vision est
+  /// bien une description (et pas un appel d'outil JSON).
+  static const int _visionGuardChars = 16;
+
+  /// Une réponse vision qui commence par du JSON / mentionne `tool_call`
+  /// n'est pas une description : elle ne doit jamais être vocalisée.
+  static bool _looksLikeToolCall(String text) =>
+      text.startsWith('{') || text.contains('"tool_call"');
+
+  /// Exposé pour les tests : verrouille le prédicat du garde-fou vision.
+  @visibleForTesting
+  static bool debugLooksLikeToolCall(String text) => _looksLikeToolCall(text);
 
   final GemmaModelLocator _locator;
   final Duration inferenceTimeout;
@@ -253,16 +267,23 @@ class GemmaBridgeImpl implements GemmaBridge {
 
       final chat = await _getOrCreateTextChat();
 
+      // Session native fraîche à chaque requête. Indispensable :
+      // 1) l'appelant (LocalProvider) embarque DÉJÀ tout l'historique dans le
+      //    prompt — garder en plus l'historique natif le dupliquerait ;
+      // 2) le moteur mobile n'a qu'UNE session, partagée avec la vision : sans
+      //    remise à zéro, le contexte tool-use contamine l'appel suivant.
+      await chat.clearHistory();
+
       // Merge system prompt + user prompt into a single message to avoid
       // a costly extra round-trip (~4s saved per call).
       final mergedPrompt = systemPrompt != null
           ? '[Instructions]\n$systemPrompt\n\n[Message]\n$prompt'
           : prompt;
 
-      await chat.addQueryChunk(Message.text(
-        text: mergedPrompt,
-        isUser: true,
-      ));
+      await chat.addQueryChunk(
+        Message.text(text: mergedPrompt, isUser: true),
+        true, // noTool : le prompt tool-use est construit par LocalProvider
+      );
 
       // generateChatResponseAsync returns Stream<ModelResponse>.
       // Each TextResponse contains a single token.
@@ -335,12 +356,21 @@ class GemmaBridgeImpl implements GemmaBridge {
       );
 
       try {
-        await chat.addQueryChunk(Message.withImage(
-          text:
-              prompt ?? 'Décris cette image en français de manière détaillée.',
-          imageBytes: bytes,
-          isUser: true,
-        ));
+        // Session native fraîche AVANT la vision. Sans cela, le chat hérite du
+        // contexte tool-use de l'étape précédente (le moteur mobile n'a qu'une
+        // session) et le modèle répond par un `{"tool_call": ...}` JSON au lieu
+        // de décrire l'image — vocalisé tel quel à l'utilisateur (bug terrain).
+        await chat.clearHistory();
+
+        await chat.addQueryChunk(
+          Message.withImage(
+            text: prompt ??
+                'Décris cette image en français de manière détaillée.',
+            imageBytes: bytes,
+            isUser: true,
+          ),
+          true, // noTool : une description, jamais un appel d'outil
+        );
 
         // Stream token-by-token for low-latency TTS.
         final tokens = chat
@@ -348,7 +378,40 @@ class GemmaBridgeImpl implements GemmaBridge {
             .where((r) => r is TextResponse)
             .map((r) => (r as TextResponse).token)
             .withInferenceTimeout(inferenceTimeout);
-        yield* tokens;
+
+        // Garde-fou : ne JAMAIS vocaliser une réponse qui n'est pas une
+        // description (ex. un `{"tool_call": ...}` JSON). On retient les
+        // premiers caractères le temps de trancher, puis on relaie tel quel.
+        final head = StringBuffer();
+        var released = false;
+        await for (final token in tokens) {
+          if (released) {
+            yield token;
+            continue;
+          }
+          head.write(token);
+          final seen = head.toString().trimLeft();
+          if (seen.length < _visionGuardChars) continue;
+          if (_looksLikeToolCall(seen)) {
+            throw gemmaFailure(
+              StateError('vision returned a tool call instead of a description'),
+              userMessage: "Je n'ai pas réussi à décrire l'image. Réessaie.",
+            );
+          }
+          released = true;
+          yield head.toString();
+        }
+        // Réponse plus courte que la fenêtre du garde-fou.
+        if (!released && head.isNotEmpty) {
+          final seen = head.toString().trimLeft();
+          if (_looksLikeToolCall(seen)) {
+            throw gemmaFailure(
+              StateError('vision returned a tool call instead of a description'),
+              userMessage: "Je n'ai pas réussi à décrire l'image. Réessaie.",
+            );
+          }
+          yield head.toString();
+        }
       } finally {
         // Sur mobile, le moteur LiteRT-LM ne maintient qu'UNE session
         // native à la fois : créer le chat vision a remplacé la session du
