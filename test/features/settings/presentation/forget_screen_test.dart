@@ -97,6 +97,16 @@ void main() {
       category: 'display',
       source: 'user',
     );
+    // `profile` et `plugin_data` sont semées explicitement : sans cela, les
+    // assertions « count == 0 » après effacement seraient vraies avant même
+    // l'effacement, et ne prouveraient rien.
+    await profileDao.insert(displayName: 'Marie');
+    await pluginDataDao.insert(
+      pluginId: 'com.kita.describe',
+      namespace: 'cache',
+      key: 'derniere_scene',
+      value: 'un parc',
+    );
   }
 
   /// Pumps the ForgetScreen with the real [vault] injected.
@@ -132,6 +142,11 @@ void main() {
     testWidgets('Tout effacer supprime toutes les données et vérifie',
         (tester) async {
       await seedData();
+      // Sans ces deux gardes, un seed défaillant rendrait vacantes les
+      // assertions « count == 0 » qui suivent l'effacement.
+      expect((await profileDao.count()).getOrNull(), equals(1));
+      expect((await pluginDataDao.count()).getOrNull(), equals(1));
+
       await pumpScreen(tester);
       await tester.pumpAndSettle();
 
