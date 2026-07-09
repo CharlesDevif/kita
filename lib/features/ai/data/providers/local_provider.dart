@@ -15,6 +15,70 @@ import 'gemma_bridge.dart';
 import 'gemini_nano_bridge.dart';
 import 'ml_kit_bridge.dart';
 
+/// Résultat brut d'un parsing d'appel d'outil local.
+class ParsedToolCall {
+  const ParsedToolCall({required this.name, required this.arguments});
+
+  final String name;
+  final Map<String, dynamic> arguments;
+
+  /// Première valeur d'argument (le format compact n'en porte qu'une).
+  String? get firstArg =>
+      arguments.isEmpty ? null : arguments.values.first as String?;
+}
+
+/// Outils connus. Un `TOOL <nom>` inconnu est traité comme du texte.
+const Set<String> _knownTools = {'describe', 'alert'};
+
+/// Nom du premier paramètre de chaque outil, pour mapper le format compact.
+/// `describe` n'a plus de paramètre (voir Task 4).
+const Map<String, String> _firstParamOf = {'alert': 'action'};
+
+/// Parse une réponse Gemma en appel d'outil.
+///
+/// Accepte le format **compact** `TOOL <nom> [valeur]` (peu de tokens à
+/// décoder : ~15 s gagnées sur device) et, en repli, le **JSON legacy**
+/// `{"tool_call": {...}}` au cas où le modèle, instruction-tuné au JSON,
+/// ignore la consigne. Retourne `null` si ce n'est pas un appel d'outil.
+ParsedToolCall? parseLocalToolResponse(String text) {
+  for (final rawLine in text.split('\n')) {
+    final line = rawLine.trim();
+    if (!line.startsWith('TOOL ')) continue;
+    final parts = line.substring(5).trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty || parts.first.isEmpty) continue;
+    final name = parts.first;
+    if (!_knownTools.contains(name)) return null;
+    final args = <String, dynamic>{};
+    if (parts.length > 1 && _firstParamOf[name] != null) {
+      args[_firstParamOf[name]!] = parts[1];
+    }
+    return ParsedToolCall(name: name, arguments: args);
+  }
+
+  // Repli JSON legacy.
+  final trimmed = text.trim();
+  final jsonStart = trimmed.indexOf('{');
+  final jsonEnd = trimmed.lastIndexOf('}');
+  if (jsonStart >= 0 && jsonEnd > jsonStart) {
+    try {
+      final parsed =
+          jsonDecode(trimmed.substring(jsonStart, jsonEnd + 1))
+              as Map<String, dynamic>;
+      final toolCall = parsed['tool_call'] as Map<String, dynamic>?;
+      final name = toolCall?['name'] as String?;
+      if (name != null && _knownTools.contains(name)) {
+        return ParsedToolCall(
+          name: name,
+          arguments: (toolCall!['arguments'] as Map<String, dynamic>?) ?? {},
+        );
+      }
+    } catch (_) {
+      // Pas du JSON valide : ce n'est pas un appel d'outil.
+    }
+  }
+  return null;
+}
+
 /// Label translation map: common ML Kit English labels to French.
 const _labelTranslations = <String, String>{
   'Person': 'personne',
@@ -377,10 +441,11 @@ class LocalProvider implements AIProvider {
 You have access to the following tools:
 $toolDescriptions
 
-To call a tool, respond with ONLY a JSON object like:
-{"tool_call": {"name": "tool_name", "arguments": {"key": "value"}}}
+Pour appeler un outil, réponds UNIQUEMENT par une ligne :
+TOOL nom_de_l_outil
+TOOL nom_de_l_outil valeur
 
-If you do not need a tool, respond with plain text.
+Sinon, réponds normalement en texte.
 
 ${historyText.isNotEmpty ? '[History]\n$historyText\n' : ''}[Message]
 $userMessage''';
@@ -389,47 +454,16 @@ $userMessage''';
   /// Try to parse a Gemma response as a tool call. Returns null if parsing
   /// fails (response is treated as plain text).
   AIToolResponse? _parseGemmaToolResponse(String text, Duration latency) {
-    final trimmed = text.trim();
-
-    // Try to find JSON in the response.
-    final jsonStart = trimmed.indexOf('{');
-    final jsonEnd = trimmed.lastIndexOf('}');
-
-    if (jsonStart >= 0 && jsonEnd > jsonStart) {
-      try {
-        final jsonStr = trimmed.substring(jsonStart, jsonEnd + 1);
-        final parsed = jsonDecode(jsonStr) as Map<String, dynamic>;
-        final toolCall = parsed['tool_call'] as Map<String, dynamic>?;
-
-        if (toolCall != null) {
-          final name = toolCall['name'] as String?;
-          final args = toolCall['arguments'] as Map<String, dynamic>?;
-
-          if (name != null) {
-            return AIToolResponse(
-              toolCalls: [
-                ToolCall(
-                  id: 'local_${DateTime.now().millisecondsSinceEpoch}',
-                  name: name,
-                  arguments: args ?? {},
-                ),
-              ],
-              meta: AIResponseMeta(
-                providerId: 'gemma',
-                latency: latency,
-                tier: ProviderTier.local,
-              ),
-            );
-          }
-        }
-      } catch (_) {
-        // JSON parsing failed — treat as plain text below.
-      }
-    }
-
-    // No tool call detected — return as text.
+    final parsed = parseLocalToolResponse(text);
+    if (parsed == null) return null;
     return AIToolResponse(
-      text: trimmed,
+      toolCalls: [
+        ToolCall(
+          id: 'local_${DateTime.now().millisecondsSinceEpoch}',
+          name: parsed.name,
+          arguments: parsed.arguments,
+        ),
+      ],
       meta: AIResponseMeta(
         providerId: 'gemma',
         latency: latency,
