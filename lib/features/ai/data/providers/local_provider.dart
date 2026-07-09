@@ -82,6 +82,110 @@ ParsedToolCall? parseLocalToolResponse(String text) {
   return null;
 }
 
+/// Coupe la réponse dès que le modèle invente un tour de dialogue.
+///
+/// Le prompt d'outillage est un dialogue few-shot : le modèle poursuit
+/// volontiers en fabriquant la réplique suivante. Sans cette coupe, Kita lit
+/// à voix haute une question que l'utilisateur n'a jamais posée.
+String stripHallucinatedTurns(String text) {
+  const turnMarkers = ['Utilisateur :', 'Kita :'];
+  final lines = text.split('\n');
+  final kept = <String>[];
+  for (final line in lines) {
+    final trimmed = line.trimLeft();
+    if (turnMarkers.any(trimmed.startsWith)) break;
+    kept.add(line);
+  }
+  return kept.join('\n').trim();
+}
+
+/// Rend un outil pour le prompt, sans JSON Schema : un modèle 2B suit mieux
+/// une phrase qu'un objet.
+String _formatToolForPrompt(ToolSpec tool) {
+  final buffer = StringBuffer('- ${tool.name} : ${tool.description}');
+  final properties = tool.parameters['properties'];
+  if (properties is Map<String, dynamic>) {
+    for (final entry in properties.entries) {
+      final schema = entry.value;
+      final values = schema is Map<String, dynamic> ? schema['enum'] : null;
+      final choices =
+          values is List && values.isNotEmpty ? ' (${values.join(' ou ')})' : '';
+      buffer.write('\n  argument : ${entry.key}$choices');
+    }
+  }
+  return buffer.toString();
+}
+
+/// Rend un message d'historique, ou `null` s'il ne doit pas être montré.
+String? _formatHistoryLine(ConversationMessage msg) {
+  switch (msg.role) {
+    case ConversationRole.user:
+      final text = msg.content?.trim() ?? '';
+      return text.isEmpty ? null : 'Utilisateur : $text';
+
+    case ConversationRole.assistant:
+      final calls = msg.toolCalls;
+      if (calls != null && calls.isNotEmpty) {
+        // Jamais sous la forme `TOOL x` ni « (tool call) » : rendu tel quel,
+        // le modèle recopiait la ligne au tour suivant et redéclenchait la
+        // caméra, quoi que dise l'utilisateur (observé sur device).
+        final names = calls.map((c) => c.name).join(', ');
+        return 'Kita : (a utilisé $names)';
+      }
+      final text = msg.content?.trim() ?? '';
+      return text.isEmpty ? null : 'Kita : $text';
+
+    case ConversationRole.tool:
+      // Résultat interne (« Description en cours. ») : sans valeur pour la
+      // décision, et autant de tokens de prefill en moins.
+      return null;
+  }
+}
+
+/// Construit le prompt de décision tool-use pour Gemma.
+///
+/// La conversation est le comportement par défaut, l'appel d'outil
+/// l'exception. Les exemples négatifs valent mieux qu'une consigne
+/// abstraite : un modèle 2B imite ce qu'il voit.
+String buildLocalToolPrompt(
+  String userMessage,
+  List<ToolSpec> tools,
+  List<ConversationMessage> history,
+) {
+  final toolDescriptions = tools.map(_formatToolForPrompt).join('\n');
+  final historyText =
+      history.map(_formatHistoryLine).whereType<String>().join('\n');
+
+  return '''[Instructions]
+Tu es Kita, une assistante vocale française pour personnes déficientes
+visuelles. Tu réponds brièvement, en français, comme à l'oral.
+
+Par défaut, tu réponds par du texte. N'appelle un outil que si l'utilisateur
+demande explicitement cette action, maintenant.
+
+Outils disponibles :
+$toolDescriptions
+
+Pour appeler un outil, réponds par cette seule ligne, sans rien d'autre :
+TOOL describe
+TOOL alert start
+
+[Exemples]
+Utilisateur : qu'est-ce qu'il y a devant moi ?
+Kita : TOOL describe
+Utilisateur : salut, ça va ?
+Kita : Bonjour ! Ça va, et toi ?
+Utilisateur : préviens-moi s'il y a un obstacle
+Kita : TOOL alert start
+Utilisateur : je ne t'ai pas demandé ça
+Kita : Désolée. Que puis-je faire pour toi ?
+Utilisateur : tu en penses quoi ?
+Kita : Je n'ai pas encore d'avis. Dis-m'en plus.
+
+${historyText.isNotEmpty ? '[Conversation]\n$historyText\n' : ''}Utilisateur : $userMessage
+Kita :''';
+}
+
 /// Label translation map: common ML Kit English labels to French.
 const _labelTranslations = <String, String>{
   'Person': 'personne',
@@ -388,7 +492,7 @@ class LocalProvider implements AIProvider {
       try {
         final status = await _checkGemmaStatus();
         if (status == GemmaModelStatus.ready) {
-          final toolPrompt = _buildToolPrompt(request.prompt, tools, history);
+          final toolPrompt = buildLocalToolPrompt(request.prompt, tools, history);
           final result = await _gemmaBridge!.complete(toolPrompt);
           stopwatch.stop();
 
@@ -424,36 +528,6 @@ class LocalProvider implements AIProvider {
     ));
   }
 
-  /// Build a prompt that instructs Gemma to use tools via structured JSON.
-  String _buildToolPrompt(
-    String userMessage,
-    List<ToolSpec> tools,
-    List<ConversationMessage> history,
-  ) {
-    final toolDescriptions = tools.map((t) {
-      final params = jsonEncode(t.parameters);
-      return '- ${t.name}: ${t.description}\n  Parameters: $params';
-    }).join('\n');
-
-    final historyText = history.map((msg) {
-      final role = msg.role.name;
-      return '[$role]: ${msg.content ?? '(tool call)'}';
-    }).join('\n');
-
-    return '''[Instructions]
-You have access to the following tools:
-$toolDescriptions
-
-Pour appeler un outil, réponds UNIQUEMENT par une ligne :
-TOOL nom_de_l_outil
-TOOL nom_de_l_outil valeur
-
-Sinon, réponds normalement en texte.
-
-${historyText.isNotEmpty ? '[History]\n$historyText\n' : ''}[Message]
-$userMessage''';
-  }
-
   /// Parse une réponse Gemma en appel d'outil, OU en réponse texte.
   ///
   /// Retourner `null` ici ferait retomber [completeWithTools] sur
@@ -467,7 +541,7 @@ $userMessage''';
       tier: ProviderTier.local,
     );
     if (parsed == null) {
-      final trimmed = text.trim();
+      final trimmed = stripHallucinatedTurns(text);
       if (trimmed.isEmpty) return null;
       return AIToolResponse(text: trimmed, meta: meta);
     }
