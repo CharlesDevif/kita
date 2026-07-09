@@ -97,4 +97,46 @@ void main() {
     final result = await access.getPreference('a');
     expect(result.isSuccess, isFalse);
   });
+
+  test(
+      'deux appels concurrents avant résolution ne déclenchent le loader '
+      "qu'une seule fois", () async {
+    // DÉFAUT C : seule la valeur résolue (_vault) était mémorisée, pas le
+    // Future en vol. Deux appels lancés avant que le premier ne se
+    // résolve appelaient chacun _vaultLoader(). Ce test échoue (loads == 2)
+    // tant que le Future en vol n'est pas mémoïsé.
+    var loads = 0;
+    final vault = FakeMemoryVault();
+    final access = VaultMemoryAccess(vaultLoader: () async {
+      loads++;
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      return vault;
+    });
+
+    await Future.wait([
+      access.getPreference('a'),
+      access.getPreference('b'),
+    ]);
+
+    expect(loads, equals(1));
+  });
+
+  test('après un échec de chargement, un appel ultérieur retente',
+      () async {
+    var loads = 0;
+    final vault = FakeMemoryVault();
+    final access = VaultMemoryAccess(vaultLoader: () async {
+      loads++;
+      if (loads == 1) throw StateError('db locked');
+      return vault;
+    });
+
+    final first = await access.getPreference('a');
+    expect(first.isSuccess, isFalse);
+    expect(loads, equals(1));
+
+    final second = await access.getPreference('a');
+    expect(second.isSuccess, isTrue);
+    expect(loads, equals(2));
+  });
 }

@@ -18,18 +18,35 @@ class VaultMemoryAccess implements MemoryAccess {
   final Future<MemoryVault> Function() _vaultLoader;
   MemoryVault? _vault;
 
+  /// Future en vol mémoïsé : évite d'appeler [_vaultLoader] plusieurs fois
+  /// si des appels concurrents arrivent avant la première résolution.
+  /// Remis à `null` une fois résolu (succès -> [_vault] sert de cache ;
+  /// échec -> aucun cache, le prochain appel retente).
+  Future<MemoryVault>? _pending;
+
   /// Résolution paresseuse : `pluginSandboxProvider` est synchrone alors que
   /// `memoryVaultProvider` est un `FutureProvider`. Charger ici évite de
   /// bloquer le démarrage de l'app.
+  ///
+  /// Chargé au plus une fois : le [Future] retourné par [_vaultLoader] est
+  /// lui-même mémoïsé dans [_pending] pendant qu'il est en vol, donc des
+  /// appels concurrents avant la première résolution partagent le même
+  /// chargement au lieu d'en déclencher un par appel. Cette garantie ne
+  /// dépend plus d'un détail externe (mémoïsation du provider) : elle tient
+  /// même si [_vaultLoader] est appelé plusieurs fois par des callers
+  /// différents.
   Future<MemoryVault?> _resolve() async {
     final cached = _vault;
     if (cached != null) return cached;
     try {
-      final vault = await _vaultLoader();
+      _pending ??= _vaultLoader();
+      final vault = await _pending!;
       _vault = vault;
+      _pending = null;
       return vault;
     } on Object catch (e, stack) {
       // KitaFailure n'est pas une Exception : `on Object` est obligatoire.
+      _pending = null;
       _log.error('Memory vault unavailable', error: e, stackTrace: stack);
       return null;
     }
