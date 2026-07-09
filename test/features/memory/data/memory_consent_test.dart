@@ -134,4 +134,84 @@ void main() {
       expect(await MemoryConsent.isGranted(vault), isTrue);
     });
   });
+
+  group('opt-out illisible (échec de lecture du coffre sécurisé)', () {
+    // DÉFAUT 1 : un échec de lecture du coffre (Keystore indisponible,
+    // erreur transitoire...) est indistinguable d'une clé absente une fois
+    // passé par `Result.getOrNull()`. Les deux valent `null`. Sans
+    // distinction, un opt-out devenu illisible est traité comme "jamais
+    // choisi" et le bootstrap ré-accorde dans le dos de l'utilisateur.
+    test(
+        'Failure de lecture de l\'opt-out : ensureGranted n\'accorde aucun '
+        'consentement (fail-closed)', () async {
+      final keyVault = MockSecureKeyVault()..shouldFail = true;
+
+      await MemoryConsent.ensureGranted(vault, keyVault: keyVault);
+
+      expect((await vault.getConsents()).getOrNull(), isEmpty);
+    });
+
+    test(
+        'Success(null) (clé absente, premier lancement) : ensureGranted '
+        'accorde normalement même avec un keyVault fourni', () async {
+      final keyVault = MockSecureKeyVault(); // store vide, shouldFail = false
+
+      await MemoryConsent.ensureGranted(vault, keyVault: keyVault);
+
+      final consents = (await vault.getConsents()).getOrNull()!;
+      expect(consents.where((c) => c.granted), hasLength(2));
+    });
+  });
+
+  group('revokeAll persiste l\'opt-out avant de révoquer', () {
+    // DÉFAUT 2 : l'ordre initial (révoquer, puis écrire l'opt-out sans
+    // vérifier le résultat) laisse le consentement retiré mais l'opt-out
+    // jamais mémorisé si l'écriture échoue — le prochain bootstrap
+    // ré-accorde silencieusement.
+    test(
+        'write en échec : revokeAll renvoie Failure et ne révoque rien',
+        () async {
+      final keyVault = MockSecureKeyVault();
+      await MemoryConsent.ensureGranted(vault, keyVault: keyVault);
+      keyVault.shouldFail = true; // le coffre devient illisible/inscriptible
+
+      final result = await MemoryConsent.revokeAll(vault, keyVault: keyVault);
+
+      expect(result.isFailure, isTrue);
+      expect(
+        await MemoryConsent.isGranted(vault),
+        isTrue,
+        reason: 'le consentement doit rester actif tant que l\'opt-out '
+            'n\'est pas persisté',
+      );
+    });
+
+    test('write en succès : revokeAll renvoie Success et révoque bien',
+        () async {
+      final keyVault = MockSecureKeyVault();
+      await MemoryConsent.ensureGranted(vault, keyVault: keyVault);
+
+      final result = await MemoryConsent.revokeAll(vault, keyVault: keyVault);
+
+      expect(result.isSuccess, isTrue);
+      expect(await MemoryConsent.isGranted(vault), isFalse);
+    });
+  });
+
+  group('ensureGranted sérialise les appels concurrents', () {
+    // DÉFAUT 3 (TOCTOU) : `hasConsent` puis `grantConsent` ne sont pas
+    // atomiques. Deux appels concurrents (bootstrap + ré-accord après
+    // `forget`) pourraient chacun voir "pas encore consenti" avant que
+    // l'autre n'ait inséré sa ligne, doublant les lignes de consentement.
+    test('deux ensureGranted en parallèle : 2 lignes de consentement, pas 4',
+        () async {
+      await Future.wait([
+        MemoryConsent.ensureGranted(vault),
+        MemoryConsent.ensureGranted(vault),
+      ]);
+
+      final consents = (await vault.getConsents()).getOrNull()!;
+      expect(consents.where((c) => c.granted), hasLength(2));
+    });
+  });
 }
