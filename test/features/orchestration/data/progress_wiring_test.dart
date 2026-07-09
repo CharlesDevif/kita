@@ -12,6 +12,8 @@ import 'package:kita/features/orchestration/domain/clock.dart';
 import 'package:kita/features/orchestration/domain/models/agent_ids.dart';
 import 'package:kita/features/orchestration/domain/models/agent_message.dart';
 import 'package:kita/features/orchestration/domain/models/output_priority.dart';
+import 'package:kita/features/orchestration/domain/progress_phase.dart';
+import 'package:kita/features/shell/domain/orb_state.dart';
 import 'package:kita/shared/multi_modal/profile_adapter.dart';
 
 // ==========================================================================
@@ -86,6 +88,13 @@ class _FakeBus implements AgentBus {
       const Stream<AgentMessage>.empty();
 }
 
+/// Speaker minimal : capture les repères sans dépendre de l'OutputCoordinator.
+class _FakeProgressSpeaker implements ProgressSpeaker {
+  final List<String> cues = [];
+  @override
+  Future<void> speakCue(String text) async => cues.add(text);
+}
+
 Future<void> _flush() async {
   for (var i = 0; i < 10; i++) {
     await Future<void>.microtask(() {});
@@ -105,17 +114,19 @@ void main() {
     late _FakeTts tts;
     late OutputCoordinator coordinator;
     late List<String> feedTexts;
+    late List<OrbState> orbStates;
 
     setUp(() {
       tts = _FakeTts();
       feedTexts = [];
+      orbStates = [];
       coordinator = OutputCoordinator(
         tts: tts,
         haptic: _FakeHaptic(),
         profileAdapter: _FakeProfileAdapter(),
         clock: FakeClock(),
         bus: _FakeBus(),
-        onOrbStateChanged: (_) {},
+        onOrbStateChanged: orbStates.add,
         onShellModeChanged: (_) {},
         // Le hook qui alimente le fil de conversation du Shell.
         onSpeechEnqueued: (agentId, text) => feedTexts.add(text),
@@ -155,6 +166,30 @@ void main() {
       expect(tts.spoken, isEmpty);
       expect(feedTexts, isEmpty);
     });
+
+    test('un repère ne pilote JAMAIS l\'état de l\'orbe', () async {
+      // Le repère de progression est prononcé, mais l'orbe reste sous le seul
+      // contrôle du ProgressReporter : aucun `responding` au début, aucun
+      // `passive` à la fin. Sans ça, l'orbe retombe pendant qu'un outil bosse.
+      await coordinator.speakCue(ProgressReporter.cueWorking);
+      await _flush();
+
+      expect(tts.spoken, contains('Je regarde.'));
+      expect(orbStates, isEmpty);
+    });
+
+    test('une parole normale, elle, pilote bien l\'orbe (contre-preuve)',
+        () async {
+      await coordinator.enqueueSpeech(
+        AgentIds.system,
+        'Bonjour Marie.',
+        OutputPriority.standard,
+      );
+      await _flush();
+
+      // Une vraie réponse DOIT bouger l'orbe (processing puis responding).
+      expect(orbStates, isNotEmpty);
+    });
   });
 
   test('implements ProgressSpeaker — utilisable comme speaker du reporter', () {
@@ -171,5 +206,56 @@ void main() {
 
     // Le contrat structurel qui permet le câblage DI.
     expect(coordinator, isA<ProgressSpeaker>());
+  });
+
+  // ========================================================================
+  // Contrat de câblage : le ProgressReporter réel est LA seule source de
+  // vérité pour l'orbe pendant une requête. On verrouille la suite d'états.
+  // ========================================================================
+  group('ProgressReporter → orbe (câblage réel, sans widget)', () {
+    late _FakeProgressSpeaker speaker;
+    late ProgressReporter reporter;
+    late List<OrbState> orbStates;
+    late List<String?> statuses;
+
+    setUp(() {
+      speaker = _FakeProgressSpeaker();
+      orbStates = [];
+      statuses = [];
+      reporter = ProgressReporter(
+        speaker: speaker,
+        haptic: _FakeHaptic(),
+        clock: FakeClock(),
+        onOrbStateChanged: orbStates.add,
+        onStatusChanged: statuses.add,
+      );
+    });
+
+    tearDown(() => reporter.dispose());
+
+    test('un cycle complet enchaîne processing → responding → passive '
+        'et laisse le statut final vide', () {
+      reporter.beginRequest();
+      reporter.report(ProgressPhase.thinking);
+      reporter.report(ProgressPhase.working);
+      reporter.report(ProgressPhase.responding);
+      reporter.endRequest(success: true);
+
+      expect(orbStates, <OrbState>[
+        OrbState.processing, // thinking
+        OrbState.processing, // working
+        OrbState.responding, // responding
+        OrbState.passive, // done
+      ]);
+      // La vraie réponse ayant pris le relais, plus aucun statut transitoire.
+      expect(statuses.last, isNull);
+    });
+
+    test('un échec met l\'orbe en error', () {
+      reporter.beginRequest();
+      reporter.endRequest(success: false);
+
+      expect(orbStates.last, OrbState.error);
+    });
   });
 }

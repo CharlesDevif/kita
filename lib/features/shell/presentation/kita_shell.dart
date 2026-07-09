@@ -384,8 +384,7 @@ class _ConversationFeedView extends StatelessWidget {
         // sits below the latest message.
         if (hasStatus && index == 0) {
           return Semantics(
-            liveRegion: true,
-            label: 'Kita ${status!}',
+            label: status!,
             child: Align(
               alignment: Alignment.centerLeft,
               child: Container(
@@ -400,7 +399,9 @@ class _ConversationFeedView extends StatelessWidget {
                 child: Text(
                   status!,
                   style: const TextStyle(
-                    color: Color(0xFF94A3B8),
+                    // Contraste AA : 5,22:1 sur le fond #2D3A5F (le #94A3B8
+                    // précédent tombait à 4,35:1, sous le seuil 4,5:1).
+                    color: Color(0xFFA8B2C4),
                     fontSize: 16,
                     fontStyle: FontStyle.italic,
                   ),

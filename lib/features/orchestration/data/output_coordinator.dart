@@ -35,6 +35,7 @@ class _OutputRequest implements Comparable<_OutputRequest> {
     this.distance,
     this.cooldownKey,
     this.agentType,
+    this.isProgressCue = false,
   });
 
   final String agentId;
@@ -50,6 +51,13 @@ class _OutputRequest implements Comparable<_OutputRequest> {
 
   /// The type of the agent that made this request.
   final AgentType? agentType;
+
+  /// Repère de progression (« Un instant. », « Je regarde. ») : prononcé en
+  /// priorité `high` mais ne pilote JAMAIS l'état de l'orbe. Seul le
+  /// [ProgressReporter] pilote l'orbe pendant qu'un outil travaille ; laisser
+  /// un repère la remettre en `passive` ferait retomber l'orbe alors que
+  /// l'analyse dure encore.
+  final bool isProgressCue;
 
   @override
   int compareTo(_OutputRequest other) {
@@ -286,6 +294,7 @@ class OutputCoordinator implements ProgressSpeaker {
       text: text,
       priority: OutputPriority.high,
       enqueuedAt: _clock.now(),
+      isProgressCue: true,
     );
     unawaited(_handleHigh(request));
   }
@@ -517,8 +526,12 @@ class OutputCoordinator implements ProgressSpeaker {
     _focusedAgentId = request.agentId;
     _isSpeaking = true;
 
-    _onOrbStateChanged(OrbState.processing);
-    _onOrbStateChanged(OrbState.responding);
+    // Un repère de progression n'est pas une réponse : il ne pilote jamais
+    // l'orbe (sinon l'orbe retombe en `passive` alors qu'un outil travaille).
+    if (!request.isProgressCue) {
+      _onOrbStateChanged(OrbState.processing);
+      _onOrbStateChanged(OrbState.responding);
+    }
 
     _emitSpeechEvent(request.agentId, SpeechEvent.started);
 
@@ -545,7 +558,11 @@ class OutputCoordinator implements ProgressSpeaker {
       _isSpeaking = false;
       _emitSpeechEvent(request.agentId, SpeechEvent.completed);
       if (_queue.isEmpty) {
-        _onOrbStateChanged(OrbState.passive);
+        // Un repère de progression ne remet PAS l'orbe en `passive` : c'est le
+        // ProgressReporter qui gère l'orbe tant que l'outil n'a pas fini.
+        if (!request.isProgressCue) {
+          _onOrbStateChanged(OrbState.passive);
+        }
       } else {
         await _processQueue();
       }
