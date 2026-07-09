@@ -202,4 +202,136 @@ void main() {
       },
     );
   });
+
+  group(
+    'MemoryIntentParser.parse — frontière de mot après le préfixe '
+    '(revue a64e8bc, défaut 1)',
+    () {
+      test(
+        '« quelque » ne doit plus tronquer le fait via « que » : '
+        'le préfixe « retiens que » est rejeté (pas de frontière), '
+        '« retiens » seul matche ensuite',
+        () {
+          final intent = MemoryIntentParser.parse(
+            "Kita, retiens quelque chose d'important",
+          );
+          expect(intent, isA<RememberFact>());
+          expect(
+            (intent! as RememberFact).fact,
+            equals("quelque chose d'important"),
+          );
+        },
+      );
+
+      test(
+        '« note quelque chose ici » : « note que » rejeté (pas de '
+        'frontière), aucun préfixe « note » seul n\'existe → null',
+        () {
+          expect(MemoryIntentParser.parse('note quelque chose ici'), isNull);
+        },
+      );
+
+      test(
+        '« souviens-toi quelque part que j\'ai des soucis » : '
+        '« souviens-toi que » rejeté (pas de frontière) → null',
+        () {
+          expect(
+            MemoryIntentParser.parse(
+              "souviens-toi quelque part que j'ai des soucis",
+            ),
+            isNull,
+          );
+        },
+      );
+
+      test(
+        '« Retiens-le, on doit y retourner » : le tiret suit « retiens » '
+        'sans frontière → null, le fait n\'est pas tronqué en « -le, ... »',
+        () {
+          expect(
+            MemoryIntentParser.parse('Retiens-le, on doit y retourner'),
+            isNull,
+          );
+        },
+      );
+
+      test(
+        '« retiens quelque chose d\'important » (sans vocatif) : fait '
+        'intact, non tronqué',
+        () {
+          final intent = MemoryIntentParser.parse(
+            "retiens quelque chose d'important",
+          );
+          expect(intent, isA<RememberFact>());
+          expect(
+            (intent! as RememberFact).fact,
+            equals("quelque chose d'important"),
+          );
+        },
+      );
+
+      test(
+        '« retiens quelque chose » : « retiens que » rejeté, « retiens » '
+        'seul accepté avec la frontière espace',
+        () {
+          final intent = MemoryIntentParser.parse('retiens quelque chose');
+          expect(intent, isA<RememberFact>());
+          expect((intent! as RememberFact).fact, equals('quelque chose'));
+        },
+      );
+
+      test(
+        '« retiens, bof » : la virgule suit « retiens » sans frontière '
+        'd\'espacement → null',
+        () {
+          expect(MemoryIntentParser.parse('retiens, bof'), isNull);
+        },
+      );
+    },
+  );
+
+  group(
+    'MemoryIntentParser.parse — fait sans alphanumérique rejeté '
+    '(revue a64e8bc, défaut 2)',
+    () {
+      test('« retiens que ! » : fait réduit à de la ponctuation → null', () {
+        expect(MemoryIntentParser.parse('retiens que !'), isNull);
+      });
+
+      test('« retiens ? » : fait réduit à de la ponctuation → null', () {
+        expect(MemoryIntentParser.parse('retiens ?'), isNull);
+      });
+    },
+  );
+
+  group('MemoryIntentParser.parse — trous de couverture (revue a64e8bc)', () {
+    test('transcript exactement « kita » : aucun préfixe ne suit → null', () {
+      expect(MemoryIntentParser.parse('kita'), isNull);
+    });
+
+    test('vocatif tout en majuscules « KITA, retiens que ... »', () {
+      final intent = MemoryIntentParser.parse(
+        'KITA, retiens que je dois appeler ma mère',
+      );
+      expect(intent, isA<RememberFact>());
+      expect(
+        (intent! as RememberFact).fact,
+        equals('je dois appeler ma mère'),
+      );
+    });
+
+    test(
+      'majuscule accentuée dans le fait : accent et casse préservés',
+      () {
+        final intent = MemoryIntentParser.parse(
+          'retiens que Éric est mon voisin',
+        );
+        expect(intent, isA<RememberFact>());
+        expect(
+          (intent! as RememberFact).fact,
+          equals('Éric est mon voisin'),
+        );
+      },
+    );
+  });
 }

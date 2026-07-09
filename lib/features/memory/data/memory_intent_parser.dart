@@ -73,7 +73,6 @@ const List<String> _recallFactsPatterns = [
 ];
 
 const List<String> _recallEpisodesPatterns = [
-  'quest ce que jai vu',
   'ce que jai vu',
   'quai je vu',
 ];
@@ -86,6 +85,15 @@ class MemoryIntentParser {
   /// permet de retirer le même nombre de caractères sur la chaîne originale
   /// pour garder l'alignement des indices utilisé par `RememberFact`.
   static final RegExp _vocative = RegExp(r'^kita[ ,]+');
+
+  /// Un caractère d'espacement en tête de chaîne : sert à vérifier qu'un
+  /// préfixe est suivi d'une frontière de mot, pas du milieu d'un autre mot
+  /// (« que » ne doit pas matcher le début de « quelque »).
+  static final RegExp _leadingWhitespace = RegExp(r'^\s');
+
+  /// Au moins une lettre (accents compris) ou un chiffre : sert à rejeter un
+  /// « fait » qui ne serait que de la ponctuation (« retiens que ! »).
+  static final RegExp _alphanumeric = RegExp(r'[\p{L}\p{N}]', unicode: true);
 
   /// Reconnaît une intention mémoire, ou `null` si le transcript n'en porte pas.
   static MemoryIntent? parse(String transcript) {
@@ -123,8 +131,22 @@ class MemoryIntentParser {
     // sur des verbes conjugués ordinaires (« je retiens mon souffle »).
     for (final prefix in _rememberPrefixes) {
       if (!normalized.startsWith(prefix)) continue;
+
+      // Frontière de mot obligatoire après le préfixe : « que » est un
+      // préfixe de « quelque », donc `startsWith` seul accepterait
+      // « retiens quelque chose » et tronquerait le fait en « lque chose ».
+      // La queue doit être vide (préfixe = tout le transcript) ou commencer
+      // par un espacement — sinon ce préfixe ne matche pas vraiment, on
+      // essaie le suivant (potentiellement plus court) dans la liste.
+      final tail = normalized.substring(prefix.length);
+      if (tail.isNotEmpty && !tail.startsWith(_leadingWhitespace)) continue;
+
       final fact = working.substring(prefix.length).trim();
       if (fact.isEmpty) return null;
+      // Un fait qui ne contient aucune lettre ni chiffre (juste de la
+      // ponctuation, ex. « retiens que ! ») ne vaut pas la peine d'être
+      // écrit en mémoire.
+      if (!_alphanumeric.hasMatch(fact)) return null;
       return RememberFact(fact);
     }
 
