@@ -226,10 +226,12 @@ de la prise de photo. Les deux tiennent leur contrat.
 Le format compact `TOOL describe` a rapporté davantage que prévu (−17 s sur la décision,
 contre −15 s estimés) : le JSON legacy coûtait plus de tokens de décodage que modélisé.
 
-**Réserve.** Une troisième requête, avec un historique de conversation chargé, a mis
-**18,6 s** à décider. Le prefill croît avec l'historique ; les résultats d'outil internes
-y contribuaient pour rien. Ils sont désormais omis du prompt (voir §5.6). Le cap de
-`_maxHistoryLength = 20` reste le prochain levier si la dérive réapparaît.
+**Dérive de prefill : trouvée, puis résolue.** Une troisième requête, avec un historique
+chargé, avait mis **18,6 s** à décider — le prefill croît avec l'historique, et les
+résultats d'outil internes y contribuaient pour rien. Depuis qu'ils sont omis du prompt
+(§5.6), la même situation — « décris » après trois tours de conversation — décide en
+**4,0 s**, soit le temps d'une requête à froid. Le cap `_maxHistoryLength = 20` reste le
+levier suivant si la dérive réapparaît sur des conversations plus longues.
 
 ### 5.6 Régression trouvée pendant la validation device
 
